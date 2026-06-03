@@ -4,6 +4,7 @@
 //! Services (M5) and full config loading (M2) come later.
 
 use clap::{Parser, Subcommand};
+use llmsc_core::bootstrap::IncusBootstrap;
 use llmsc_core::config::Config;
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
@@ -33,10 +34,12 @@ struct Cli {
 enum Command {
     /// Print a default config (M2 will write it to disk).
     Init,
-    /// Start the VM (create it if needed).
+    /// Start the VM (create it if needed) and bootstrap Incus.
     Up,
     /// Stop the VM.
     Down,
+    /// Stop and delete the VM.
+    Destroy,
     /// Show VM status.
     Status,
 }
@@ -53,12 +56,23 @@ fn run() -> Result<(), String> {
             print!("{toml}");
         }
         Command::Up => {
-            driver().up(&ConsoleReporter).map_err(|e| e.to_string())?;
-            println!("VM is up");
+            let cfg = Config::default();
+            let vm_name = cfg.vm.name.clone();
+            LimaVmDriver::new(cfg.vm, SystemRunner)
+                .up(&ConsoleReporter)
+                .map_err(|e| e.to_string())?;
+            IncusBootstrap::new(vm_name, &SystemRunner)
+                .run(&ConsoleReporter)
+                .map_err(|e| e.to_string())?;
+            println!("VM is up with Incus ready");
         }
         Command::Down => {
             driver().down().map_err(|e| e.to_string())?;
             println!("VM stopped");
+        }
+        Command::Destroy => {
+            driver().destroy().map_err(|e| e.to_string())?;
+            println!("VM destroyed");
         }
         Command::Status => {
             let status = driver().status().map_err(|e| e.to_string())?;

@@ -22,6 +22,8 @@ pub trait VmDriver {
     /// Bring the VM up, reporting each step (creation can take minutes).
     fn up(&self, reporter: &dyn Reporter) -> Result<()>;
     fn down(&self) -> Result<()>;
+    /// Stop and delete the VM entirely.
+    fn destroy(&self) -> Result<()>;
 }
 
 /// In-memory fake for unit tests.
@@ -54,6 +56,10 @@ impl VmDriver for FakeVmDriver {
     }
     fn down(&self) -> Result<()> {
         self.status.set(VmStatus::Stopped);
+        Ok(())
+    }
+    fn destroy(&self) -> Result<()> {
+        self.status.set(VmStatus::NotCreated);
         Ok(())
     }
 }
@@ -139,6 +145,16 @@ impl<R: CommandRunner> VmDriver for LimaVmDriver<R> {
         }
         Ok(())
     }
+
+    fn destroy(&self) -> Result<()> {
+        let o = self
+            .runner
+            .run("limactl", &["delete", "--force", &self.cfg.name])?;
+        if !o.ok() {
+            return Err(Error::Vm(format!("limactl delete: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -154,6 +170,8 @@ mod tests {
         assert_eq!(d.status().unwrap(), VmStatus::Running);
         d.down().unwrap();
         assert_eq!(d.status().unwrap(), VmStatus::Stopped);
+        d.destroy().unwrap();
+        assert_eq!(d.status().unwrap(), VmStatus::NotCreated);
     }
 }
 
@@ -237,5 +255,12 @@ mod lima_tests {
         let d = LimaVmDriver::new(cfg(), FakeRunner::new(|_, _| out(0, "")));
         d.down().unwrap();
         assert!(d.runner.called_with("stop"));
+    }
+
+    #[test]
+    fn destroy_deletes() {
+        let d = LimaVmDriver::new(cfg(), FakeRunner::new(|_, _| out(0, "")));
+        d.destroy().unwrap();
+        assert!(d.runner.called_with("delete"));
     }
 }
