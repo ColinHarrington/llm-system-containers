@@ -121,6 +121,8 @@
       blurb: "Clean, light, generous whitespace. Docker Desktop / OrbStack / Tailscale vibe." },
     { id: "c", dir: "c-controlroom",  label: "C · Control-room",       color: "#d29922",
       blurb: "Data-forward panels & charts. Grafana / mission-control vibe." },
+    { id: "n", dir: "nested-view",    label: "Topology (concept)",     color: "#a371f7",
+      blurb: "Nested map: VM -> sandboxes -> agents, with per-agent tool icons." },
   ];
 
   const tabsEl = document.getElementById("tabs");
@@ -157,7 +159,7 @@
   // keyboard: 1/2/3 and arrow keys
   document.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-    if (["1","2","3"].includes(e.key)) select(variants[+e.key - 1].id);
+    if (/^[1-9]$/.test(e.key) && +e.key <= variants.length) select(variants[+e.key - 1].id);
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
       const idx = variants.findIndex(v => v.id === current);
       const next = (idx + (e.key === "ArrowRight" ? 1 : variants.length - 1)) % variants.length;
