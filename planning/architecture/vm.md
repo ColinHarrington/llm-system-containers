@@ -12,9 +12,12 @@ to host this project's Incus-based system containers and services.
 
 - Run a native VM matching the **host architecture** (no cross-arch emulation in the common
   path → near-native performance).
-- Enable **nested virtualization** — the capability that lets L2 system containers run, and
-  in turn lets L3 app containers (Docker/Podman) run inside them. This nesting is a defining
-  feature; see [app-containers.md](app-containers.md).
+- Provide a Linux kernel supporting **unprivileged container nesting** (user namespaces,
+  cgroup delegation) so L2 system containers can themselves run L3 app containers
+  (Docker/Podman) via `security.nesting`. This is **container-in-container (shared kernel),
+  not CPU nested virtualization** — see [app-containers.md](app-containers.md). True nested
+  *virtualization* (a hypervisor inside the VM) is only relevant to the rare case of running
+  a full VM inside a sandbox, and is not required for the core stack.
 - Host **Incus**, which manages all L2 system containers (both workspace-role and
   service-role — see [system-containers.md](system-containers.md)).
 - Configure internal **networking**, services, and bootstrap items the project needs.

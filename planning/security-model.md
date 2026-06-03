@@ -5,6 +5,12 @@ their own permission frameworks, but those are imperfect. The sandbox, network i
 and Linux user permissions form hard infrastructure backstops so that the agent's own rules
 are never the only thing protecting the host.
 
+**Non-negotiable posture: everything is unprivileged.** L2 system containers are
+**unprivileged LXC**; L3 nested Docker/Podman is **rootless**. Privileged containers are
+never used anywhere in the stack — and notably, the L3 nested-container differentiator works
+*without* privilege (it's nested *containerization* via `security.nesting`, not privileged
+DinD or nested virtualization). See [architecture/app-containers.md](architecture/app-containers.md).
+
 ## Layered backstops
 
 > These backstops are **defense-in-depth rings**, distinct from the L1/L2/L3 *nesting*

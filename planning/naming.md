@@ -24,9 +24,9 @@ installed), so it is *not* used for the VM.
 | Term | Meaning |
 |---|---|
 | **Host** | The user's computer (macOS/Linux); `llmsc`/`llmsctl` run here |
-| **L1 — VM** (`llmsc-vm`) | Host-native VM running Incus, nested virt enabled |
-| **L2 — system container** | Incus/LXC system container = the **LLMSC** = a "sandbox" |
-| **L3 — app container** | Docker/Podman nested *inside* an L2 container |
+| **L1 — VM** (`llmsc-vm`) | Host-native VM running Incus; one kernel shared by L2/L3 |
+| **L2 — system container** | **Unprivileged** Incus/LXC system container = the **LLMSC** = a "sandbox" |
+| **L3 — app container** | **Rootless** Docker/Podman nested *inside* an L2 container (containerization, not nested virt) |
 
 Discipline to avoid the `machinectl` ambiguity (where containers are also "machines"):
 **VM** always means L1; **container / LLMSC** always means an L2 unit. **Services** are not a

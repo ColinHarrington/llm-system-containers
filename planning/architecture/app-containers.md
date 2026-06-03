@@ -6,9 +6,9 @@ container workflows, not just execute snippets.
 
 ```
 Host                  your computer
-└─ L1: VM             nested virtualization enabled
-   └─ L2: system container (LLMSC / sandbox, unprivileged)
-        └─ L3: app container   Docker / Podman, rootless
+└─ L1: VM             one Linux kernel, shared down the stack
+   └─ L2: system container   unprivileged LXC, security.nesting
+        └─ L3: app container  Docker / Podman, rootless
 ```
 
 ## Why this is a differentiator
@@ -24,11 +24,12 @@ containers**:
   — the very thing a sandbox exists to prevent. Tools like **Sysbox** exist solely to work
   around this, which shows how much demand there is.
 
-This project sidesteps both. Because L2 is a **full unprivileged LXC system container** (with
-`security.nesting`) on a VM that has **nested virtualization**, an agent can run **rootless
-Podman/Docker as a normal user** — *without* privileged mode, and *without* breaking the
-kernel-level backstops (Tetragon, network policy) one layer up. Real container workflows
-**and** intact security guarantees.
+This project sidesteps both. Because L2 is a **full unprivileged LXC system container** with
+`security.nesting`, an agent can run **rootless Podman/Docker as a normal user** — *without*
+privileged mode, and *without* breaking the kernel-level backstops (Tetragon, network policy)
+one layer up. This is **nested containerization** (container-in-container, sharing the VM's
+single kernel), **not** nested virtualization — which is exactly why it's reliable across
+hosts, including Apple Silicon. Real container workflows **and** intact security guarantees.
 
 ## What it unlocks (the "software factory" payoff)
 
@@ -44,7 +45,9 @@ An agent in here can do what a developer does, not just "execute a snippet."
 ## Security note
 
 Nested L3 containers are **unprivileged + rootless**, which is categorically different from
-privileged Docker-in-Docker. The isolation and kernel-level enforcement from
+privileged Docker-in-Docker. **Nothing in the stack runs privileged** — L2 is unprivileged
+LXC, L3 is rootless; privileged containers are never used, and that is a hard part of the
+security posture. The isolation and kernel-level enforcement from
 [../security-model.md](../security-model.md) still apply at L2 and below — nesting does not
 require relaxing them. This is the crux: capability without the usual security trade-off.
 

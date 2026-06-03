@@ -24,7 +24,8 @@ containers.
 ## Characteristics
 
 - **Unprivileged LXC system containers** — full init, services, real users; not single
-  process/application containers.
+  process/application containers. **Always unprivileged — privileged containers are never
+  used; this is a hard security-posture rule**, and L3 nesting works without relaxing it.
 - A lightweight Linux development environment.
 - **"Sandbox" = the mode**, not the name: workspace LLMSCs are typically run ephemeral and
   safer (disposable). Lifecycle spectrum: throwaway sandboxes → long-lived environments
@@ -47,9 +48,9 @@ surfaces it as `llmsc shell user@<container>`. See [../security-model.md](../sec
 ## Nested app containers (L3)
 
 Workspace containers can run **Docker/Podman** inside them — this is a key differentiator,
-covered in [app-containers.md](app-containers.md). It depends on nested virtualization from
-the [VM](vm.md) and appropriate Incus profile config (`security.nesting`) for unprivileged
-nesting.
+covered in [app-containers.md](app-containers.md). It relies on **nested containerization** —
+unprivileged LXC with `security.nesting` (container-in-container, sharing the [VM](vm.md)'s
+kernel) — **not** nested virtualization.
 
 ## GUI applications
 

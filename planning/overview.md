@@ -53,13 +53,17 @@ What sets this apart from existing agent sandboxes:
 
 ```
 Host                  your computer (Linux/macOS); llmsc/llmsctl installed here
-└─ L1: VM             native VM running Incus, with nested virtualization enabled
-   └─ L2: system container   Incus/LXC — the LLMSC, run as a "sandbox"
-        └─ L3: app container  Docker/Podman nested inside an L2 container
+└─ L1: VM             native VM running Incus — one kernel, shared by L2/L3
+   └─ L2: system container   unprivileged Incus/LXC — the LLMSC, run as a "sandbox"
+        └─ L3: app container  rootless Docker/Podman nested inside an L2 container
 ```
 
-1. **L1 — VM** (`llmsc-vm`) — a host-native VM (matching host architecture) running Incus,
-   with nested virtualization enabled. Analogous to Docker Desktop / Colima / Lima. See
+The L1→L2→L3 nesting is **containerization** (one shared kernel), *not* nested
+virtualization. L2 and L3 are **unprivileged/rootless** — never privileged.
+
+1. **L1 — VM** (`llmsc-vm`) — a host-native VM (matching host architecture) running Incus.
+   Analogous to Docker Desktop / Colima / Lima. Its single Linux kernel is shared by L2 and
+   L3 — the nesting below is *containerization*, not nested virtualization. See
    [architecture/vm.md](architecture/vm.md).
 
 2. **L2 — System containers (LLMSC)** — unprivileged Incus/LXC system containers: the

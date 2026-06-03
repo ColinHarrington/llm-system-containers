@@ -35,21 +35,28 @@ reading several docs in `planning/`:
 
 ```
 Host (Linux/macOS)            your computer; llmsc/llmsctl installed here
-└── L1: VM (llmsc-vm) ........ host-native VM running Incus, nested virt enabled
-    └── L2: system container . the LLMSC — agent/human workspace, run as a "sandbox"
-        └── L3: app container  Docker/Podman nested inside an L2 container
+└── L1: VM (llmsc-vm) ........ host-native VM running Incus; one shared kernel
+    └── L2: system container . unprivileged LLMSC — agent/human workspace, run as a "sandbox"
+        └── L3: app container  rootless Docker/Podman nested inside an L2 container
 ```
 
+The L1→L2→L3 nesting is **containerization** (one shared kernel), NOT nested virtualization.
+Everything is **unprivileged/rootless** — privileged containers are never used (security
+posture). Don't reintroduce "nested virtualization" wording for the core stack; true nested
+virt only applies to the rare VM-in-sandbox case.
+
 - **L1 — VM** (`planning/architecture/vm.md`): a host-native VM (Docker-Desktop/Colima
-  analogue) running Incus, nested virt enabled. VM backend is a **pluggable driver
-  abstraction** (docker-machine-style); MVP uses **Lima** on both platforms (Linux:
-  QEMU+KVM; macOS: Apple Virtualization/QEMU). Future: Parallels, libvirt, Proxmox.
+  analogue) running Incus. VM backend is a **pluggable driver abstraction**
+  (docker-machine-style); MVP uses **Lima** on both platforms (Linux: QEMU+KVM; macOS: Apple
+  Virtualization/QEMU). Future: Parallels, libvirt, Proxmox.
 - **L2 — System containers / LLMSC** (`planning/architecture/system-containers.md`):
-  unprivileged Incus/LXC system containers with a **two-user model** (one Linux user per
-  agent + one human operator login). The workspace units, run as sandboxes.
-- **L3 — App containers** (`planning/architecture/app-containers.md`): nested rootless
-  Docker/Podman inside an L2 container. **Key differentiator** — real container workflows
-  without privileged DinD and without breaking the security backstops.
+  **unprivileged** Incus/LXC system containers (never privileged) with a **two-user model**
+  (one Linux user per agent + one human operator login). The workspace units, run as
+  sandboxes.
+- **L3 — App containers** (`planning/architecture/app-containers.md`): **rootless**
+  Docker/Podman nested inside an L2 container via `security.nesting`. **Key differentiator** —
+  real container workflows without privileged DinD and without breaking the security
+  backstops.
 - **Services** (`planning/services/README.md`) are NOT a layer: each runs either directly in
   the L1 VM or in its own L2 container — an isolation choice, not a nesting level.
 

@@ -27,7 +27,7 @@ platform). Target platforms: **Linux and macOS**.
 - [naming.md](naming.md) — Project/unit names, the `llmsc`/`llmsctl` CLI split, and rationale
 - [overview.md](overview.md) — Vision, differentiators, software-factory framing, the Host/L1/L2/L3 nesting model
 - **architecture/** (layers = nesting levels)
-  - [vm.md](architecture/vm.md) — L1: the VM, Incus, nested virtualization, VM driver abstraction
+  - [vm.md](architecture/vm.md) — L1: the VM, Incus, nested containerization, VM driver abstraction
   - [system-containers.md](architecture/system-containers.md) — L2: the LLMSC — user model, GUI/X-forwarding, workspace mounts
   - [app-containers.md](architecture/app-containers.md) — L3: nested Docker/Podman (key differentiator)
 - [security-model.md](security-model.md) — Defense-in-depth, Tetragon, network + workspace controls
