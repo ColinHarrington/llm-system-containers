@@ -90,9 +90,13 @@ core logic is unit-testable with fakes.
 ## MVP cut line
 
 Per [mvp.md](mvp.md): **M0 → M1 → M2 → M5 (LiteLLM + observability) → a basic GUI
-(status + wizard) from M8.** Strong candidates to pull into MVP given they're core
-differentiators/requirements: **M3 (L3 nesting)** and **M4 (networking/SSH)**. Post-MVP:
-M6 (storage/cp), M7 (profiles/guardrails), full GUI.
+(status + wizard) from M8.**
+
+**Deferred (decided):**
+- **M3 (L3 nesting)** — the *capability* is already spike-proven; as a product feature it's
+  explored/hardened **once the base system is functional**, not in the MVP.
+- **M4 (networking/SSH)** — deferred (validate with the proper host-reachable mechanism later).
+- M6 (storage/cp), M7 (profiles/guardrails), full GUI — post-MVP.
 
 ## Recommended first slice
 
@@ -104,5 +108,5 @@ sandbox" demo.
 ## Open items
 
 - Reconcile/drift model specifics ([tech-stack.md](tech-stack.md)).
-- Whether M3/M4 are inside the MVP cut.
 - CI runners for integration (Linux now; macOS/self-hosted for networking + nested e2e).
+- License + top-level README before first code lands (MIT/Apache-2.0 dual is the Rust norm).

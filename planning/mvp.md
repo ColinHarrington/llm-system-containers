@@ -42,9 +42,8 @@ get a working, observable, credential-isolated sandbox for an agent.
 
 - Where the line sits between MVP and the first "Core" follow-up (likely shared storage +
   network inspection + early Tetragon policy).
-- Whether the **nested Docker/Podman (L3) capability** — the headline differentiator
-  ([architecture/app-containers.md](architecture/app-containers.md)) — belongs in the MVP or
-  the first follow-up. Strong case for MVP given it's the core differentiator. (Decided
-  separately: **GUI visualization** of L3 is *not* a priority now — future plugin. See
-  [interfaces.md](interfaces.md).)
+- **Nested Docker/Podman (L3)** — **decided: not in the MVP.** The capability is already
+  spike-proven ([spike-plan.md](spike-plan.md)); it's explored/hardened as a product feature
+  *once the base system is functional* (see [buildout.md](buildout.md) M3). GUI visualization of
+  L3 is also deferred (future plugin, see [interfaces.md](interfaces.md)).
 - Whether GUI or CLI lands first.
