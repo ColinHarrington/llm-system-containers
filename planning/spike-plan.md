@@ -125,7 +125,7 @@ the resolver setup). **Pass:** core results hold on both, with deviations docume
 | 0 VM + Incus | ✅ PASS | ☐ | Lima `template://default` (Ubuntu 24.04) + Incus 6.0.0 via apt |
 | 1 L2 + users | ✅ PASS | ☐ | unprivileged; subuid/subgid auto (165536:65536); **"operator" collides with the Ubuntu system group — needs explicit `-g`** |
 | 2 rootless L3 ⭐ | ✅ PASS | ☐ | **see finding below**; storage driver = overlay (fuse-overlayfs) |
-| 3 routable + DNS + SSH ⭐ | ⚠ BLOCKED | ☐ | **default Lima net is user-mode NAT — no host route; see finding** |
+| 3 routable + DNS + SSH ⭐ | ⏸ DEFERRED | ☐ | default Lima net is user-mode NAT; validate with the *product* mechanism (socket_vmnet/bridge) later — see finding |
 | 4 service `:22` | ☐ | ☐ | |
 | 5 cross-platform delta | ☐ | ☐ | |
 
@@ -155,10 +155,17 @@ cannot work as-is. A **host-reachable VM network** is required first. Options:
   route the container subnet over the tunnel. This doubles as the eventual multi-host/remote
   story ([architecture/networking.md](architecture/networking.md)).
 
-VM-side prep already done: `incusbr0 dns.domain=llmsc`, sshd enabled in the container, host
-pubkey installed for `operator` + `agent-claude`. Remaining is purely the host-reachable
-transport (the sudo/host bits).
+VM-side prep left in place: `incusbr0 dns.domain=llmsc`, sshd enabled in the container, host
+pubkey installed for `operator` + `agent-claude`.
 
-**Decision after spike:** L1/L2/L3 core (phases 0–2) is **proven on Linux**. Phase 3 needs a
-host-reachable network; pick socket_vmnet (mac) / bridge (linux) / WireGuard (cross-platform)
-and re-run. Passing steps become CI integration tests ([testing.md](testing.md)).
+**Phase 3 is DEFERRED.** Important clarification: a WireGuard tunnel was briefly used during the
+spike *only as a shortcut to beat Lima's user-mode NAT on a Linux host* — it was torn down and
+is **not** the product's local-connectivity mechanism. The product design uses **routable
+container IPs via a host-reachable VM network** — `socket_vmnet` shared net on **macOS** (the
+primary target, and the turnkey path), or a bridge on Linux ([architecture/networking.md](architecture/networking.md));
+WireGuard is reserved for the **future remote/multi-host** story. Validate Phase 3 later with
+that mechanism — ideally on macOS where `socket_vmnet` is well-supported.
+
+**Decision after spike:** the **L1/L2/L3 core (phases 0–2) is proven on Linux** — the headline
+differentiator holds. Networking (Phase 3) is deferred to the proper host-reachable mechanism.
+Passing steps become CI integration tests ([testing.md](testing.md)).
