@@ -65,6 +65,14 @@ Red-green TDD with a test plan per feature; Rust `cargo test` + CLI black-box te
 **Vitest** + Testing Library, **Playwright** e2e, and infra proven by spikes → CI integration
 tests. See [testing.md](testing.md).
 
+## Bootstrapping & operational scripts
+
+**Product code is Rust; bootstrapping/automation is `uv` Python.** Operational glue (spike
+runner, environment bootstrap) is written as **`uv` single-file scripts** (PEP 723 inline
+metadata) — self-contained, cross-platform, run with `uv run`, no venv setup. Lives in
+`scripts/` (see `scripts/README.md`). The first one is `scripts/spike.py`
+([spike-plan.md](spike-plan.md)).
+
 ## Distribution
 
 - Static binaries for `llmsc` / `llmsctl`, cross-compiled (Linux/macOS, x86_64/aarch64).

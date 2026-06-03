@@ -21,6 +21,11 @@ explicit **pass/fail** criterion, and passing steps become CI integration tests 
 > starting points — expect to adjust, especially Phase 3 on macOS. Note exact deviations in
 > Findings.
 
+> **Automated runner:** these phases are scripted in **[`scripts/spike.py`](../scripts/spike.py)**
+> (a `uv` single-file script). Run `uv run scripts/spike.py all` (or a single `phaseN`); it
+> reports per-step pass/fail and prints the manual sudo/host commands for Phase 3/4. The commands
+> below document what it does.
+
 ---
 
 ## Phase 0 — VM with Incus

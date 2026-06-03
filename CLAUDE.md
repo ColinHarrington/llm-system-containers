@@ -23,6 +23,10 @@ feature ships a test plan.** Tooling: Rust `cargo test` + CLI black-box tests (`
 Library; **Playwright** e2e; infra assumptions proven via spikes (`planning/spike-plan.md`)
 then locked as CI integration tests.
 
+**Bootstrapping/operational scripts are `uv` single-file Python** (PEP 723 inline metadata, run
+with `uv run`), in `scripts/` — product code is Rust, but operational glue is `uv` Python. Keep
+each script self-contained (inline deps, no sibling imports). See `scripts/spike.py`.
+
 ## What this project is
 
 **llm-system-containers** is an open-source platform/tool that enables **LLM System
