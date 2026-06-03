@@ -10,4 +10,5 @@ pub mod error;
 pub mod incus;
 pub mod process;
 pub mod progress;
+pub mod reconcile;
 pub mod vm;

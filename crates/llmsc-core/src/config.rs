@@ -2,7 +2,9 @@
 //!
 //! Both the CLIs and the GUI read/write this. See `planning/tech-stack.md`.
 
+use crate::error::Error;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// Top-level llmsc configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -72,6 +74,42 @@ impl Config {
     pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
         toml::to_string_pretty(self)
     }
+
+    /// Read and parse a config file.
+    pub fn load(path: &Path) -> crate::error::Result<Self> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| Error::Config(format!("reading {}: {e}", path.display())))?;
+        Self::from_toml(&text)
+            .map_err(|e| Error::Config(format!("parsing {}: {e}", path.display())))
+    }
+
+    /// The effective config: project (`./llmsc.toml`) if present, else user
+    /// (`$XDG_CONFIG_HOME/llmsc/config.toml`) if present, else defaults.
+    pub fn load_effective() -> crate::error::Result<Self> {
+        let project = project_config_path();
+        if project.exists() {
+            return Self::load(&project);
+        }
+        let user = user_config_path();
+        if user.exists() {
+            return Self::load(&user);
+        }
+        Ok(Self::default())
+    }
+}
+
+/// Per-project config path (`./llmsc.toml`).
+pub fn project_config_path() -> PathBuf {
+    PathBuf::from("llmsc.toml")
+}
+
+/// User/global config path (`$XDG_CONFIG_HOME/llmsc/config.toml`, falling back to `~/.config`).
+pub fn user_config_path() -> PathBuf {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .unwrap_or_else(|| PathBuf::from(".config"));
+    base.join("llmsc").join("config.toml")
 }
 
 impl Default for VmConfig {
@@ -170,6 +208,15 @@ mod tests {
     #[test]
     fn toml_snapshot() {
         insta::assert_snapshot!(sample().to_toml().unwrap());
+    }
+
+    #[test]
+    fn load_reads_a_file() {
+        let path = std::env::temp_dir().join(format!("llmsc-cfg-test-{}.toml", std::process::id()));
+        std::fs::write(&path, sample().to_toml().unwrap()).unwrap();
+        let loaded = Config::load(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(loaded, sample());
     }
 
     use proptest::prelude::*;

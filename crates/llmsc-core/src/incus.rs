@@ -30,6 +30,8 @@ pub trait IncusClient {
     /// creating its users per the spec.
     fn launch(&self, spec: &Sandbox, reporter: &dyn Reporter) -> Result<()>;
     fn delete(&self, name: &str) -> Result<()>;
+    /// Open an interactive shell in the sandbox as `user`; returns the shell's exit code.
+    fn shell(&self, user: &str, name: &str) -> Result<i32>;
 }
 
 /// In-memory fake for unit tests.
@@ -72,6 +74,9 @@ impl IncusClient for FakeIncus {
             return Err(Error::NotFound(name.to_string()));
         }
         Ok(())
+    }
+    fn shell(&self, _user: &str, _name: &str) -> Result<i32> {
+        Ok(0)
     }
 }
 
@@ -185,6 +190,11 @@ impl<R: CommandRunner> IncusClient for CliIncus<'_, R> {
         }
         Ok(())
     }
+
+    fn shell(&self, user: &str, name: &str) -> Result<i32> {
+        // `-t` forces a pseudo-terminal; limactl shell passes our stdio through for interactivity.
+        self.incus_streamed(&["exec", "-t", name, "--", "su", "-", user])
+    }
 }
 
 #[cfg(test)]
@@ -295,5 +305,17 @@ mod cli_tests {
         let r = FakeRunner::new(|_, _| out(0, ""));
         CliIncus::new("llmsc", &r).delete("web-agent-01").unwrap();
         assert!(r.called_with("delete"));
+    }
+
+    #[test]
+    fn shell_execs_su_as_user() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        CliIncus::new("llmsc", &r)
+            .shell("agent-claude", "web-agent-01")
+            .unwrap();
+        assert!(r.called_with("exec"));
+        assert!(r.called_with("su"));
+        assert!(r.called_with("agent-claude"));
+        assert!(r.called_with("web-agent-01"));
     }
 }

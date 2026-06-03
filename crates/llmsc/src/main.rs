@@ -8,6 +8,7 @@ use llmsc_core::config::{Config, Sandbox};
 use llmsc_core::incus::{CliIncus, IncusClient};
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
+use llmsc_core::reconcile::reconcile;
 
 /// Prints each step to stderr so progress shows during long operations (e.g. image pulls).
 struct ConsoleReporter;
@@ -46,6 +47,8 @@ enum Command {
     Cp { src: String, dst: String },
     /// Remove a sandbox.
     Rm { name: String },
+    /// Reconcile declared sandboxes (from llmsc.toml) into Incus.
+    Apply,
 }
 
 fn vm_name() -> String {
@@ -85,7 +88,22 @@ fn run() -> Result<(), String> {
             incus.delete(&name).map_err(|e| e.to_string())?;
             println!("sandbox '{name}' removed");
         }
-        Command::Shell { target } => println!("shell {target}: not yet implemented (M2 follow-up)"),
+        Command::Shell { target } => {
+            let (user, sandbox) = target
+                .split_once('@')
+                .ok_or_else(|| format!("target must be user@sandbox (got '{target}')"))?;
+            let code = incus.shell(user, sandbox).map_err(|e| e.to_string())?;
+            std::process::exit(code);
+        }
+        Command::Apply => {
+            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+            let report = reconcile(&cfg, &incus, &ConsoleReporter).map_err(|e| e.to_string())?;
+            println!("created:  {:?}", report.created);
+            println!("existing: {:?}", report.existing);
+            if !report.extra.is_empty() {
+                println!("drift (in Incus, not in config): {:?}", report.extra);
+            }
+        }
         Command::Cp { src, dst } => println!("cp {src} -> {dst}: not yet implemented (M6)"),
     }
     Ok(())
