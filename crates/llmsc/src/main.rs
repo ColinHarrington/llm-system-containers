@@ -1,7 +1,22 @@
 //! `llmsc` — manage individual LLM System Containers (L2 sandboxes).
-//! Skeleton (M0); behavior arrives in M2 (lifecycle) and M6 (cp).
+//!
+//! M2: launch/ls/rm drive Incus (in the VM) via `llmsc-core`. shell (M2 follow-up) and cp (M6)
+//! are still stubs.
 
 use clap::{Parser, Subcommand};
+use llmsc_core::config::{Config, Sandbox};
+use llmsc_core::incus::{CliIncus, IncusClient};
+use llmsc_core::process::SystemRunner;
+use llmsc_core::progress::Reporter;
+
+/// Prints each step to stderr so progress shows during long operations (e.g. image pulls).
+struct ConsoleReporter;
+
+impl Reporter for ConsoleReporter {
+    fn step(&self, msg: &str) {
+        eprintln!("→ {msg}");
+    }
+}
 
 #[derive(Parser)]
 #[command(
@@ -17,7 +32,12 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Create and start a sandbox.
-    Launch { name: String },
+    Launch {
+        name: String,
+        /// Base image (Incus image ref).
+        #[arg(long, default_value = "images:debian/13")]
+        image: String,
+    },
     /// List sandboxes.
     Ls,
     /// Open a shell as `user@sandbox`.
@@ -28,12 +48,52 @@ enum Command {
     Rm { name: String },
 }
 
-fn main() {
+fn vm_name() -> String {
+    // M2 follow-up will load this from the on-disk config.
+    Config::default().vm.name
+}
+
+fn run() -> Result<(), String> {
+    let runner = SystemRunner;
+    let vm = vm_name();
+    let incus = CliIncus::new(vm, &runner);
+
     match Cli::parse().command {
-        Command::Launch { name } => println!("launch {name}: not yet implemented (M2)"),
-        Command::Ls => println!("ls: not yet implemented (M2)"),
-        Command::Shell { target } => println!("shell {target}: not yet implemented (M2)"),
+        Command::Launch { name, image } => {
+            let spec = Sandbox {
+                name: name.clone(),
+                image,
+                nesting: false,
+                users: Vec::new(),
+            };
+            incus
+                .launch(&spec, &ConsoleReporter)
+                .map_err(|e| e.to_string())?;
+            println!("sandbox '{name}' launched");
+        }
+        Command::Ls => {
+            let items = incus.list().map_err(|e| e.to_string())?;
+            if items.is_empty() {
+                println!("(no sandboxes)");
+            } else {
+                for i in items {
+                    println!("{:<24} {:?}", i.name, i.status);
+                }
+            }
+        }
+        Command::Rm { name } => {
+            incus.delete(&name).map_err(|e| e.to_string())?;
+            println!("sandbox '{name}' removed");
+        }
+        Command::Shell { target } => println!("shell {target}: not yet implemented (M2 follow-up)"),
         Command::Cp { src, dst } => println!("cp {src} -> {dst}: not yet implemented (M6)"),
-        Command::Rm { name } => println!("rm {name}: not yet implemented (M2)"),
+    }
+    Ok(())
+}
+
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("error: {e}");
+        std::process::exit(1);
     }
 }

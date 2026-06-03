@@ -18,9 +18,11 @@ fn help_lists_subcommands() {
 }
 
 #[test]
-fn ls_runs() {
+fn cp_is_stub() {
+    // launch/ls/rm now do real I/O (Incus in the VM); cp is still a stub, so it's the
+    // deterministic command to smoke-test here.
     llmsc()
-        .arg("ls")
+        .args(["cp", "a", "b"])
         .assert()
         .success()
         .stdout(contains("not yet implemented"));
