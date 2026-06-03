@@ -123,9 +123,9 @@ the resolver setup). **Pass:** core results hold on both, with deviations docume
 | Phase | Linux | macOS (Apple Silicon) | Notes / blockers |
 |---|---|---|---|
 | 0 VM + Incus | ✅ PASS | ☐ | Lima `template://default` (Ubuntu 24.04) + Incus 6.0.0 via apt |
-| 1 L2 + users | ✅ PASS | ☐ | unprivileged; `useradd` auto-adds subuid/subgid (165536:65536) |
+| 1 L2 + users | ✅ PASS | ☐ | unprivileged; subuid/subgid auto (165536:65536); **"operator" collides with the Ubuntu system group — needs explicit `-g`** |
 | 2 rootless L3 ⭐ | ✅ PASS | ☐ | **see finding below**; storage driver = overlay (fuse-overlayfs) |
-| 3 routable + DNS + SSH ⭐ | ☐ | ☐ | |
+| 3 routable + DNS + SSH ⭐ | ⚠ BLOCKED | ☐ | **default Lima net is user-mode NAT — no host route; see finding** |
 | 4 service `:22` | ☐ | ☐ | |
 | 5 cross-platform delta | ☐ | ☐ | |
 
@@ -139,6 +139,26 @@ restriction otherwise blocks the nested user namespace → `cannot clone: Permis
 `podman uidmap slirp4netns fuse-overlayfs`. This is now automated in `scripts/spike.py` phase2
 and is a **VM-bootstrap requirement** (see [architecture/app-containers.md](architecture/app-containers.md)).
 
-**Decision after spike:** which assumptions held, what needs a different approach (e.g.
-overlay/WireGuard if host-route routing is too painful on macOS), and which steps become CI
-integration tests ([testing.md](testing.md)).
+### Recorded finding — Phase 3 (Linux): default Lima networking can't route
+
+The Lima VM is on **user-mode NAT** (`eth0 = 192.168.5.15/24`, gateway `192.168.5.2`); the host
+reaches it only via the forwarded SSH port (`127.0.0.1:<port>`). **The host has no route to the
+VM or to the container subnet (`10.173.135.0/24`)**, so routable-IP + `.llmsc` DNS + SSH-by-name
+cannot work as-is. A **host-reachable VM network** is required first. Options:
+
+- **macOS — `socket_vmnet` shared network** (most turnkey on the primary target): `brew install
+  socket_vmnet`, add a Lima `shared` network; the VM gets a host-routable IP, then add a host
+  route to `10.173.135.0/24` via it.
+- **Linux — bridged Lima network** (a tap on a host bridge), or
+- **WireGuard overlay (cross-platform, no VM recreate)** — beats the NAT by having the **host
+  listen** and the **VM dial out** (the VM can reach the host via `host.lima.internal`), then
+  route the container subnet over the tunnel. This doubles as the eventual multi-host/remote
+  story ([architecture/networking.md](architecture/networking.md)).
+
+VM-side prep already done: `incusbr0 dns.domain=llmsc`, sshd enabled in the container, host
+pubkey installed for `operator` + `agent-claude`. Remaining is purely the host-reachable
+transport (the sudo/host bits).
+
+**Decision after spike:** L1/L2/L3 core (phases 0–2) is **proven on Linux**. Phase 3 needs a
+host-reachable network; pick socket_vmnet (mac) / bridge (linux) / WireGuard (cross-platform)
+and re-run. Passing steps become CI integration tests ([testing.md](testing.md)).

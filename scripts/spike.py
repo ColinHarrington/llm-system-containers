@@ -132,7 +132,11 @@ def phase1(cfg: Cfg, r: Results) -> None:
     prc, priv = incus(cfg, f"config get {cfg.container} security.privileged", quiet=True)
     unpriv = prc == 0 and priv.strip() in ("", "false")
     for u in (cfg.operator, cfg.agent):
-        incus(cfg, f"exec {cfg.container} -- useradd -m -s /bin/bash {u} 2>/dev/null || true", quiet=True)
+        # NB: "operator" collides with Ubuntu's system group of the same name, so the default
+        # per-user-group useradd fails — fall back to an explicit primary group.
+        incus(cfg, f"exec {cfg.container} -- bash -lc "
+                   + shlex.quote(f"id {u} 2>/dev/null || useradd -m -s /bin/bash {u} || "
+                                 f"useradd -m -s /bin/bash -g users {u}"), quiet=True)
     rc, _ = incus(cfg, f"exec {cfg.container} -- id {cfg.agent}", quiet=True)
     ok = unpriv and rc == 0
     note = ("unprivileged + users present" if ok

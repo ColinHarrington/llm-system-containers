@@ -77,10 +77,18 @@ DNS, and SSH-in. Replicating it for Incus system containers is well-trodden grou
 future real-TLD collision is a concern: `.llmsc.test` (`.test` is reserved by RFC 6761) or a
 `.internal` suffix. Leaning **`.llmsc`** with this caveat noted.
 
+## Spike finding (Linux)
+
+The **default Lima network is user-mode NAT** — the host has no route to the VM or the container
+subnet, so routable addressing needs a **host-reachable VM network first**: `socket_vmnet`
+shared net (macOS, turnkey), a bridged Lima net (Linux), or a **WireGuard overlay**
+(cross-platform; host listens, VM dials out via `host.lima.internal` to beat the NAT — also the
+multi-host/remote story). See [../spike-plan.md](../spike-plan.md).
+
 ## Open items
 
-- Exact mechanism to make the container subnet routable per VM driver (Lima vmnet/socket_vmnet
-  on macOS; bridge/route on Linux) — **validate in the de-risking spike**.
+- Pick the default host-reachable transport per VM driver (socket_vmnet / bridge / WireGuard) —
+  partially explored in the spike; macOS `socket_vmnet` still to validate.
 - Subnet selection that avoids clashing with common host LAN ranges.
 - IPv4 vs dual-stack; whether services get stable IPs vs DNS-only.
 - DNS source of truth: Incus dnsmasq `dns.domain` vs a dedicated CoreDNS (aliases, service
