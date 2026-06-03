@@ -40,13 +40,15 @@ Both interfaces should sit on a common control plane / API so behavior stays con
 so the CLI can drive everything the GUI can. This is where the **interrupt/steer** agent
 operations live.
 
-## Open items (tech stack — undecided)
+## Tech stack (see [tech-stack.md](tech-stack.md))
 
-These are tracked in [open-questions.md](open-questions.md):
+- **Rust** core: a shared **`llmsc-core`** crate that the CLIs and the **Tauri** GUI all link —
+  so the CLI is fully capable standalone and GUI/CLI stay at parity.
+- **Config is declarative on-disk** (TOML), the single source of intent shared by CLI and GUI.
+- **Incus is the runtime source of truth** (managed in its own Incus project); config is desired
+  state reconciled to it, and raw `incus` stays usable a layer beneath.
+- **Library-first; daemon deferred** — live features stream from the Incus events API +
+  Phoenix/Loki.
 
-- GUI framework / language (e.g. Tauri, Electron, native, etc.).
-- CLI language (likely aligned with the provisioning layer; Go pairs naturally with
-  Lima/Incus). Command names are decided (`llmsc`, `llmsctl`); the implementation language
-  is not.
-- Control-plane API shape (local daemon? library? REST/gRPC?).
-- How the GUI/CLI talk to Lima, Incus, and the services inside the VM.
+Remaining preference choices (config TOML vs YAML; React vs Svelte) are in
+[tech-stack.md](tech-stack.md) / [open-questions.md](open-questions.md).

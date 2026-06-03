@@ -43,12 +43,14 @@ platform). Target platforms: **Linux and macOS**.
 - [file-transfer.md](file-transfer.md) — `llmsc cp` and moving files host↔container, container↔container
 - [custom-images.md](custom-images.md) — Custom image building + internal registry
 - [interfaces.md](interfaces.md) — GUI app + CLI
+- [tech-stack.md](tech-stack.md) — Rust core, Tauri GUI, declarative config, Incus-as-truth
 - [mvp.md](mvp.md) — The MVP path, scoped
 - [open-questions.md](open-questions.md) — Naming, plugin interfaces, tech-stack decisions
 
 ## Status
 
-Early design / brainstorming. No code yet. Tech-stack choices for the GUI app, CLI, and
-provisioning layer are **undecided** — tracked in [open-questions.md](open-questions.md).
-This document set is the umbrella; individual docs are expected to grow into their own
-layered plans.
+Early design / brainstorming. No code yet. **Tech stack is largely chosen** — Rust core
+(`llmsc-core` crate), Tauri GUI, declarative on-disk config, Incus as runtime truth, CLI-first,
+daemon deferred (see [tech-stack.md](tech-stack.md)); a few preference details remain in
+[open-questions.md](open-questions.md). This document set is the umbrella; individual docs are
+expected to grow into their own layered plans.

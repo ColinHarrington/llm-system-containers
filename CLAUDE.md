@@ -5,11 +5,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project status
 
 **Planning stage — no code yet.** The repository currently contains only design/planning
-documents under `planning/`. There is no build system, test suite, lint config, or
-application code. Do not invent build/test commands; there are none to run. Tech-stack
-choices (GUI framework, CLI language, provisioning layer) are deliberately **undecided** and
-tracked in `planning/open-questions.md` — do not assume a language or framework until those
-are resolved.
+documents under `planning/` (plus GUI `mockups/`). There is no build system, test suite, lint
+config, or application code. Do not invent build/test commands; there are none to run.
+
+**Tech stack is chosen** (see `planning/tech-stack.md`): **Rust** core in a shared
+**`llmsc-core`** crate that the CLIs (`llmsc`, `llmsctl`) and the **Tauri** GUI all link;
+**CLI-first** (the CLI is fully capable standalone); **declarative on-disk config** (TOML
+leaning) shared by CLI and GUI; **Incus is the runtime source of truth** (managed in its own
+Incus project, raw `incus` always usable) with config reconciled to it; **library-first, daemon
+deferred**. Incus is reached via its **REST API**; Lima via **`limactl`**. A few preference
+details (config TOML vs YAML, React vs Svelte) remain open in `planning/open-questions.md`.
 
 ## What this project is
 

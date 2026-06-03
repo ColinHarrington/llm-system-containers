@@ -9,11 +9,15 @@ Loose ends to resolve in dedicated sessions. This is the umbrella project's "par
   name. Layer model: **Host → L1 VM → L2 system container → L3 app container**. See
   [naming.md](naming.md).
 
-## Tech stack (undecided)
-- **GUI app** framework/language (Tauri, Electron, native, …).
-- **CLI** language — Go pairs naturally with Lima/Incus tooling; not yet decided.
-- **Provisioning layer** language and how it drives Lima/Incus.
-- **Control-plane API** shape — local daemon vs. library; REST/gRPC.
+## Tech stack (mostly resolved — see [tech-stack.md](tech-stack.md))
+- ✅ **Language: Rust**; shared **`llmsc-core`** crate; CLI-first (CLI fully capable).
+- ✅ **GUI: Tauri** (Rust + webview, reuses mockups).
+- ✅ **Config: declarative on-disk** (TOML leaning), shared by CLI & GUI.
+- ✅ **Incus = runtime truth** in its own Incus project; reconcile config → Incus; raw `incus`
+  always usable.
+- ✅ **Library-first; daemon deferred.**
+- ⬜ Remaining: config format (TOML vs YAML); frontend (React vs Svelte); reconcile/drift model;
+  Rust↔Incus client (crate vs hand-rolled); when the optional daemon is warranted.
 
 ## Architecture / design
 - **Service plugin interface** — packaging, lifecycle, config schema, health/status
