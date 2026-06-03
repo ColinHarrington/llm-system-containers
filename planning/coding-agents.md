@@ -144,8 +144,36 @@ The sandbox sees only its virtual key and the model response — never the real 
   "Bearer <oauth-token>" }` on the proxy model, or a thin forwarding shim in `svc-litellm`. Plus
   the ToS gray area for proxying one subscription across many agents.
 - **Bottom line:** the no-token-in-sandbox architecture is clean and works **today with an API
-  key**. Doing it with your **subscription** needs a confirmed LiteLLM mechanism (test
-  `extra_headers`) or a small shim — see open items.
+  key**. For a **subscription**, the missing "proxy-held" piece appears to be solvable with a
+  dedicated component — see below.
+
+### Subscription with token-out-of-sandbox: CLIProxyAPI (candidate)
+
+[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) is a standalone Go daemon that
+**does the Claude subscription OAuth itself and stores the token server-side**
+(`--claude-login` / `--no-browser`; token in `~/.cli-proxy-api/`), then **exposes an
+OpenAI-compatible API** (`:8317/v1`) that clients call with a **separate local key** — never the
+subscription token (source:
+https://rogs.me/2026/02/use-your-claude-max-subscription-as-an-api-with-cliproxyapi/ ; repo:
+https://github.com/router-for-me/CLIProxyAPI).
+
+Run it in its **own service container** (`svc-cliproxy`, not a sandbox) and front it with LiteLLM:
+
+```
+Claude Code (sandbox, virtual key) → svc-litellm (budgets/tracing) → svc-cliproxy (subscription token) → Anthropic
+```
+
+LiteLLM points its upstream at `http://svc-cliproxy:8317/v1` (OpenAI-compatible). The subscription
+token lives **only in `svc-cliproxy`**; sandboxes hold only virtual keys → satisfies the firm
+rule, while keeping LiteLLM's per-agent virtual keys / budgets / Phoenix tracing.
+
+**Caveats (must address before relying on it):**
+- Third-party tool holding a high-value subscription token — same trust class as LiteLLM (cf. the
+  1.82.7/1.82.8 malware). **Vet + pin** it; isolate `svc-cliproxy` with egress only to Anthropic.
+- **ToS gray area** — proxying a Max subscription as a general API is less clearly sanctioned than
+  the official `claude setup-token`. Deliberate decision required.
+- Sourced from a **blog post (via summarizer)**; the repo is the primary source and is **not yet
+  verified** here — confirm mechanics, maintenance, and trust before adoption.
 
 ## Installing agents into a sandbox
 
@@ -181,10 +209,12 @@ warrant a Debian-based sandbox image instead — the base image is per-sandbox c
 
 ## Open items
 
-- **Subscription with token-out-of-sandbox:** confirm/implement a proxy-held subscription OAuth
-  token (test `extra_headers: Authorization: Bearer <oauth>` on the proxy model, or a forwarding
-  shim in `svc-litellm`). BYOK + max_subscription both *forward the client token* (token in
-  sandbox), which the owner has ruled out — so this needs solving for the subscription path.
+- **Subscription with token-out-of-sandbox:** strongest candidate is **CLIProxyAPI** in its own
+  service container (holds the subscription token server-side; OpenAI-compatible API; clients use
+  a separate key) fronted by LiteLLM — see the section above. **To do:** verify the repo
+  (router-for-me/CLIProxyAPI) mechanics/trust, decide on the ToS gray area, and add a deployer +
+  locked-down egress for `svc-cliproxy`. (The LiteLLM-only `extra_headers`/shim idea is a fallback;
+  BYOK + max_subscription both forward the client token, which the owner ruled out.)
 - ✅ LiteLLM version **pinned** (1.87.0) in the deployer.
 - Implement the **forced-egress** network policy (default-deny except `svc-litellm`) + the
   proxy-held `api_key` config + virtual-key minting in the deployer (currently placeholder config).
