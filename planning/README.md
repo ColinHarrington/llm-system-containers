@@ -33,6 +33,8 @@ platform). Target platforms: **Linux and macOS**.
   - [networking.md](architecture/networking.md) — Addressing, split-horizon `.llmsc` DNS, host↔container routing, SSH
 - [security-model.md](security-model.md) — Defense-in-depth, Tetragon, network + workspace controls
 - [agent-profiles.md](agent-profiles.md) — Reusable permission bundles (researcher/tester/builder/validation/orchestrator)
+- [coding-agents.md](coding-agents.md) — Running Claude Code / Pi / Codex / Aider / … via the LiteLLM gateway; credentialing modes
+- [research/litellm-claude-subscription.md](research/litellm-claude-subscription.md) — Can a Claude subscription back LiteLLM? (cited research)
 - **services/** — shared infra; may run in L1 or in their own L2 container
   - [README.md](services/README.md) — Catalog, plugin model, L1-vs-L2 placement choice
   - [llm-proxy.md](services/llm-proxy.md) — LiteLLM, virtual keys
