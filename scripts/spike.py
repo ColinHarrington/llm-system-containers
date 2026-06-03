@@ -64,6 +64,19 @@ def incus(cfg: "Cfg", args: str, *, quiet: bool = False) -> tuple[int, str]:
     return vm(cfg, f"incus {args}", sudo=True, quiet=quiet)
 
 
+def vm_exists(cfg: "Cfg") -> bool:
+    _, out = sh("limactl list --format '{{.Name}}'", quiet=True)
+    return any(line.strip() == cfg.vm for line in out.splitlines())
+
+
+def require_vm(cfg: "Cfg", r: "Results", phase: str) -> bool:
+    """Guard: phases 1+ need the VM from phase 0."""
+    if not vm_exists(cfg):
+        r.add(phase, False, f"VM '{cfg.vm}' not found — run `uv run scripts/spike.py phase0` first")
+        return False
+    return True
+
+
 # --------------------------------------------------------------------------- result model
 @dataclass
 class Cfg:
@@ -97,9 +110,8 @@ class Results:
 # --------------------------------------------------------------------------- phases
 def phase0(cfg: Cfg, r: Results) -> None:
     console.rule("[bold]Phase 0 — VM with Incus")
-    rc, _ = sh(f"limactl list --format '{{{{.Name}}}}' | grep -qx {cfg.vm}", quiet=True)
-    if rc != 0:
-        sh(f"limactl start --name={cfg.vm} --cpus=4 --memory=8 --yes template://ubuntu-24.04")
+    if not vm_exists(cfg):
+        sh(f"limactl start --name={cfg.vm} --cpus=4 --memory=8 --tty=false template://default")
     # install + init incus (idempotent-ish)
     vm(cfg, "command -v incus >/dev/null || (sudo apt-get update && sudo apt-get install -y incus)")
     vm(cfg, "sudo incus admin init --minimal 2>/dev/null || true")
@@ -109,20 +121,30 @@ def phase0(cfg: Cfg, r: Results) -> None:
 
 def phase1(cfg: Cfg, r: Results) -> None:
     console.rule("[bold]Phase 1 — L2 unprivileged container + users")
+    if not require_vm(cfg, r, "1 L2 + users"):
+        return
     rc, _ = incus(cfg, f"info {cfg.container}", quiet=True)
     if rc != 0:
-        incus(cfg, f"launch images:ubuntu/24.04 {cfg.container}")
-    rc, priv = incus(cfg, f"config get {cfg.container} security.privileged", quiet=True)
-    unpriv = priv.strip() in ("", "false")
+        lrc, _ = incus(cfg, f"launch images:ubuntu/24.04 {cfg.container}")
+        if lrc != 0:
+            r.add("1 L2 + users", False, "incus launch failed — check Phase 0 (incus init) / image server")
+            return
+    prc, priv = incus(cfg, f"config get {cfg.container} security.privileged", quiet=True)
+    unpriv = prc == 0 and priv.strip() in ("", "false")
     for u in (cfg.operator, cfg.agent):
         incus(cfg, f"exec {cfg.container} -- useradd -m -s /bin/bash {u} 2>/dev/null || true", quiet=True)
     rc, _ = incus(cfg, f"exec {cfg.container} -- id {cfg.agent}", quiet=True)
-    r.add("1 L2 + users", unpriv and rc == 0,
-          "unprivileged + users present" if unpriv else "container is PRIVILEGED — investigate")
+    ok = unpriv and rc == 0
+    note = ("unprivileged + users present" if ok
+            else "config get failed (VM/container issue)" if prc != 0
+            else "container is PRIVILEGED — investigate")
+    r.add("1 L2 + users", ok, note)
 
 
 def phase2(cfg: Cfg, r: Results) -> None:
     console.rule("[bold]Phase 2 — rootless Podman inside unprivileged L2  ⭐")
+    if not require_vm(cfg, r, "2 rootless L3 ⭐"):
+        return
     incus(cfg, f"config set {cfg.container} security.nesting true")
     incus(cfg, f"exec {cfg.container} -- bash -lc 'command -v podman >/dev/null || "
                f"(apt-get update && apt-get install -y podman)'")
@@ -156,6 +178,8 @@ def _container_ip(cfg: Cfg) -> str | None:
 
 def phase3(cfg: Cfg, r: Results) -> None:
     console.rule("[bold]Phase 3 — routable IP + .llmsc DNS + SSH  ⭐ (host steps need sudo)")
+    if not require_vm(cfg, r, "3 routable + DNS + SSH ⭐"):
+        return
     incus(cfg, "network set incusbr0 ipv4.nat false")
     incus(cfg, "network set incusbr0 dns.domain llmsc")
     vm(cfg, "sudo sysctl -w net.ipv4.ip_forward=1", quiet=True)
@@ -193,6 +217,8 @@ def phase3(cfg: Cfg, r: Results) -> None:
 
 def phase4(cfg: Cfg, r: Results) -> None:
     console.rule("[bold]Phase 4 — service in its own L2 with routable :22 (Forgejo-shaped)")
+    if not require_vm(cfg, r, "4 service own :22"):
+        return
     rc, _ = incus(cfg, f"info {cfg.service}", quiet=True)
     if rc != 0:
         incus(cfg, f"launch images:ubuntu/24.04 {cfg.service}")
