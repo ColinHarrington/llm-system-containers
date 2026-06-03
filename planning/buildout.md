@@ -29,7 +29,7 @@ core logic is unit-testable with fakes.
 
 ## Milestones (dependency order)
 
-### M0 — Workspace + test harness + config model
+### M0 — Workspace + test harness + config model ✅ DONE
 - **Deliverables:** Cargo workspace (`llmsc-core`, `llmsc`, `llmsctl`); CI (fmt, clippy, test);
   TOML config model (serde); the `IncusClient` / `VmDriver` boundary traits + fakes.
 - **Tests (red-green):** TOML round-trip + `insta` snapshots + `proptest` invariants; CLI
