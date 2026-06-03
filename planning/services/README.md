@@ -38,7 +38,7 @@ hard-coded set, regardless of whether a given service lands in L1 or its own L2 
 | **LiteLLM** | LLM proxy — agents use virtual keys; real API/token creds never exposed | MVP | [llm-proxy.md](llm-proxy.md) |
 | **VictoriaMetrics + Loki + Grafana** | System metrics + log aggregation (memory-efficient) | MVP | [observability.md](observability.md) |
 | **Phoenix (Arize)** | LLM/agent observability — traces, evals, prompt inspection | MVP | [observability.md](observability.md) |
-| **SeaweedFS or RustFS** | Shared storage across host ↔ containers and container ↔ container | Core | [shared-storage.md](shared-storage.md) |
+| **SeaweedFS** | Durable, versioned, mountable storage for artifacts; shared host ↔ containers and container ↔ container | Core | [shared-storage.md](shared-storage.md) |
 | **mitmproxy + Zeek** | Network inspection / proxy / traffic capture | Core | [network-inspection.md](network-inspection.md) |
 | **Forgejo** | Internal git platform | Optional | [_future.md](_future.md) |
 | **NATS** | Agent-to-agent communication / message bus | Future | [_future.md](_future.md) |

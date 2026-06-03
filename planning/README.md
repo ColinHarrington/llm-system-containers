@@ -37,7 +37,7 @@ platform). Target platforms: **Linux and macOS**.
   - [README.md](services/README.md) — Catalog, plugin model, L1-vs-L2 placement choice
   - [llm-proxy.md](services/llm-proxy.md) — LiteLLM, virtual keys
   - [observability.md](services/observability.md) — VictoriaMetrics / Loki / Grafana + Phoenix
-  - [shared-storage.md](services/shared-storage.md) — SeaweedFS / RustFS
+  - [shared-storage.md](services/shared-storage.md) — SeaweedFS: durable, versioned, mountable storage
   - [network-inspection.md](services/network-inspection.md) — mitmproxy + Zeek
   - [_future.md](services/_future.md) — Forgejo, NATS, openclaw
 - [file-transfer.md](file-transfer.md) — `llmsc cp` and moving files host↔container, container↔container

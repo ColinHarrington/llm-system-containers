@@ -13,7 +13,7 @@ utility** so users don't have to know which transport to reach for.
 | Mechanism | Best for | Notes |
 |---|---|---|
 | **SSH + `.llmsc` DNS** ([architecture/networking.md](architecture/networking.md)) | Power users, large/incremental | `scp` / `rsync` host↔container and container↔container, once routable IPs + SSH exist |
-| **Shared storage** ([services/shared-storage.md](services/shared-storage.md)) | *Ongoing* shared access | SeaweedFS/RustFS scoped paths/buckets, not one-shot copies |
+| **Shared storage** ([services/shared-storage.md](services/shared-storage.md)) | *Ongoing* shared access | SeaweedFS scoped paths/buckets, not one-shot copies |
 | **Workspace bind mounts** ([architecture/system-containers.md](architecture/system-containers.md)) | Host workspace already inside a sandbox | Not a copy — a mount |
 
 ## What to add: `llmsc cp`

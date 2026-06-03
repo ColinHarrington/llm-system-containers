@@ -68,7 +68,7 @@ Host workspace directories mount into containers with tiered access:
   by kernel-level enforcement.
 
 Details in [../security-model.md](../security-model.md). An alternative/complement to raw
-bind mounts is shared storage (SeaweedFS/RustFS) with scoped paths — see
+bind mounts is shared storage (SeaweedFS) with scoped paths — see
 [../services/shared-storage.md](../services/shared-storage.md).
 
 ## Open items

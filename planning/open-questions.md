@@ -35,7 +35,8 @@ Loose ends to resolve in dedicated sessions. This is the umbrella project's "par
   ([security-model.md](security-model.md)).
 - **Agent profile** format, inheritance, and how profiles compile to concrete
   Tetragon/Incus/LiteLLM artifacts ([agent-profiles.md](agent-profiles.md)).
-- **Shared storage** choice — SeaweedFS vs RustFS
+- **Shared storage** — SeaweedFS chosen; open: mount mechanism (VM-bind vs in-container FUSE
+  vs s3fs/rclone), versioning mechanism + retention, scoped-access mapping to profiles
   ([services/shared-storage.md](services/shared-storage.md)).
 - **Custom image** build format + registry implementation
   ([custom-images.md](custom-images.md)).
