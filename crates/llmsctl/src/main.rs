@@ -6,6 +6,7 @@
 use clap::{Parser, Subcommand};
 use llmsc_core::bootstrap::IncusBootstrap;
 use llmsc_core::config::{user_config_path, Config};
+use llmsc_core::deploy::LiteLlmDeployer;
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
 use llmsc_core::service::{catalog, lookup};
@@ -58,6 +59,8 @@ enum ServiceAction {
     Enable { name: String },
     /// Disable a service.
     Disable { name: String },
+    /// Provision/start enabled services in the VM.
+    Up,
 }
 
 fn services(action: ServiceAction) -> Result<(), String> {
@@ -108,6 +111,21 @@ fn services(action: ServiceAction) -> Result<(), String> {
                 println!("disabled '{name}'");
             } else {
                 println!("'{name}' was not enabled");
+            }
+        }
+        ServiceAction::Up => {
+            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+            let vm = cfg.vm.name.clone();
+            if cfg.services.is_empty() {
+                println!("no services enabled (use `llmsctl services enable <name>`)");
+            }
+            for svc in &cfg.services {
+                match svc.name.as_str() {
+                    "litellm" => LiteLlmDeployer::new(vm.clone(), &SystemRunner)
+                        .deploy(&ConsoleReporter)
+                        .map_err(|e| e.to_string())?,
+                    other => eprintln!("→ no deployer yet for '{other}' (M5 follow-up)"),
+                }
             }
         }
     }

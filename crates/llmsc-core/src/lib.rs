@@ -6,6 +6,7 @@
 
 pub mod bootstrap;
 pub mod config;
+pub mod deploy;
 pub mod error;
 pub mod incus;
 pub mod process;
