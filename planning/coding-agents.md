@@ -167,13 +167,23 @@ LiteLLM points its upstream at `http://svc-cliproxy:8317/v1` (OpenAI-compatible)
 token lives **only in `svc-cliproxy`**; sandboxes hold only virtual keys → satisfies the firm
 rule, while keeping LiteLLM's per-agent virtual keys / budgets / Phoenix tracing.
 
+**Repo verification (2026-06-03, github.com/router-for-me/CLIProxyAPI):** **MIT**, Go, **~35.9k
+stars / 5.9k forks**, actively maintained (pushed 2026-06-03; latest release **v7.1.44**), not
+archived. Confirmed config (from `config.example.yaml`): `auth-dir: ~/.cli-proxy-api` (subscription
+credential stored **server-side**), `api-keys:` list (clients use **separate local keys**),
+`host`/`port: 8317`, `remote-management.allow-remote: false` (mgmt localhost-only). Exposes
+**Anthropic-compatible `/v1/messages`** + OpenAI + Gemini, and routes across **multiple
+credentials**. So it can also be used **standalone** (`svc-cliproxy` alone, Claude Code points at
+its `/v1/messages` with a local key) — LiteLLM in front is optional, for per-agent
+budgets/tracing.
+
 **Caveats (must address before relying on it):**
 - Third-party tool holding a high-value subscription token — same trust class as LiteLLM (cf. the
-  1.82.7/1.82.8 malware). **Vet + pin** it; isolate `svc-cliproxy` with egress only to Anthropic.
-- **ToS gray area** — proxying a Max subscription as a general API is less clearly sanctioned than
-  the official `claude setup-token`. Deliberate decision required.
-- Sourced from a **blog post (via summarizer)**; the repo is the primary source and is **not yet
-  verified** here — confirm mechanics, maintenance, and trust before adoption.
+  1.82.7/1.82.8 malware). **Pin** a vetted version (high release churn) and **isolate**
+  `svc-cliproxy`: egress only to Anthropic, mgmt endpoints off/localhost.
+- **ToS gray area — sharpened:** the project markets itself as accessing "free … Claude model
+  through API" from subscriptions. Proxying a Max subscription as a general API is the gray area;
+  a deliberate decision is required before adopting.
 
 ## Installing agents into a sandbox
 
@@ -209,12 +219,11 @@ warrant a Debian-based sandbox image instead — the base image is per-sandbox c
 
 ## Open items
 
-- **Subscription with token-out-of-sandbox:** strongest candidate is **CLIProxyAPI** in its own
-  service container (holds the subscription token server-side; OpenAI-compatible API; clients use
-  a separate key) fronted by LiteLLM — see the section above. **To do:** verify the repo
-  (router-for-me/CLIProxyAPI) mechanics/trust, decide on the ToS gray area, and add a deployer +
-  locked-down egress for `svc-cliproxy`. (The LiteLLM-only `extra_headers`/shim idea is a fallback;
-  BYOK + max_subscription both forward the client token, which the owner ruled out.)
+- **Subscription with token-out-of-sandbox:** chosen approach is **CLIProxyAPI** in its own
+  service container (verified: MIT, ~36k★, active; token server-side; Anthropic+OpenAI surfaces;
+  client local keys). Standalone or fronted by LiteLLM. **To do:** decide the ToS gray area, then
+  add a deployer for `svc-cliproxy` (`--claude-login --no-browser`, pinned version) + locked-down
+  egress (Anthropic only, mgmt off). (LiteLLM `extra_headers`/shim remains a fallback.)
 - ✅ LiteLLM version **pinned** (1.87.0) in the deployer.
 - Implement the **forced-egress** network policy (default-deny except `svc-litellm`) + the
   proxy-held `api_key` config + virtual-key minting in the deployer (currently placeholder config).
