@@ -40,6 +40,7 @@ platform). Target platforms: **Linux and macOS**.
   - [shared-storage.md](services/shared-storage.md) — SeaweedFS / RustFS
   - [network-inspection.md](services/network-inspection.md) — mitmproxy + Zeek
   - [_future.md](services/_future.md) — Forgejo, NATS, openclaw
+- [file-transfer.md](file-transfer.md) — `llmsc cp` and moving files host↔container, container↔container
 - [custom-images.md](custom-images.md) — Custom image building + internal registry
 - [interfaces.md](interfaces.md) — GUI app + CLI
 - [mvp.md](mvp.md) — The MVP path, scoped

@@ -25,8 +25,9 @@ Two commands, split by audience and cadence (control plane vs. daily driver) —
 
 - **`llmsctl`** — platform control plane (occasional): `init`, `up`/`down`,
   `status`, `services enable …`. Drives the VM (`llmsc-vm`) and services.
-- **`llmsc`** — container plane (daily driver): `launch`, `ls`, `shell user@<name>`, `rm`.
-  Manages individual LLM System Containers.
+- **`llmsc`** — container plane (daily driver): `launch`, `ls`, `shell user@<name>`, `rm`, and
+  `cp` (copy files host↔container and container↔container — see
+  [file-transfer.md](file-transfer.md)). Manages individual LLM System Containers.
 
 Both cover the same operations as the GUI, suitable for automation and the "software
 factory" use case where orchestrations are built programmatically. The `user@<container>`
