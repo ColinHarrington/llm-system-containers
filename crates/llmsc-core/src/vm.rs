@@ -5,6 +5,7 @@
 use crate::config::VmConfig;
 use crate::error::{Error, Result};
 use crate::process::CommandRunner;
+use crate::progress::Reporter;
 use std::cell::Cell;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,7 +19,8 @@ pub enum VmStatus {
 /// Drives the L1 VM. `&self` methods (real impls shell out; fakes use interior mutability).
 pub trait VmDriver {
     fn status(&self) -> Result<VmStatus>;
-    fn up(&self) -> Result<()>;
+    /// Bring the VM up, reporting each step (creation can take minutes).
+    fn up(&self, reporter: &dyn Reporter) -> Result<()>;
     fn down(&self) -> Result<()>;
 }
 
@@ -46,7 +48,7 @@ impl VmDriver for FakeVmDriver {
     fn status(&self) -> Result<VmStatus> {
         Ok(self.status.get())
     }
-    fn up(&self) -> Result<()> {
+    fn up(&self, _reporter: &dyn Reporter) -> Result<()> {
         self.status.set(VmStatus::Running);
         Ok(())
     }
@@ -82,14 +84,22 @@ impl<R: CommandRunner> VmDriver for LimaVmDriver<R> {
         })
     }
 
-    fn up(&self) -> Result<()> {
+    fn up(&self, reporter: &dyn Reporter) -> Result<()> {
+        reporter.step(&format!("Checking status of VM '{}'", self.cfg.name));
         match self.status()? {
-            VmStatus::Running => Ok(()),
+            VmStatus::Running => {
+                reporter.step("VM is already running");
+                Ok(())
+            }
             VmStatus::NotCreated => {
+                reporter.step(&format!(
+                    "Creating VM '{}' ({} CPU, {} GiB) — downloading image, this can take a few minutes",
+                    self.cfg.name, self.cfg.cpus, self.cfg.memory_gib
+                ));
                 let name = format!("--name={}", self.cfg.name);
                 let cpus = format!("--cpus={}", self.cfg.cpus);
                 let mem = format!("--memory={}", self.cfg.memory_gib);
-                let o = self.runner.run(
+                let code = self.runner.run_streamed(
                     "limactl",
                     &[
                         "start",
@@ -100,19 +110,23 @@ impl<R: CommandRunner> VmDriver for LimaVmDriver<R> {
                         "template://default",
                     ],
                 )?;
-                if !o.ok() {
+                if code != 0 {
                     return Err(Error::Vm(format!(
-                        "limactl start (create): {}",
-                        o.stderr.trim()
+                        "limactl start (create) exited with {code}"
                     )));
                 }
+                reporter.step("VM created and running");
                 Ok(())
             }
             VmStatus::Stopped | VmStatus::Starting => {
-                let o = self.runner.run("limactl", &["start", &self.cfg.name])?;
-                if !o.ok() {
-                    return Err(Error::Vm(format!("limactl start: {}", o.stderr.trim())));
+                reporter.step("Starting existing VM");
+                let code = self
+                    .runner
+                    .run_streamed("limactl", &["start", &self.cfg.name])?;
+                if code != 0 {
+                    return Err(Error::Vm(format!("limactl start exited with {code}")));
                 }
+                reporter.step("VM running");
                 Ok(())
             }
         }
@@ -130,12 +144,13 @@ impl<R: CommandRunner> VmDriver for LimaVmDriver<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::progress::SilentReporter;
 
     #[test]
     fn fake_lifecycle() {
         let d = FakeVmDriver::new();
         assert_eq!(d.status().unwrap(), VmStatus::NotCreated);
-        d.up().unwrap();
+        d.up(&SilentReporter).unwrap();
         assert_eq!(d.status().unwrap(), VmStatus::Running);
         d.down().unwrap();
         assert_eq!(d.status().unwrap(), VmStatus::Stopped);
@@ -147,6 +162,18 @@ mod lima_tests {
     use super::*;
     use crate::config::{VmConfig, VmDriverKind};
     use crate::process::{out, FakeRunner};
+    use crate::progress::{Reporter, SilentReporter};
+    use std::cell::RefCell;
+
+    #[derive(Default)]
+    struct RecordingReporter {
+        steps: RefCell<Vec<String>>,
+    }
+    impl Reporter for RecordingReporter {
+        fn step(&self, msg: &str) {
+            self.steps.borrow_mut().push(msg.to_string());
+        }
+    }
 
     fn cfg() -> VmConfig {
         VmConfig {
@@ -174,9 +201,19 @@ mod lima_tests {
     fn up_creates_when_absent() {
         // every command returns "" — list "" means NotCreated, so up() should create.
         let d = LimaVmDriver::new(cfg(), FakeRunner::new(|_, _| out(0, "")));
-        d.up().unwrap();
+        d.up(&SilentReporter).unwrap();
         assert!(d.runner.called_with("template://default"));
         assert!(d.runner.called_with("--name=llmsc"));
+    }
+
+    #[test]
+    fn up_reports_steps_when_creating() {
+        let d = LimaVmDriver::new(cfg(), FakeRunner::new(|_, _| out(0, "")));
+        let rep = RecordingReporter::default();
+        d.up(&rep).unwrap();
+        let steps = rep.steps.borrow();
+        assert!(steps.iter().any(|s| s.contains("Creating VM")));
+        assert!(steps.iter().any(|s| s.contains("running")));
     }
 
     #[test]
@@ -191,7 +228,7 @@ mod lima_tests {
                 }
             }),
         );
-        d.up().unwrap();
+        d.up(&SilentReporter).unwrap();
         assert!(!d.runner.called_with("start"));
     }
 

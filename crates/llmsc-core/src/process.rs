@@ -18,9 +18,13 @@ impl RunOutput {
     }
 }
 
-/// Runs an external command and captures its output.
+/// Runs an external command.
 pub trait CommandRunner {
+    /// Run and **capture** output (for parsing).
     fn run(&self, program: &str, args: &[&str]) -> Result<RunOutput>;
+
+    /// Run with **inherited stdio** so the child's progress streams live; returns the exit code.
+    fn run_streamed(&self, program: &str, args: &[&str]) -> Result<i32>;
 }
 
 /// Runs real OS processes.
@@ -38,6 +42,15 @@ impl CommandRunner for SystemRunner {
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         })
+    }
+
+    fn run_streamed(&self, program: &str, args: &[&str]) -> Result<i32> {
+        // Inherit stdio so the child (e.g. `limactl start`) streams its progress live.
+        let status = std::process::Command::new(program)
+            .args(args)
+            .status()
+            .map_err(|e| Error::Vm(format!("failed to run {program}: {e}")))?;
+        Ok(status.code().unwrap_or(-1))
     }
 }
 
@@ -67,15 +80,24 @@ impl FakeRunner {
             .iter()
             .any(|c| c.iter().any(|a| a.contains(needle)))
     }
+
+    fn record(&self, program: &str, args: &[&str]) {
+        let mut call = vec![program.to_string()];
+        call.extend(args.iter().map(|s| s.to_string()));
+        self.calls.borrow_mut().push(call);
+    }
 }
 
 #[cfg(test)]
 impl CommandRunner for FakeRunner {
     fn run(&self, program: &str, args: &[&str]) -> Result<RunOutput> {
-        let mut call = vec![program.to_string()];
-        call.extend(args.iter().map(|s| s.to_string()));
-        self.calls.borrow_mut().push(call);
+        self.record(program, args);
         Ok((self.handler)(program, args))
+    }
+
+    fn run_streamed(&self, program: &str, args: &[&str]) -> Result<i32> {
+        self.record(program, args);
+        Ok((self.handler)(program, args).code)
     }
 }
 

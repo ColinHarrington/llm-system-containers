@@ -6,7 +6,17 @@
 use clap::{Parser, Subcommand};
 use llmsc_core::config::Config;
 use llmsc_core::process::SystemRunner;
+use llmsc_core::progress::Reporter;
 use llmsc_core::vm::{LimaVmDriver, VmDriver};
+
+/// Prints each step to stderr so progress shows during long operations.
+struct ConsoleReporter;
+
+impl Reporter for ConsoleReporter {
+    fn step(&self, msg: &str) {
+        eprintln!("→ {msg}");
+    }
+}
 
 #[derive(Parser)]
 #[command(
@@ -43,7 +53,7 @@ fn run() -> Result<(), String> {
             print!("{toml}");
         }
         Command::Up => {
-            driver().up().map_err(|e| e.to_string())?;
+            driver().up(&ConsoleReporter).map_err(|e| e.to_string())?;
             println!("VM is up");
         }
         Command::Down => {
