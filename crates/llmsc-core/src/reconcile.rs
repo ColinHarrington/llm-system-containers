@@ -67,6 +67,7 @@ mod tests {
         Config {
             vm: VmConfig::default(),
             sandboxes: names.iter().map(|n| sandbox(n)).collect(),
+            services: vec![],
         }
     }
 

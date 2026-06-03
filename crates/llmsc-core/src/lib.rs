@@ -11,4 +11,5 @@ pub mod incus;
 pub mod process;
 pub mod progress;
 pub mod reconcile;
+pub mod service;
 pub mod vm;

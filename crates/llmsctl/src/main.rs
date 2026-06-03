@@ -5,9 +5,10 @@
 
 use clap::{Parser, Subcommand};
 use llmsc_core::bootstrap::IncusBootstrap;
-use llmsc_core::config::Config;
+use llmsc_core::config::{user_config_path, Config};
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
+use llmsc_core::service::{catalog, lookup};
 use llmsc_core::vm::{LimaVmDriver, VmDriver};
 
 /// Prints each step to stderr so progress shows during long operations.
@@ -42,6 +43,75 @@ enum Command {
     Destroy,
     /// Show VM status.
     Status,
+    /// Manage services (LLM proxy, observability, …).
+    Services {
+        #[command(subcommand)]
+        action: ServiceAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ServiceAction {
+    /// List available services and whether they're enabled.
+    List,
+    /// Enable a service (records it in the user config).
+    Enable { name: String },
+    /// Disable a service.
+    Disable { name: String },
+}
+
+fn services(action: ServiceAction) -> Result<(), String> {
+    match action {
+        ServiceAction::List => {
+            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+            for e in catalog() {
+                let mark = if cfg.service_enabled(e.name) {
+                    "x"
+                } else {
+                    " "
+                };
+                println!(
+                    "[{mark}] {:<11} {:<9} {}",
+                    e.name, e.priority, e.description
+                );
+            }
+        }
+        ServiceAction::Enable { name } => {
+            let entry = lookup(&name).ok_or_else(|| format!("unknown service '{name}'"))?;
+            let path = user_config_path();
+            let mut cfg = if path.exists() {
+                Config::load(&path).map_err(|e| e.to_string())?
+            } else {
+                Config::default()
+            };
+            if cfg.enable_service(&name, entry.default_placement) {
+                cfg.save(&path).map_err(|e| e.to_string())?;
+                println!(
+                    "enabled '{name}' ({:?}) in {}",
+                    entry.default_placement,
+                    path.display()
+                );
+                eprintln!("→ note: provisioning the service container is an M5 follow-up");
+            } else {
+                println!("'{name}' is already enabled");
+            }
+        }
+        ServiceAction::Disable { name } => {
+            let path = user_config_path();
+            let mut cfg = if path.exists() {
+                Config::load(&path).map_err(|e| e.to_string())?
+            } else {
+                Config::default()
+            };
+            if cfg.disable_service(&name) {
+                cfg.save(&path).map_err(|e| e.to_string())?;
+                println!("disabled '{name}'");
+            } else {
+                println!("'{name}' was not enabled");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn driver() -> LimaVmDriver<SystemRunner> {
@@ -78,6 +148,7 @@ fn run() -> Result<(), String> {
             let status = driver().status().map_err(|e| e.to_string())?;
             println!("VM: {status:?}");
         }
+        Command::Services { action } => services(action)?,
     }
     Ok(())
 }

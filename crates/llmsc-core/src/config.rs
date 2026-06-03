@@ -3,6 +3,7 @@
 //! Both the CLIs and the GUI read/write this. See `planning/tech-stack.md`.
 
 use crate::error::Error;
+use crate::service::{Placement, Service};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -14,6 +15,9 @@ pub struct Config {
     /// Declared L2 sandboxes (desired state).
     #[serde(default, rename = "sandbox", skip_serializing_if = "Vec::is_empty")]
     pub sandboxes: Vec<Sandbox>,
+    /// Enabled services.
+    #[serde(default, rename = "service", skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<Service>,
 }
 
 /// The L1 VM (`llmsc-vm`).
@@ -81,6 +85,45 @@ impl Config {
             .map_err(|e| Error::Config(format!("reading {}: {e}", path.display())))?;
         Self::from_toml(&text)
             .map_err(|e| Error::Config(format!("parsing {}: {e}", path.display())))
+    }
+
+    /// Write this config to `path` (creating parent directories).
+    pub fn save(&self, path: &Path) -> crate::error::Result<()> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| Error::Config(format!("creating {}: {e}", parent.display())))?;
+            }
+        }
+        let text = self
+            .to_toml()
+            .map_err(|e| Error::Config(format!("serializing: {e}")))?;
+        std::fs::write(path, text)
+            .map_err(|e| Error::Config(format!("writing {}: {e}", path.display())))
+    }
+
+    /// Is the named service enabled?
+    pub fn service_enabled(&self, name: &str) -> bool {
+        self.services.iter().any(|s| s.name == name)
+    }
+
+    /// Enable a service; returns true if newly added (false if already enabled).
+    pub fn enable_service(&mut self, name: &str, placement: Placement) -> bool {
+        if self.service_enabled(name) {
+            return false;
+        }
+        self.services.push(Service {
+            name: name.to_string(),
+            placement,
+        });
+        true
+    }
+
+    /// Disable a service; returns true if it was present.
+    pub fn disable_service(&mut self, name: &str) -> bool {
+        let before = self.services.len();
+        self.services.retain(|s| s.name != name);
+        self.services.len() != before
     }
 
     /// The effective config: project (`./llmsc.toml`) if present, else user
@@ -152,6 +195,7 @@ mod tests {
                     },
                 ],
             }],
+            services: vec![],
         }
     }
 
@@ -208,6 +252,30 @@ mod tests {
     #[test]
     fn toml_snapshot() {
         insta::assert_snapshot!(sample().to_toml().unwrap());
+    }
+
+    #[test]
+    fn enable_disable_service() {
+        let mut c = Config::default();
+        assert!(!c.service_enabled("litellm"));
+        assert!(c.enable_service("litellm", Placement::Container));
+        assert!(c.service_enabled("litellm"));
+        assert!(!c.enable_service("litellm", Placement::Container)); // already enabled
+        assert!(c.disable_service("litellm"));
+        assert!(!c.service_enabled("litellm"));
+        assert!(!c.disable_service("litellm")); // not present
+    }
+
+    #[test]
+    fn save_load_roundtrip_with_service() {
+        let mut c = sample();
+        c.enable_service("litellm", Placement::Container);
+        let path =
+            std::env::temp_dir().join(format!("llmsc-save-test-{}.toml", std::process::id()));
+        c.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(loaded, c);
     }
 
     #[test]
@@ -272,8 +340,11 @@ mod tests {
                 disk_gib,
                 driver,
             });
-        (vm, proptest::collection::vec(arb_sandbox(), 0..3))
-            .prop_map(|(vm, sandboxes)| Config { vm, sandboxes })
+        (vm, proptest::collection::vec(arb_sandbox(), 0..3)).prop_map(|(vm, sandboxes)| Config {
+            vm,
+            sandboxes,
+            services: vec![],
+        })
     }
 
     proptest! {
