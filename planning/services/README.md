@@ -31,6 +31,10 @@ the user pick which to enable; over time the catalog should be extensible via a 
 service interface (packaging, lifecycle, config schema, health/status) rather than a fixed
 hard-coded set, regardless of whether a given service lands in L1 or its own L2 container.
 
+> **Implementation note (verified):** service containers default to **`images:debian/12`**
+> (bookworm). `debian/13`/trixie's systemd hangs at boot under the current Incus, so it's
+> avoided. LiteLLM deploy (`llmsctl services up`) is verified to run end-to-end on debian/12.
+
 ## Catalog
 
 | Service | Purpose | Priority | Doc |

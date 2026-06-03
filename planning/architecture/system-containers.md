@@ -31,9 +31,16 @@ containers.
   safer (disposable). Lifecycle spectrum: throwaway sandboxes → long-lived environments
   hosting many agents.
 - Created from **images** — base distro or user-built custom images (pre-packaged tooling,
-  IDEs, browsers, runtimes). Default base is **Debian** (smaller/quicker to provision than
-  Ubuntu). Incus resolves the **host architecture** automatically — **aarch64** on Apple
-  Silicon, **amd64** on x86_64 Linux. See [../custom-images.md](../custom-images.md).
+  IDEs, browsers, runtimes). **Default sandbox base is Alpine** (`images:alpine/3.21`, minimal);
+  **service** containers are distinct and use **debian/12** (see
+  [../services/README.md](../services/README.md)). Incus resolves the **host architecture**
+  automatically — **aarch64** on Apple Silicon, **amd64** on x86_64 Linux. See
+  [../custom-images.md](../custom-images.md).
+  - **Verified image notes:** `debian/13` (trixie) systemd hangs at boot under the current
+    Incus (no networking) → avoid; `debian/12` and `ubuntu/24.04` work. In unprivileged
+    containers `ping`/ICMP is unavailable (no `CAP_NET_RAW`) — test egress with TCP, not ping.
+  - **Open item:** user creation currently uses `useradd`/`bash` (Debian-family); Alpine uses
+    busybox `adduser`/`/bin/sh`, so per-user provisioning needs to become OS-aware.
 
 ## User model
 

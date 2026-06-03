@@ -45,9 +45,11 @@ Loose ends to resolve in dedicated sessions. This is the umbrella project's "par
   ([services/shared-storage.md](services/shared-storage.md)).
 - **Custom image** build format + registry implementation
   ([custom-images.md](custom-images.md)).
-- **Base distro decided: Debian** (smaller than Ubuntu) for L2 sandboxes. ⬜ Open: whether the
-  **L1 VM** should also be Debian — a Debian L1 likely avoids the Ubuntu `apparmor_restrict_
-  unprivileged_userns` workaround needed for rootless L3 ([architecture/vm.md](architecture/vm.md)).
+- **Base images (verified):** **sandboxes default to Alpine** (`images:alpine/3.21`); **service
+  containers use debian/12**. `debian/13`/trixie's systemd hangs at boot under the current Incus
+  → avoided. ⬜ Open: whether the **L1 VM** should be Debian (vs the current Ubuntu Lima default)
+  to drop the apparmor userns workaround ([architecture/vm.md](architecture/vm.md)); and making
+  per-user provisioning **OS-aware** (Alpine uses `adduser`/`sh`, not `useradd`/`bash`).
 - **Architecture** handled automatically (aarch64 on Apple Silicon / amd64 on x86_64 Linux);
   Incus + Lima resolve host arch; binaries cross-compiled per target.
 
