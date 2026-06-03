@@ -28,34 +28,41 @@ Two CLIs are planned (names decided, implementation language not — see
 - **`llmsctl`** — platform/host control plane (`init`, `up`/`down`, `status`,
   `services …`).
 
-## Three-layer architecture (the big picture)
+## Architecture: the nesting model (the big picture)
 
-Understanding this requires reading several docs in `planning/`; the layers are nested:
+"Layer" means a **level of virtualization nesting**, not a role. Understanding this requires
+reading several docs in `planning/`:
 
 ```
-Host (Linux/macOS)
-└── Layer 1: Playground VM ......... host-native VM running Incus, nested virt enabled
-    ├── Layer 2: Service Containers . shared infra (LLM proxy, observability, storage, …)
-    └── Layer 3: Sandbox Containers . agent + human Linux workspaces
+Host (Linux/macOS)            your computer; llmsc/llmsctl installed here
+└── L1: VM (llmsc-vm) ........ host-native VM running Incus, nested virt enabled
+    └── L2: system container . the LLMSC — agent/human workspace, run as a "sandbox"
+        └── L3: app container  Docker/Podman nested inside an L2 container
 ```
 
-- **Layer 1 — Playground VM** (`planning/architecture/playground-vm.md`): a host-native VM
-  (Docker-Desktop/Colima analogue) running Incus. VM backend is a **pluggable provider
-  abstraction**; MVP uses **Lima** on both platforms (Linux: QEMU+KVM; macOS: Apple
-  Virtualization/QEMU). Future: Parallels, libvirt/virt-manager, Proxmox.
-- **Layer 2 — Service Containers** (`planning/architecture/service-containers.md`): LXC
-  containers hosting shared services, intended to become **configurable plugins**.
-- **Layer 3 — Sandbox Containers** (`planning/architecture/sandbox-containers.md`):
-  unprivileged LXC system containers with a **two-user model** (one Linux user per agent +
-  one human operator login). Support nested Docker/Podman and GUI apps via display
-  forwarding.
+- **L1 — VM** (`planning/architecture/vm.md`): a host-native VM (Docker-Desktop/Colima
+  analogue) running Incus, nested virt enabled. VM backend is a **pluggable driver
+  abstraction** (docker-machine-style); MVP uses **Lima** on both platforms (Linux:
+  QEMU+KVM; macOS: Apple Virtualization/QEMU). Future: Parallels, libvirt, Proxmox.
+- **L2 — System containers / LLMSC** (`planning/architecture/system-containers.md`):
+  unprivileged Incus/LXC system containers with a **two-user model** (one Linux user per
+  agent + one human operator login). The workspace units, run as sandboxes.
+- **L3 — App containers** (`planning/architecture/app-containers.md`): nested rootless
+  Docker/Podman inside an L2 container. **Key differentiator** — real container workflows
+  without privileged DinD and without breaking the security backstops.
+- **Services** (`planning/services/README.md`) are NOT a layer: each runs either directly in
+  the L1 VM or in its own L2 container — an isolation choice, not a nesting level.
+
+Terminology discipline: **VM** always = L1; **container/LLMSC** always = an L2 unit; **host**
+= the user's computer. See `planning/naming.md`.
 
 ## Key cross-cutting concepts
 
-- **Defense-in-depth security** (`planning/security-model.md`): layered backstops — agent
-  permissions → Linux UID isolation → LXC isolation → Incus network policy → **Tetragon
-  eBPF** (kernel-level network/syscall/filesystem enforcement, per-container AND per-UID).
-  Policies hang off the per-user model in Layer 3.
+- **Defense-in-depth security** (`planning/security-model.md`): layered backstops (control
+  *rings*, distinct from the L1/L2/L3 nesting) — agent permissions → Linux UID isolation →
+  LXC isolation → Incus network policy → **Tetragon eBPF** (kernel-level
+  network/syscall/filesystem enforcement, per-container AND per-UID). Policies hang off the
+  per-user model in L2.
 - **Credential isolation**: agents never hold real API keys — they use **virtual keys** from
   the LiteLLM proxy (`planning/services/llm-proxy.md`).
 - **Observable / interruptable / steerable** (`planning/services/observability.md`): a core

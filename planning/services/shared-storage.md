@@ -19,12 +19,13 @@ agents can be granted scoped bucket/path access rather than raw filesystem acces
 | [SeaweedFS](https://github.com/seaweedfs/seaweedfs) | Go, mature, S3-compatible, distributed object store with filer |
 | [RustFS](https://github.com/rustfs/rustfs) | Rust, newer, S3-compatible |
 
-Both are S3-compatible and run as a service container. Choice TBD — SeaweedFS is the more
+Both are S3-compatible and run as a service (in L1 or its own L2 container). Choice TBD —
+SeaweedFS is the more
 mature/proven option; RustFS is the newer Rust alternative.
 
 ## Relationship to workspace mounts
 
-Layer 3 workspace mounts ([../architecture/sandbox-containers.md](../architecture/sandbox-containers.md))
+L2 workspace mounts ([../architecture/system-containers.md](../architecture/system-containers.md))
 handle the human's host workspace directly. Shared storage is better suited to:
 
 - Sharing artifacts **between** containers/agents.

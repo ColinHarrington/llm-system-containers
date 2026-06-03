@@ -2,10 +2,13 @@
 
 The core security philosophy: **infrastructure is the backstop.** AI agents typically have
 their own permission frameworks, but those are imperfect. The sandbox, network isolation,
-and Linux user permissions form hard infrastructure layers so that the agent's own rules
+and Linux user permissions form hard infrastructure backstops so that the agent's own rules
 are never the only thing protecting the host.
 
 ## Layered backstops
+
+> These backstops are **defense-in-depth rings**, distinct from the L1/L2/L3 *nesting*
+> layers in [overview.md](overview.md). Here "layer" = a control ring, not a nesting level.
 
 ```
 Agent permission framework .............. first line, imperfect
@@ -15,26 +18,27 @@ Agent permission framework .............. first line, imperfect
               └─ Tetragon eBPF .......... kernel-level: network, syscalls, filesystem
 ```
 
-Each layer is independent. A compromised or misbehaving agent that defeats or ignores its
+Each ring is independent. A compromised or misbehaving agent that defeats or ignores its
 own permission framework still hits Linux user permissions, then container isolation, then
 network policy, then non-bypassable kernel enforcement.
 
 ## Tetragon (eBPF)
 
-[Tetragon](https://github.com/cilium/tetragon) runs inside the Playground VM and enforces
-controls at the kernel level — non-bypassable from userspace — across three layers:
+[Tetragon](https://github.com/cilium/tetragon) runs inside the VM and enforces controls at
+the kernel level — non-bypassable from userspace — across three domains:
 
 - **Network** — permit/deny connections per container, per UID, per destination.
 - **Syscalls** — restrict dangerous syscalls for agent users (e.g. `ptrace`, `mount`,
   `kexec`).
 - **Filesystem** — path-level access control beyond standard Unix permissions.
 
-Policies are expressed **per container and per user (UID)**, matching the Layer 3 user
-model ([architecture/sandbox-containers.md](architecture/sandbox-containers.md)).
+Policies are expressed **per container and per user (UID)**, matching the L2 user model
+([architecture/system-containers.md](architecture/system-containers.md)).
 
 ## Network controls
 
-- Incus manages bridge networks between containers and to the service containers.
+- Incus manages bridge networks between containers and to the services (in L1 or their own
+  L2 containers).
 - Per-container and per-UID rules decide what can talk to what:
   - Which sandbox containers may reach which services (e.g. LiteLLM yes, raw internet no).
   - An agent's UID can have different egress rules than the human user's UID in the same
@@ -58,8 +62,8 @@ kernel enforces the grants.
 ## Credential isolation
 
 Agents never hold real API/token credentials. They use **virtual keys** issued by the
-LiteLLM proxy; real credentials live only in the proxy service container. See
-[services/llm-proxy.md](services/llm-proxy.md).
+LiteLLM proxy; real credentials live only in the LiteLLM proxy service (typically isolated
+in its own L2 container). See [services/llm-proxy.md](services/llm-proxy.md).
 
 ## Open items
 

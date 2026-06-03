@@ -4,10 +4,10 @@ Loose ends to resolve in dedicated sessions. This is the umbrella project's "par
 
 ## Naming
 - ✅ **Resolved** — project **llm-system-containers**; unit **LLMSC** (*Little Linux Managed
-  System Container*); CLIs **`llmsc`** (containers) + **`llmsctl`** (platform). "sandbox" is
-  a mode, not the name. See [naming.md](naming.md).
-- ⬜ **Still open:** name for the **VM** (Layer 1) — working name **Playground** /
-  **Sandbox Playground**.
+  System Container*, L2); the **VM** is **`llmsc-vm`** (short "VM", "Playground" retired);
+  CLIs **`llmsc`** (containers) + **`llmsctl`** (platform). "sandbox" is a mode, not the
+  name. Layer model: **Host → L1 VM → L2 system container → L3 app container**. See
+  [naming.md](naming.md).
 
 ## Tech stack (undecided)
 - **GUI app** framework/language (Tauri, Electron, native, …).
@@ -17,13 +17,17 @@ Loose ends to resolve in dedicated sessions. This is the umbrella project's "par
 
 ## Architecture / design
 - **Service plugin interface** — packaging, lifecycle, config schema, health/status
-  ([architecture/service-containers.md](architecture/service-containers.md)).
-- **VM provider abstraction** — interface + driver per backend
-  ([architecture/playground-vm.md](architecture/playground-vm.md)).
+  ([services/README.md](services/README.md)).
+- **Per-service placement** — L1 VM vs. own L2 container, and how the wizard exposes it
+  ([services/README.md](services/README.md)).
+- **VM driver abstraction** — interface + driver per backend
+  ([architecture/vm.md](architecture/vm.md)).
 - **Interrupt/steer control plane** mechanism for agents
   ([services/observability.md](services/observability.md)).
 - **Display forwarding** tech for GUI apps — X11 vs Wayland vs VNC/RDP
-  ([architecture/sandbox-containers.md](architecture/sandbox-containers.md)).
+  ([architecture/system-containers.md](architecture/system-containers.md)).
+- **Unprivileged nesting** (L3) — Incus profile specifics for reliable rootless
+  Docker/Podman ([architecture/app-containers.md](architecture/app-containers.md)).
 - **Tetragon policy authoring** model and mapping to per-agent grants
   ([security-model.md](security-model.md)).
 - **Shared storage** choice — SeaweedFS vs RustFS
@@ -34,7 +38,7 @@ Loose ends to resolve in dedicated sessions. This is the umbrella project's "par
 ## Future features
 - **Agent-to-agent communication** (NATS) design ([services/_future.md](services/_future.md)).
 - **openclaw** integration ([services/_future.md](services/_future.md)).
-- Additional VM providers: **Parallels** (macOS), **libvirt/virt-manager**, **Proxmox**.
+- Additional VM drivers: **Parallels** (macOS), **libvirt/virt-manager**, **Proxmox**.
 
 ## Project meta
 - This planning set is the **umbrella**; expect **multiple layered sub-plans** to grow from

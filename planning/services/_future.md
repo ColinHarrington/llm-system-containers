@@ -4,7 +4,7 @@ Services not in the MVP/Core path. Kept here as known expansion points.
 
 ## Forgejo — internal git (Optional)
 
-[Forgejo](https://forgejo.org/) as an internal git platform inside the Playground.
+[Forgejo](https://forgejo.org/) as an internal git platform inside the VM.
 
 - Lets agents push/pull without touching external services.
 - **Not required for MVP** — explicitly optional / user-enabled.
@@ -28,5 +28,4 @@ interruptable). Integration deferred; noted so it isn't lost.
 ## Plugin direction
 
 All of the above reinforce the goal of a **service plugin interface** (see
-[../architecture/service-containers.md](../architecture/service-containers.md)) so new
-services can be added without changing the core.
+[README.md](README.md)) so new services can be added without changing the core.

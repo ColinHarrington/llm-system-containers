@@ -6,7 +6,8 @@
 
 Agents must be able to call LLMs **without ever holding real API or token credentials**.
 An LLM proxy issues **virtual keys** to agents; the real provider credentials live only in
-the proxy service container.
+the proxy service (best isolated in its own L2 container — see
+[README.md](README.md#placement-is-an-isolation-choice-not-a-layer)).
 
 ## Choice: LiteLLM
 

@@ -44,7 +44,7 @@ feature of this project itself, not a third-party tool. It needs a way to:
 - Terminate an agent cleanly without taking down the whole container.
 
 This control plane ties into the GUI/CLI ([../interfaces.md](../interfaces.md)) and the
-per-UID user model ([../architecture/sandbox-containers.md](../architecture/sandbox-containers.md)).
+per-UID user model ([../architecture/system-containers.md](../architecture/system-containers.md)).
 
 ## Open items
 

@@ -7,8 +7,8 @@ custom images so sandboxes can start pre-loaded with the tooling they need.
 
 - Users can **build custom images** containing pre-packaged tooling, platforms, IDEs,
   browsers, runtimes, etc.
-- An internal **image registry** is hosted in the Playground VM.
-- Images become **templates** for spinning up sandbox containers — a Containerfile/Dockerfile
+- An internal **image registry** is hosted in the VM.
+- Images become **templates** for spinning up L2 system containers — a Containerfile/Dockerfile
   analogue, but for **system** containers.
 
 ## Why
@@ -20,10 +20,9 @@ custom images so sandboxes can start pre-loaded with the tooling they need.
 
 ## Relationship to other layers
 
-- Sandbox containers (Layer 3) are launched **from** these images. See
-  [architecture/sandbox-containers.md](architecture/sandbox-containers.md).
-- The registry lives in the Playground VM (Layer 1). See
-  [architecture/playground-vm.md](architecture/playground-vm.md).
+- L2 system containers are launched **from** these images. See
+  [architecture/system-containers.md](architecture/system-containers.md).
+- The registry lives in the L1 VM. See [architecture/vm.md](architecture/vm.md).
 
 ## Open items
 

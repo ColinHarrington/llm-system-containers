@@ -1,6 +1,6 @@
 # Planning Docs
 
-Internal design and planning documentation for the **LLM Sandbox** project.
+Internal design and planning documentation for the **llm-system-containers** project.
 
 > These are **planning docs** — design notes and architectural intent, not user-facing
 > documentation. User-focused docs will live elsewhere (e.g. top-level `README.md` and
@@ -25,13 +25,14 @@ platform). Target platforms: **Linux and macOS**.
 ## Index
 
 - [naming.md](naming.md) — Project/unit names, the `llmsc`/`llmsctl` CLI split, and rationale
-- [overview.md](overview.md) — Vision, software-factory framing, the three-layer architecture
-- **architecture/**
-  - [playground-vm.md](architecture/playground-vm.md) — Layer 1: the VM, Incus, nested virtualization, VM provider abstraction
-  - [service-containers.md](architecture/service-containers.md) — Layer 2: service catalog and plugin model
-  - [sandbox-containers.md](architecture/sandbox-containers.md) — Layer 3: user model, GUI/X-forwarding, nested Docker
+- [overview.md](overview.md) — Vision, differentiators, software-factory framing, the Host/L1/L2/L3 nesting model
+- **architecture/** (layers = nesting levels)
+  - [vm.md](architecture/vm.md) — L1: the VM, Incus, nested virtualization, VM driver abstraction
+  - [system-containers.md](architecture/system-containers.md) — L2: the LLMSC — user model, GUI/X-forwarding, workspace mounts
+  - [app-containers.md](architecture/app-containers.md) — L3: nested Docker/Podman (key differentiator)
 - [security-model.md](security-model.md) — Defense-in-depth, Tetragon, network + workspace controls
-- **services/**
+- **services/** — shared infra; may run in L1 or in their own L2 container
+  - [README.md](services/README.md) — Catalog, plugin model, L1-vs-L2 placement choice
   - [llm-proxy.md](services/llm-proxy.md) — LiteLLM, virtual keys
   - [observability.md](services/observability.md) — VictoriaMetrics / Loki / Grafana + Phoenix
   - [shared-storage.md](services/shared-storage.md) — SeaweedFS / RustFS

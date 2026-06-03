@@ -8,13 +8,29 @@ rationale isn't lost.
 | Thing | Name |
 |---|---|
 | Project / repo | **llm-system-containers** |
-| The unit (Layer 3) | **LLMSC** — *Little Linux Managed System Container* |
+| The unit (L2) | **LLMSC** — *Little Linux Managed System Container* |
+| The VM (L1) | **`llmsc-vm`** (long); **"VM"** (short UI label) |
 | Container CLI (daily driver) | **`llmsc`** |
 | Platform CLI (control plane) | **`llmsctl`** |
 | "sandbox" | a *mode*, not a name — describes ephemeral/safer operation, used in prose only |
 
-The VM (Layer 1) working name remains **Playground** — still open
-([open-questions.md](open-questions.md)).
+"Playground" is **retired**. **Host** = the user's own computer (where `llmsc`/`llmsctl` are
+installed), so it is *not* used for the VM.
+
+## Layer terminology (glossary)
+
+"Layer" means a **level of virtualization nesting**, not a role:
+
+| Term | Meaning |
+|---|---|
+| **Host** | The user's computer (macOS/Linux); `llmsc`/`llmsctl` run here |
+| **L1 — VM** (`llmsc-vm`) | Host-native VM running Incus, nested virt enabled |
+| **L2 — system container** | Incus/LXC system container = the **LLMSC** = a "sandbox" |
+| **L3 — app container** | Docker/Podman nested *inside* an L2 container |
+
+Discipline to avoid the `machinectl` ambiguity (where containers are also "machines"):
+**VM** always means L1; **container / LLMSC** always means an L2 unit. **Services** are not a
+layer — each runs in L1 or its own L2 container (an isolation choice).
 
 ## Rationale
 
@@ -29,8 +45,8 @@ The VM (Layer 1) working name remains **Playground** — still open
   Language Model*. The "system container" expansion also disambiguates from the existing
   `llm-sandbox` PyPI package.
 - **The project is a platform/tool**, distinct from any single unit — it enables and manages
-  LLM System Containers (plus the Playground VM and services). Repo name is the plain
-  descriptive slug **llm-system-containers**.
+  LLM System Containers (plus the VM and services). Repo name is the plain descriptive slug
+  **llm-system-containers**.
 
 ## CLI command split
 
@@ -40,9 +56,9 @@ daily-driver pattern (`incus` / `incus admin`, `kubectl` / `kubeadm`):
 ### `llmsctl` — platform / host control plane (occasional)
 ```
 llmsctl init                      # run the setup wizard
-llmsctl up / down                 # start/stop the Playground VM
+llmsctl up / down                 # start/stop the VM (llmsc-vm)
 llmsctl status                    # is the VM running?
-llmsctl services enable litellm   # manage service containers
+llmsctl services enable litellm   # manage services (L1 or own L2 container)
 ```
 The `-ctl` suffix is the universal "control plane" signal (systemctl, kubectl), so it reads
 unambiguously as the admin tool.
@@ -56,11 +72,10 @@ llmsc rm web                      # tear down
 ```
 This is the command you live in. Note the per-user form `user@container` reflects the
 two-user model (agent users + human operator) from
-[architecture/sandbox-containers.md](architecture/sandbox-containers.md).
+[architecture/system-containers.md](architecture/system-containers.md).
 
 ## Still open
 
-- **Playground VM** name (Layer 1).
 - Whether the platform ever gets a distinct proper-noun brand above the
   `llmsc`/`llmsctl` tools (Docker→containers pattern) — currently no; the descriptive
   `llm-system-containers` stands.
