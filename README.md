@@ -1,6 +1,9 @@
-# llm-system-containers
+# Little Linux Managed System Containers
 
 **Sandboxed Linux system-container environments for AI agents.**
+
+> Repo & package: **`llm-system-containers`** · CLIs: **`llmsc`** (containers) ·
+> **`llmsctl`** (platform).
 
 Give an AI agent its own *little Linux machine* — a real, isolated, observable environment it
 can work in like a developer would — with infrastructure-level safety backstops underneath, so
@@ -9,10 +12,12 @@ the agent's own (imperfect) permissions are never the only thing protecting your
 > **"LLM"** = *Little Linux Managed* + *Large Language Model*. The unit is an **LLMSC** — a
 > Little Linux Managed System Container.
 
-> ⚠️ **Status: early design / pre-alpha — no runnable code yet.** The architecture, tech stack,
-> and core feasibility are settled (rootless container nesting is
-> [proven](planning/spike-plan.md)); implementation is just beginning. Design docs live in
-> [`planning/`](planning/), GUI explorations in [`mockups/`](mockups/).
+> ⚠️ **Status: pre-alpha — implementation underway.** Architecture, tech stack, and core
+> feasibility are settled (rootless container nesting is [proven](planning/spike-plan.md)).
+> **M0 is done** — the Rust workspace, TOML config model, and Incus/VM boundary traits, all
+> test-first ([buildout.md](planning/buildout.md)); the CLIs build but most subcommands are
+> stubs. Design docs live in [`planning/`](planning/), GUI explorations in
+> [`mockups/`](mockups/).
 
 ## Why this is different
 
