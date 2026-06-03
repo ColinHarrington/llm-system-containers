@@ -42,7 +42,9 @@ get a working, observable, credential-isolated sandbox for an agent.
 
 - Where the line sits between MVP and the first "Core" follow-up (likely shared storage +
   network inspection + early Tetragon policy).
-- Whether **nested Docker/Podman (L3)** — the headline differentiator
+- Whether the **nested Docker/Podman (L3) capability** — the headline differentiator
   ([architecture/app-containers.md](architecture/app-containers.md)) — belongs in the MVP or
-  the first follow-up. Strong case for MVP given it's the core differentiator.
+  the first follow-up. Strong case for MVP given it's the core differentiator. (Decided
+  separately: **GUI visualization** of L3 is *not* a priority now — future plugin. See
+  [interfaces.md](interfaces.md).)
 - Whether GUI or CLI lands first.

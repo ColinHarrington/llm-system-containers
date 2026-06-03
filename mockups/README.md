@@ -33,6 +33,11 @@ Each variant is its own self-contained app shell (sidebar nav between screens).
 
 See each variant's `NOTES.md` for its specific design rationale.
 
+> **Scope note:** these mockups surface **L3 app containers** (nested Docker/Podman) in
+> dashboard counts and sandbox detail. That visualization is **deprioritized** — the L3
+> *capability* stays, but managing it in the GUI is deferred to a possible future plugin.
+> Treat L3 panels in these mockups as exploratory, not part of the intended core GUI.
+
 ## Vocabulary reference (so mockups stay consistent)
 
 - **Host** — the user's computer (macOS/Linux) running the app.

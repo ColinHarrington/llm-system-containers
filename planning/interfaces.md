@@ -12,6 +12,12 @@ A desktop GUI app to **manage the VM and sandboxes**:
 - Surface observability and the **interrupt/steer** controls for running agents (see
   [services/observability.md](services/observability.md)).
 
+**Out of GUI scope for now:** visualizing/managing **L3 app containers** (nested
+Docker/Podman). The L3 *capability* remains a platform differentiator
+([architecture/app-containers.md](architecture/app-containers.md)) — agents still run
+rootless containers inside their sandbox — but surfacing them in the GUI is deferred,
+likely as a future **plugin**, not a core screen.
+
 ## CLI tooling
 
 Two commands, split by audience and cadence (control plane vs. daily driver) — see
