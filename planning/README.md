@@ -43,7 +43,9 @@ platform). Target platforms: **Linux and macOS**.
 - [file-transfer.md](file-transfer.md) — `llmsc cp` and moving files host↔container, container↔container
 - [custom-images.md](custom-images.md) — Custom image building + internal registry
 - [interfaces.md](interfaces.md) — GUI app + CLI
-- [tech-stack.md](tech-stack.md) — Rust core, Tauri GUI, declarative config, Incus-as-truth
+- [tech-stack.md](tech-stack.md) — Rust core, Tauri + Svelte/TS GUI, declarative TOML config, Incus-as-truth
+- [testing.md](testing.md) — Red-green TDD, test plan per feature, tooling + CI
+- [spike-plan.md](spike-plan.md) — De-risking spike: rootless L3 nesting + routable/`.llmsc`/SSH networking
 - [mvp.md](mvp.md) — The MVP path, scoped
 - [open-questions.md](open-questions.md) — Naming, plugin interfaces, tech-stack decisions
 

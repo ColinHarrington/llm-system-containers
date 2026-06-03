@@ -56,7 +56,14 @@ between CLI and GUI**, with **Incus usable directly** a layer beneath our toolin
 
 - **Tauri** — Rust backend (the `llmsc-core` crate) + system webview + web frontend. Reuses the
   HTML mockups; lean footprint (no bundled Chromium).
-- Frontend framework: **React or Svelte** *(open — preference)*.
+- Frontend: **Svelte + TypeScript** (decided) — lean runtime (fits the memory-efficiency
+  principle); TypeScript throughout (no plain JS).
+
+## Testing
+
+Red-green TDD with a test plan per feature; Rust `cargo test` + CLI black-box tests, Svelte
+**Vitest** + Testing Library, **Playwright** e2e, and infra proven by spikes → CI integration
+tests. See [testing.md](testing.md).
 
 ## Distribution
 
@@ -65,7 +72,6 @@ between CLI and GUI**, with **Incus usable directly** a layer beneath our toolin
 
 ## Open items
 
-- **Frontend framework**: React vs Svelte.
 - **Reconcile model** details: drift handling, and the balance between declarative `apply` and
   imperative commands (`llmsc launch …`).
 - **Rust ↔ Incus**: pick a crate vs hand-roll a REST client over the unix socket.

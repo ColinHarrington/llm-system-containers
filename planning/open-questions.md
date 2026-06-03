@@ -11,13 +11,14 @@ Loose ends to resolve in dedicated sessions. This is the umbrella project's "par
 
 ## Tech stack (mostly resolved — see [tech-stack.md](tech-stack.md))
 - ✅ **Language: Rust**; shared **`llmsc-core`** crate; CLI-first (CLI fully capable).
-- ✅ **GUI: Tauri** (Rust + webview, reuses mockups).
+- ✅ **GUI: Tauri** (Rust + webview, reuses mockups); frontend **Svelte + TypeScript**.
+- ✅ **Testing: red-green TDD**, test plan per feature ([testing.md](testing.md)).
 - ✅ **Config: declarative on-disk, TOML**, shared by CLI & GUI.
 - ✅ **Incus = runtime truth** in its own Incus project; reconcile config → Incus; raw `incus`
   always usable.
 - ✅ **Library-first; daemon deferred.**
-- ⬜ Remaining: frontend (React vs Svelte); reconcile/drift model; Rust↔Incus client (crate vs
-  hand-rolled); when the optional daemon is warranted.
+- ⬜ Remaining: reconcile/drift model; Rust↔Incus client (crate vs hand-rolled); when the
+  optional daemon is warranted; CI provider/runners ([testing.md](testing.md)).
 
 ## Architecture / design
 - **Service plugin interface** — packaging, lifecycle, config schema, health/status

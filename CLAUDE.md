@@ -13,8 +13,15 @@ config, or application code. Do not invent build/test commands; there are none t
 **CLI-first** (the CLI is fully capable standalone); **declarative on-disk config** (**TOML**)
 shared by CLI and GUI; **Incus is the runtime source of truth** (managed in its own Incus
 project, raw `incus` always usable) with config reconciled to it; **library-first, daemon
-deferred**. Incus is reached via its **REST API**; Lima via **`limactl`**. Frontend framework
-(React vs Svelte) remains open in `planning/open-questions.md`.
+deferred**. Incus is reached via its **REST API**; Lima via **`limactl`**. GUI frontend is
+**Svelte + TypeScript** (no plain JS).
+
+**Testing is red-green TDD** (`planning/testing.md`): write the failing test first, then the
+minimal code to pass, then refactor — no production code without a test that drove it. **Every
+feature ships a test plan.** Tooling: Rust `cargo test` + CLI black-box tests (`assert_cmd`/
+`trycmd`), `insta` snapshots, trait-mocked Incus/Lima boundaries; Svelte **Vitest** + Testing
+Library; **Playwright** e2e; infra assumptions proven via spikes (`planning/spike-plan.md`)
+then locked as CI integration tests.
 
 ## What this project is
 
