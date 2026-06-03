@@ -12,6 +12,11 @@ use crate::error::{Error, Result};
 use crate::process::{CommandRunner, RunOutput};
 use crate::progress::Reporter;
 
+/// Pinned LiteLLM version. PyPI `litellm` **1.82.7 / 1.82.8 shipped credential-stealing malware**
+/// (BerriAI/litellm#24518); a proxy that will hold real provider/subscription credentials must
+/// never float to an arbitrary version. Bump deliberately after vetting a release.
+const LITELLM_VERSION: &str = "1.87.0";
+
 /// Provisions LiteLLM in its own L2 container.
 pub struct LiteLlmDeployer<'a, R: CommandRunner> {
     vm: String,
@@ -85,9 +90,14 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
             return Err(Error::Incus(format!("python venv: {}", o.stderr.trim())));
         }
 
-        reporter.step("Installing LiteLLM (pip)");
-        let code = self
-            .exec_streamed("/opt/litellm/bin/pip install --quiet --upgrade pip 'litellm[proxy]'")?;
+        reporter.step(&format!(
+            "Installing LiteLLM {LITELLM_VERSION} (pip, pinned)"
+        ));
+        let install = format!(
+            "/opt/litellm/bin/pip install --quiet --upgrade pip && \
+             /opt/litellm/bin/pip install --quiet 'litellm[proxy]=={LITELLM_VERSION}'"
+        );
+        let code = self.exec_streamed(&install)?;
         if code != 0 {
             return Err(Error::Incus(format!(
                 "pip install litellm failed (exit {code})"
