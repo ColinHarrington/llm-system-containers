@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Networking · llm-system-containers</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #0b0e14; }
+  @keyframes pulse-ring { 0%{box-shadow:0 0 0 0 var(--ring)} 70%{box-shadow:0 0 0 6px transparent} 100%{box-shadow:0 0 0 0 transparent} }
+  .pulse { animation: pulse-ring 2s infinite; }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+  .flow { stroke-dasharray: 4 6; animation: dash 1.1s linear infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .blink { animation: blink 1.6s infinite; }
+  .node { transition: transform .15s, border-color .15s, box-shadow .15s; }
+  .node:hover { border-color:#3d444d; transform: translateY(-1px); }
+  .node.hot { box-shadow: 0 0 0 1.5px var(--hot); border-color: var(--hot); }
+  .lane.hot { box-shadow: 0 0 0 1.5px var(--lane); }
+  tr.hot { background: rgba(56,189,248,.08); }
+  ::-webkit-scrollbar{width:10px;height:10px} ::-webkit-scrollbar-thumb{background:#262c36;border-radius:6px}
+  .svc{font-size:11px;color:#9aa4b2;border:1px solid #262c36;border-radius:999px;padding:3px 9px;display:inline-flex;align-items:center;gap:6px}
+  .svc::before{content:"";width:6px;height:6px;border-radius:50%;background:#34d399}
+</style>
+</head>
+<body class="text-slate-200 font-sans antialiased">
+
+<!-- icon sprite -->
+<svg width="0" height="0" class="hidden" aria-hidden="true">
+  <symbol id="i-globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 2.6 14.6 0 17M12 3.5c-2.6 2.4-2.6 14.6 0 17"/></g></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3l7 3v5c0 5-3.2 8-7 10-3.8-2-7-5-7-10V6z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></g></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.6"/></g></symbol>
+  <symbol id="i-llm" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></g></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4v16h16"/><path d="M8 14l3-4 3 3 4-6"/></g></symbol>
+  <symbol id="i-store" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></g></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></g></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 6"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 3v2M14 3v2M10 19v2M14 19v2M3 10h2M3 14h2M19 10h2M19 14h2"/></g></symbol>
+</svg>
+
+<div class="max-w-[1400px] mx-auto px-6 py-6">
+
+  <!-- top bar -->
+  <div class="flex items-center gap-4 mb-5">
+    <div>
+      <h1 class="text-lg font-semibold text-white tracking-tight">Networking</h1>
+      <p class="text-xs text-slate-500">VM networks · sandbox attachments · egress &amp; inspection policy</p>
+    </div>
+    <div class="flex-1"></div>
+    <div class="flex items-center gap-2 text-[11px]">
+      <span class="inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2 py-1 text-slate-400">
+        <svg class="w-3.5 h-3.5 text-emerald-400"><use href="#i-shield"/></svg>
+        Default-deny egress
+      </span>
+      <span class="inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2 py-1 text-slate-400">
+        <svg class="w-3.5 h-3.5 text-sky-400"><use href="#i-cpu"/></svg>
+        Enforced by Tetragon · Incus ACLs
+      </span>
+      <button class="rounded-md border border-slate-700 px-2 py-1 text-slate-300 font-mono hover:border-slate-500">llmsctl net</button>
+    </div>
+  </div>
+
+  <!-- legend -->
+  <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-slate-400 mb-4">
+    <span class="flex items-center gap-1.5"><span class="w-6 h-0.5 rounded bg-slate-500"></span>internal services (svc-net)</span>
+    <span class="flex items-center gap-1.5"><span class="w-6 h-0.5 rounded bg-amber-400"></span>controlled egress (egress-net · inspected)</span>
+    <span class="flex items-center gap-1.5"><span class="w-6 h-0.5 rounded" style="background:#f87171"></span>blocked / no-egress</span>
+    <span class="flex items-center gap-1.5"><svg class="w-3.5 h-3.5 text-emerald-400"><use href="#i-eye"/></svg>mitmproxy + Zeek inspection</span>
+  </div>
+
+  <!-- ===== Topology diagram ===== -->
+  <section class="relative rounded-2xl border border-slate-700/70 bg-slate-900/40 p-4 overflow-hidden">
+    <!-- VM header -->
+    <div class="flex items-center gap-3 mb-1 px-1">
+      <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 pulse" style="--ring:rgba(52,211,153,.5)"></span>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-semibold text-white">llmsc-vm</span>
+          <span class="text-[10px] uppercase tracking-wider text-slate-400 border border-slate-700 rounded px-1.5 py-0.5">L1 · VM</span>
+        </div>
+        <div class="text-[11px] text-slate-500 font-mono">running · Incus-managed bridges &amp; ACLs</div>
+      </div>
+      <div class="flex-1"></div>
+      <div class="text-[11px] text-slate-400"><span class="text-slate-200 font-semibold">3</span> networks · <span class="text-slate-200 font-semibold">4</span> sandboxes</div>
+    </div>
+
+    <!-- SVG connector layer -->
+    <svg id="wires" class="absolute inset-0 w-full h-full pointer-events-none" style="z-index:1"></svg>
+
+    <!-- diagram grid: left = sandboxes, center = networks, right = uplink/destinations -->
+    <div class="relative grid grid-cols-[260px_1fr_220px] gap-6 mt-4" style="z-index:2" id="diagram">
+
+      <!-- LEFT: sandboxes (L2) -->
+      <div class="space-y-3">
+        <div class="text-[10px] uppercase tracking-wider text-slate-500 px-1 mb-1">Sandboxes · L2</div>
+        <div id="sb-web-agent-01"     class="node sb rounded-xl border border-slate-700/70 bg-slate-900/70 p-3" data-sb="web-agent-01"></div>
+        <div id="sb-ci-runner"        class="node sb rounded-xl border border-slate-700/70 bg-slate-900/70 p-3" data-sb="ci-runner"></div>
+        <div id="sb-data-pipeline"    class="node sb rounded-xl border border-slate-700/70 bg-slate-900/70 p-3" data-sb="data-pipeline"></div>
+        <div id="sb-research-01"      class="node sb rounded-xl border border-slate-700/70 bg-slate-900/70 p-3" data-sb="research-01"></div>
+      </div>
+
+      <!-- CENTER: networks / bridges (lanes) -->
+      <div class="space-y-3">
+        <div class="text-[10px] uppercase tracking-wider text-slate-500 px-1 mb-1 text-center">VM networks · Incus bridges</div>
+
+        <!-- svc-net -->
+        <div id="net-svc" class="lane rounded-xl border border-slate-600/60 bg-slate-800/30 p-3" style="--lane:#94a3b8" data-net="svc-net">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+            <span class="font-mono text-sm text-slate-100">svc-net</span>
+            <span class="text-[10px] text-slate-500 border border-slate-700 rounded px-1">internal · 10.71.10.0/24</span>
+            <div class="flex-1"></div>
+            <span class="inline-flex items-center gap-1 text-[10px] text-rose-300/90 border border-rose-500/30 bg-rose-500/10 rounded px-1.5 py-0.5" title="No direct path to the internet from this network">
+              <svg class="w-3 h-3"><use href="#i-ban"/></svg>no internet
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-500 mb-2 leading-snug">Sandboxes reach internal services only. LLM access is brokered here by LiteLLM (virtual keys) — agents never reach providers directly.</p>
+          <div class="flex flex-wrap items-center gap-1.5" id="svc-band">
+            <span class="node svcnode" data-svc="litellm"  data-net="svc-net">LiteLLM</span>
+            <span class="node svcnode" data-svc="phoenix"  data-net="svc-net">Phoenix</span>
+            <span class="node svcnode" data-svc="grafana"  data-net="svc-net">Grafana</span>
+            <span class="node svcnode" data-svc="seaweed"  data-net="svc-net">SeaweedFS</span>
+          </div>
+        </div>
+
+        <!-- egress-net -->
+        <div id="net-egress" class="lane rounded-xl border border-amber-600/40 bg-amber-500/[0.06] p-3" style="--lane:#f59e0b" data-net="egress-net">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span class="font-mono text-sm text-slate-100">egress-net</span>
+            <span class="text-[10px] text-amber-300/80 border border-amber-600/40 rounded px-1">controlled · 10.71.20.0/24</span>
+            <div class="flex-1"></div>
+            <span class="inline-flex items-center gap-1 text-[10px] text-amber-200/90 border border-amber-500/40 bg-amber-500/10 rounded px-1.5 py-0.5">
+              <svg class="w-3 h-3"><use href="#i-lock"/></svg>default-deny + allowlist
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400/90 mb-2 leading-snug">All outbound forced through the inspection chain. HTTP(S) terminated &amp; policy-checked by mitmproxy; every connection logged by Zeek.</p>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="node svcnode amber" data-svc="mitmproxy" data-net="egress-net" title="HTTP/S interception, allowlist enforcement, redaction">
+              <svg class="w-3 h-3 text-amber-300"><use href="#i-shield"/></svg>mitmproxy
+            </span>
+            <span class="node svcnode amber" data-svc="zeek" data-net="egress-net" title="Passive packet-layer capture for audit/forensics">
+              <svg class="w-3 h-3 text-amber-300"><use href="#i-eye"/></svg>Zeek <span class="text-[9px] text-amber-200/70">passive</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- isolated / no-egress -->
+        <div id="net-isolated" class="lane rounded-xl border border-rose-700/40 bg-rose-500/[0.05] p-3" style="--lane:#f87171" data-net="isolated">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-2 h-2 rounded-full" style="background:#f87171"></span>
+            <span class="font-mono text-sm text-slate-100">isolated</span>
+            <span class="text-[10px] text-rose-300/80 border border-rose-700/40 rounded px-1">no-egress · air-gapped</span>
+            <div class="flex-1"></div>
+            <span class="inline-flex items-center gap-1 text-[10px] text-rose-200/90 border border-rose-500/40 bg-rose-500/10 rounded px-1.5 py-0.5">
+              <svg class="w-3 h-3"><use href="#i-ban"/></svg>no outbound
+            </span>
+          </div>
+          <p class="text-[11px] text-rose-200/70 leading-snug">For sensitive sandboxes. The only path off-box is LLM inference via LiteLLM on svc-net — nothing else, no general internet.</p>
+        </div>
+      </div>
+
+      <!-- RIGHT: uplink / internet -->
+      <div class="space-y-3">
+        <div class="text-[10px] uppercase tracking-wider text-slate-500 px-1 mb-1 text-center">Host uplink</div>
+        <div id="net-uplink" class="node rounded-xl border border-slate-700/70 bg-slate-900/70 p-3" data-net="uplink">
+          <div class="flex items-center gap-2 mb-1">
+            <svg class="w-4 h-4 text-sky-300"><use href="#i-globe"/></svg>
+            <span class="font-mono text-sm text-slate-100">vm-uplink</span>
+          </div>
+          <div class="text-[11px] text-slate-500 leading-snug">NAT bridge to the host's network &rarr; internet. Reachable from <span class="text-amber-300/90">egress-net</span> only, post-inspection.</div>
+        </div>
+
+        <div id="net-internet" class="node rounded-xl border border-slate-800 bg-slate-950/50 p-3" data-net="internet">
+          <div class="flex items-center gap-2 mb-1">
+            <svg class="w-4 h-4 text-slate-400"><use href="#i-globe"/></svg>
+            <span class="text-sm text-slate-200">Internet</span>
+          </div>
+          <div class="text-[11px] text-slate-500 leading-snug">Only allowlisted destinations are reachable. LLM providers are <span class="text-slate-300">not</span> on the allowlist — they are reached for the agent by LiteLLM.</div>
+        </div>
+
+        <div class="rounded-xl border border-slate-800/70 bg-slate-900/30 p-3">
+          <div class="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Allowlist · egress-net</div>
+          <ul class="space-y-1.5 text-[11px] font-mono">
+            <li class="flex items-center gap-2 text-emerald-300/90"><svg class="w-3 h-3"><use href="#i-check"/></svg>github.com</li>
+            <li class="flex items-center gap-2 text-emerald-300/90"><svg class="w-3 h-3"><use href="#i-check"/></svg>*.npmjs.org</li>
+            <li class="flex items-center gap-2 text-emerald-300/90"><svg class="w-3 h-3"><use href="#i-check"/></svg>pypi.org</li>
+            <li class="flex items-center gap-2 text-emerald-300/90"><svg class="w-3 h-3"><use href="#i-check"/></svg>ghcr.io</li>
+            <li class="flex items-center gap-2 text-rose-300/80"><svg class="w-3 h-3"><use href="#i-ban"/></svg>* (default-deny)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-[11px] text-slate-600 mt-4 px-1">
+      Tip: hover a sandbox or a network to highlight its attachments. Solid grey = svc-net, dashed amber = inspected egress, red = blocked.
+    </p>
+  </section>
+
+  <!-- ===== Attachment table ===== -->
+  <section class="mt-6 rounded-2xl border border-slate-700/70 bg-slate-900/40 p-4">
+    <div class="flex items-center gap-2 mb-3 px-1">
+      <h2 class="text-sm font-semibold text-white">Attachments &amp; policy</h2>
+      <span class="text-[11px] text-slate-500">— sandbox &harr; networks &harr; egress &harr; inspection · rules are per-container <span class="text-slate-400">and per-UID</span></span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-[12px]">
+        <thead>
+          <tr class="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
+            <th class="py-2 pr-3 font-medium">Sandbox (L2)</th>
+            <th class="py-2 px-3 font-medium">Networks</th>
+            <th class="py-2 px-3 font-medium">Per-UID egress policy</th>
+            <th class="py-2 px-3 font-medium">Inspected</th>
+            <th class="py-2 px-3 font-medium">LLM path</th>
+            <th class="py-2 pl-3 font-medium text-right">Profile</th>
+          </tr>
+        </thead>
+        <tbody id="attach-body" class="align-top"></tbody>
+      </table>
+    </div>
+    <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[10px] text-slate-500 px-1">
+      <span><span class="text-slate-300 font-mono">agent-*</span> = per-agent Linux UID · <span class="text-violet-300 font-mono">operator</span> = human operator UID</span>
+      <span>Egress and inspection rules can differ per UID within the same sandbox.</span>
+    </div>
+  </section>
+
+  <!-- ===== Policy themes ===== -->
+  <section class="mt-6 grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))">
+    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+      <div class="flex items-center gap-2 mb-1.5"><svg class="w-4 h-4 text-emerald-400"><use href="#i-lock"/></svg><span class="text-sm font-semibold text-slate-100">Default-deny egress</span></div>
+      <p class="text-[12px] text-slate-400 leading-snug">No sandbox reaches the internet by default. Outbound is opt-in via an allowlist on <span class="font-mono text-amber-300/90">egress-net</span>; everything else is dropped.</p>
+    </div>
+    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+      <div class="flex items-center gap-2 mb-1.5"><svg class="w-4 h-4 text-sky-400"><use href="#i-llm"/></svg><span class="text-sm font-semibold text-slate-100">LLM only via virtual keys</span></div>
+      <p class="text-[12px] text-slate-400 leading-snug">Agents call <span class="font-mono">LiteLLM</span> on svc-net with virtual keys. Real provider credentials live only in the proxy — agents never hold them or reach providers directly.</p>
+    </div>
+    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+      <div class="flex items-center gap-2 mb-1.5"><svg class="w-4 h-4 text-amber-400"><use href="#i-eye"/></svg><span class="text-sm font-semibold text-slate-100">Inspect what flows</span></div>
+      <p class="text-[12px] text-slate-400 leading-snug"><span class="font-mono">mitmproxy</span> can block/modify HTTP(S) at the app layer; <span class="font-mono">Zeek</span> passively logs every connection at the packet layer for audit.</p>
+    </div>
+    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+      <div class="flex items-center gap-2 mb-1.5"><svg class="w-4 h-4 text-violet-300"><use href="#i-cpu"/></svg><span class="text-sm font-semibold text-slate-100">Kernel-level enforcement</span></div>
+      <p class="text-[12px] text-slate-400 leading-snug">Incus network ACLs and <span class="font-mono">Tetragon</span> (eBPF) decide <em>whether</em> a connection is allowed — per container, per UID, non-bypassable from userspace.</p>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ---- data ---- */
+const NETS = {
+  "svc-net":   { color:"#94a3b8", label:"svc-net" },
+  "egress-net":{ color:"#f59e0b", label:"egress-net" },
+  "isolated":  { color:"#f87171", label:"isolated" },
+};
+
+const SANDBOXES = [
+  {
+    name:"web-agent-01", image:"dev-ubuntu-24.04", profile:"standard",
+    nets:["svc-net","egress-net"], inspected:true, llm:"LiteLLM",
+    uids:[
+      { uid:"agent-claude", kind:"agent", egress:"allowlist (github, npm, pypi)" },
+      { uid:"agent-aux",    kind:"agent", egress:"allowlist (github, npm, pypi)" },
+      { uid:"operator",     kind:"human", egress:"broad allowlist + interactive" },
+    ],
+  },
+  {
+    name:"ci-runner", image:"ci-base", profile:"build",
+    nets:["svc-net","egress-net"], inspected:true, llm:"LiteLLM",
+    uids:[
+      { uid:"agent-ci", kind:"agent", egress:"allowlist (ghcr, npm, pypi)" },
+      { uid:"operator", kind:"human", egress:"broad allowlist + interactive" },
+    ],
+  },
+  {
+    name:"data-pipeline", image:"dev-ubuntu-24.04", profile:"locked-down",
+    nets:["svc-net"], inspected:false, llm:"LiteLLM",
+    uids:[
+      { uid:"agent-etl",    kind:"agent", egress:"deny-all (svc-net only)" },
+      { uid:"agent-report", kind:"agent", egress:"deny-all (svc-net only)" },
+      { uid:"operator",     kind:"human", egress:"deny-all (svc-net only)" },
+    ],
+  },
+  {
+    name:"research-01", image:"browser-tools", profile:"air-gapped",
+    nets:["isolated","svc-net"], inspected:true, llm:"LiteLLM",
+    uids:[
+      { uid:"agent-browse", kind:"agent", egress:"no-egress (isolated)" },
+      { uid:"operator",     kind:"human", egress:"no-egress (isolated)" },
+    ],
+  },
+];
+
+/* ---- sandbox node cards (left column) ---- */
+const NETPILL = (n) => {
+  const c = NETS[n].color;
+  return `<span class="inline-flex items-center gap-1 text-[9.5px] font-mono rounded px-1 py-0.5 border" style="color:${c};border-color:${c}55;background:${c}14">${NETS[n].label}</span>`;
+};
+function sbCard(sb){
+  const dot = "bg-emerald-400";
+  const insp = sb.inspected
+    ? `<span class="inline-flex items-center gap-1 text-[9.5px] text-amber-300/90" title="HTTP(S) via mitmproxy · packets logged by Zeek"><svg class="w-3 h-3"><use href="#i-eye"/></svg>inspected</span>`
+    : `<span class="text-[9.5px] text-slate-600">not inspected</span>`;
+  return `
+    <div class="flex items-center gap-2 mb-1.5">
+      <span class="w-2 h-2 rounded-full ${dot}"></span>
+      <span class="font-mono text-[13px] text-slate-100">${sb.name}</span>
+      <span class="text-[9px] uppercase tracking-wider text-slate-500 border border-slate-700 rounded px-1">L2</span>
+    </div>
+    <div class="text-[10px] text-slate-500 font-mono mb-2">${sb.image}</div>
+    <div class="flex flex-wrap items-center gap-1 mb-1.5">${sb.nets.map(NETPILL).join("")}</div>
+    <div class="flex items-center justify-between">
+      ${insp}
+      <span class="text-[9.5px] text-slate-500">${sb.uids.length} UIDs</span>
+    </div>`;
+}
+SANDBOXES.forEach(sb => { document.getElementById("sb-"+sb.name).innerHTML = sbCard(sb); });
+
+/* ---- attachment table ---- */
+function policyBadge(uid){
+  const e = uid.egress;
+  let cls = "text-slate-400 border-slate-700";
+  if (/no-egress/.test(e)) cls = "text-rose-300/90 border-rose-600/40 bg-rose-500/5";
+  else if (/deny-all/.test(e)) cls = "text-rose-200/80 border-rose-700/40 bg-rose-500/5";
+  else if (/broad/.test(e)) cls = "text-sky-300/90 border-sky-600/40 bg-sky-500/5";
+  else if (/allowlist/.test(e)) cls = "text-amber-200/90 border-amber-600/40 bg-amber-500/5";
+  const tag = uid.kind==="human"
+    ? `<span class="text-[9px] uppercase text-violet-300">human</span>`
+    : `<span class="text-[9px] uppercase text-slate-500">agent</span>`;
+  return `<div class="flex items-center gap-2 py-0.5">
+      <span class="font-mono text-[11px] ${uid.kind==='human'?'text-violet-200':'text-slate-200'} w-28 shrink-0">${uid.uid}</span>
+      ${tag}
+      <span class="inline-flex text-[10px] rounded border px-1.5 py-0.5 ${cls}">${e}</span>
+    </div>`;
+}
+const tbody = document.getElementById("attach-body");
+tbody.innerHTML = SANDBOXES.map(sb => {
+  const insp = sb.inspected
+    ? `<span class="inline-flex items-center gap-1 text-amber-300/90"><svg class="w-3.5 h-3.5"><use href="#i-eye"/></svg>mitmproxy + Zeek</span>`
+    : `<span class="inline-flex items-center gap-1 text-slate-500"><svg class="w-3.5 h-3.5"><use href="#i-ban"/></svg>n/a (no egress)</span>`;
+  return `
+    <tr class="border-b border-slate-800/70 hover:bg-slate-800/20" data-row="${sb.name}">
+      <td class="py-3 pr-3">
+        <div class="flex items-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span class="font-mono text-slate-100">${sb.name}</span>
+        </div>
+        <div class="text-[10px] text-slate-500 font-mono mt-0.5 pl-3.5">${sb.image}</div>
+      </td>
+      <td class="py-3 px-3"><div class="flex flex-wrap gap-1">${sb.nets.map(NETPILL).join("")}</div></td>
+      <td class="py-3 px-3">${sb.uids.map(policyBadge).join("")}</td>
+      <td class="py-3 px-3 text-[11px]">${insp}</td>
+      <td class="py-3 px-3 text-[11px]"><span class="inline-flex items-center gap-1 text-sky-300/90"><svg class="w-3.5 h-3.5"><use href="#i-llm"/></svg>${sb.llm} <span class="text-slate-500">· vkey</span></span></td>
+      <td class="py-3 pl-3 text-right"><span class="text-[10px] font-mono text-slate-400 border border-slate-700 rounded px-1.5 py-0.5">${sb.profile}</span></td>
+    </tr>`;
+}).join("");
+
+/* ---- SVG connector wires ---- */
+const svg = document.getElementById("wires");
+const SVGNS = "http://www.w3.org/2000/svg";
+const EDGES = [];
+
+function rectIn(el, container){
+  const r = el.getBoundingClientRect();
+  const c = container.getBoundingClientRect();
+  return { x:r.left-c.left, y:r.top-c.top, w:r.width, h:r.height, cx:r.left-c.left+r.width/2, cy:r.top-c.top+r.height/2 };
+}
+function path(d, color, dashed){
+  const p = document.createElementNS(SVGNS,"path");
+  p.setAttribute("d", d);
+  p.setAttribute("fill","none");
+  p.setAttribute("stroke", color);
+  p.setAttribute("stroke-width","2");
+  p.setAttribute("stroke-linecap","round");
+  if(dashed) p.classList.add("flow");
+  p.style.opacity = "0.55";
+  return p;
+}
+function curveRight(a, b){ // a right edge -> b left edge
+  const x1=a.x+a.w, y1=a.cy, x2=b.x, y2=b.cy, mx=(x1+x2)/2;
+  return `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
+}
+function buildWires(){
+  const sec = svg.parentElement;
+  svg.setAttribute("width", sec.clientWidth);
+  svg.setAttribute("height", sec.clientHeight);
+  svg.innerHTML = "";
+  EDGES.length = 0;
+
+  const get = id => document.getElementById(id);
+  const sandboxEls = {
+    "web-agent-01":get("sb-web-agent-01"), "ci-runner":get("sb-ci-runner"),
+    "data-pipeline":get("sb-data-pipeline"), "research-01":get("sb-research-01"),
+  };
+  const netEls = { "svc-net":get("net-svc"), "egress-net":get("net-egress"), "isolated":get("net-isolated") };
+
+  // sandbox -> network
+  SANDBOXES.forEach(sb => {
+    sb.nets.forEach(n => {
+      const a = rectIn(sandboxEls[sb.name], sec), b = rectIn(netEls[n], sec);
+      const dashed = (n==="egress-net");
+      const p = path(curveRight(a,b), NETS[n].color, dashed);
+      svg.appendChild(p);
+      EDGES.push({ p, sb:sb.name, net:n });
+    });
+  });
+
+  // egress-net -> uplink -> internet
+  const eg=rectIn(netEls["egress-net"],sec), up=rectIn(get("net-uplink"),sec), inet=rectIn(get("net-internet"),sec);
+  const p1=path(curveRight(eg,up),"#f59e0b",true); svg.appendChild(p1); EDGES.push({p:p1,net:"egress-net"});
+  const p2=path(curveRight(up,inet),"#f59e0b",true); svg.appendChild(p2); EDGES.push({p:p2,net:"egress-net"});
+
+  // isolated -> blocked stub (short red dead-end toward uplink with X)
+  const iso=rectIn(netEls["isolated"],sec);
+  const stubX1=iso.x+iso.w, stubY=iso.cy, stubX2=iso.x+iso.w+34;
+  const stub=path(`M ${stubX1} ${stubY} L ${stubX2} ${stubY}`,"#f87171",false); stub.style.opacity="0.7"; svg.appendChild(stub);
+  const cross=document.createElementNS(SVGNS,"path");
+  cross.setAttribute("d",`M ${stubX2-5} ${stubY-5} L ${stubX2+5} ${stubY+5} M ${stubX2+5} ${stubY-5} L ${stubX2-5} ${stubY+5}`);
+  cross.setAttribute("stroke","#f87171"); cross.setAttribute("stroke-width","2.2"); cross.setAttribute("stroke-linecap","round");
+  svg.appendChild(cross);
+}
+window.addEventListener("load", buildWires);
+window.addEventListener("resize", () => { clearTimeout(window._wt); window._wt=setTimeout(buildWires,120); });
+
+/* ---- hover highlighting ---- */
+function highlight(filterFn){
+  EDGES.forEach(e => { e.p.style.opacity = filterFn(e) ? "0.95" : "0.12"; e.p.setAttribute("stroke-width", filterFn(e)?"3":"2"); });
+}
+function resetHi(){ EDGES.forEach(e => { e.p.style.opacity="0.55"; e.p.setAttribute("stroke-width","2"); }); }
+
+document.querySelectorAll(".sb").forEach(el => {
+  const name = el.dataset.sb;
+  el.addEventListener("mouseenter", () => {
+    el.classList.add("hot"); el.style.setProperty("--hot","#38bdf8");
+    highlight(e => e.sb===name);
+    const sb = SANDBOXES.find(s=>s.name===name);
+    sb.nets.forEach(n => document.getElementById("net-"+(n==="svc-net"?"svc":n)).classList.add("hot"));
+    const row=document.querySelector(`tr[data-row="${name}"]`); if(row) row.classList.add("hot");
+  });
+  el.addEventListener("mouseleave", () => {
+    el.classList.remove("hot"); resetHi();
+    document.querySelectorAll(".lane.hot").forEach(l=>l.classList.remove("hot"));
+    const row=document.querySelector(`tr[data-row="${name}"]`); if(row) row.classList.remove("hot");
+  });
+});
+document.querySelectorAll(".lane").forEach(el => {
+  const net = el.dataset.net;
+  el.addEventListener("mouseenter", () => {
+    el.classList.add("hot");
+    highlight(e => e.net===net);
+    document.querySelectorAll(".sb").forEach(s => { if(SANDBOXES.find(x=>x.name===s.dataset.sb).nets.includes(net)){ s.classList.add("hot"); s.style.setProperty("--hot",NETS[net].color);} });
+  });
+  el.addEventListener("mouseleave", () => {
+    el.classList.remove("hot"); resetHi();
+    document.querySelectorAll(".sb.hot").forEach(s=>s.classList.remove("hot"));
+  });
+});
+</script>
+
+<style>
+  .svcnode{font-size:11px;color:#9aa4b2;border:1px solid #2a313c;border-radius:8px;padding:3px 8px;display:inline-flex;align-items:center;gap:6px;background:#0f131b}
+  .svcnode::before{content:"";width:6px;height:6px;border-radius:50%;background:#34d399}
+  .svcnode.amber{color:#fcd9a3;border-color:#7c5a17}
+  .svcnode.amber::before{background:#f59e0b}
+</style>
+</body>
+</html>

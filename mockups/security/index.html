@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security · Guardrails &amp; Agent profiles · llm-system-containers</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #0b0e14; }
+  @keyframes pulse-ring { 0%{box-shadow:0 0 0 0 var(--ring)} 70%{box-shadow:0 0 0 6px transparent} 100%{box-shadow:0 0 0 0 transparent} }
+  .pulse { animation: pulse-ring 2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .blink { animation: blink 1.4s infinite; }
+  @keyframes slidein { from{opacity:0; transform:translateY(-6px)} to{opacity:1; transform:translateY(0)} }
+  .slidein { animation: slidein .35s ease-out; }
+  .card { transition: border-color .15s, transform .15s, background .15s; }
+  .card:hover { border-color:#3d444d; }
+  .nav-btn.active { background: rgba(88,166,255,.14); border-color:#58a6ff; color:#cfe3ff; }
+  .tabseg.active { background:#161b22; color:#e6edf3; }
+  .pcard:hover { transform: translateY(-2px); border-color:#475569; }
+  ::-webkit-scrollbar{width:10px;height:10px} ::-webkit-scrollbar-thumb{background:#262c36;border-radius:6px}
+  [x-cloak]{display:none}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .scopebar{height:5px;border-radius:3px;background:#1c2230;overflow:hidden}
+</style>
+</head>
+<body class="text-slate-200 font-sans antialiased">
+
+<!-- ===== icon sprite ===== -->
+<svg width="0" height="0" class="hidden" aria-hidden="true">
+  <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3l8 3v6c0 5-3.5 7.7-8 9-4.5-1.3-8-4-8-9V6z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M8.5 12l2.3 2.3L15.5 9.7"/></symbol>
+  <symbol id="i-id" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.5 16.5c.6-1.7 2-2.5 3.5-2.5s2.9.8 3.5 2.5M15 9.5h4M15 13h4M15 16h3"/></g></symbol>
+  <symbol id="i-files" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M6 3h8l4 4v14H6z"/><path fill="none" stroke="currentColor" stroke-width="2" d="M14 3v4h4"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M9.5 4v3M14.5 4v3M9.5 17v3M14.5 17v3M4 9.5h3M4 14.5h3M17 9.5h3M17 14.5h3"/></g></symbol>
+  <symbol id="i-net" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 2.6 14.6 0 17M12 3.5c-2.6 2.4-2.6 14.6 0 17"/></g></symbol>
+  <symbol id="i-pkg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></g></symbol>
+  <symbol id="i-llm" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="8" cy="14" r="4"/><path d="M11 11l9-9M17 5l2 2M14 8l2 2"/></g></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></g></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M13 3L4 14h6l-1 7 9-11h-6z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></g></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c.7-3.5 3.4-5 7-5s6.3 1.5 7 5"/></g></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 6l6 6-6 6"/></symbol>
+</svg>
+
+<div class="max-w-[1480px] mx-auto px-6 py-6">
+
+  <!-- ===== top bar / app shell ===== -->
+  <div class="flex items-center gap-4 mb-6">
+    <div class="flex items-center gap-2.5">
+      <span class="w-9 h-9 rounded-lg bg-emerald-500/15 border border-emerald-500/40 grid place-items-center text-emerald-300">
+        <svg class="w-5 h-5"><use href="#i-shield"/></svg>
+      </span>
+      <div>
+        <h1 class="text-base font-semibold text-white tracking-tight leading-tight">Security</h1>
+        <p class="text-[11px] text-slate-500">llm-system-containers · <span class="mono">llmsctl security</span></p>
+      </div>
+    </div>
+
+    <!-- screen toggle -->
+    <nav class="ml-4 flex items-center gap-1 p-1 rounded-xl border border-slate-800 bg-slate-900/50">
+      <button id="navGuard" onclick="showScreen('guard')" class="nav-btn active flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-transparent text-sm text-slate-400 transition">
+        <svg class="w-4 h-4"><use href="#i-shield"/></svg> Guardrails
+      </button>
+      <button id="navProf" onclick="showScreen('prof')" class="nav-btn flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-transparent text-sm text-slate-400 transition">
+        <svg class="w-4 h-4"><use href="#i-id"/></svg> Agent profiles
+      </button>
+    </nav>
+
+    <div class="flex-1"></div>
+
+    <div class="hidden lg:flex items-center gap-2 text-[11px] text-slate-400 mr-1">
+      <span class="flex items-center gap-1.5"><svg class="w-3.5 h-3.5 text-emerald-400"><use href="#i-shield"/></svg>Tetragon eBPF <span class="text-emerald-400">enforcing</span></span>
+    </div>
+    <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/50 text-[11px]">
+      <span class="w-2 h-2 rounded-full bg-emerald-400 pulse" style="--ring:rgba(52,211,153,.5)"></span>
+      <span class="text-slate-300 mono">llmsc-vm</span>
+      <span class="text-slate-600">·</span>
+      <span class="text-slate-500">L1 · unprivileged</span>
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- ====================== SCREEN 1 — GUARDRAILS ====================== -->
+  <!-- =================================================================== -->
+  <section id="screen-guard">
+
+    <!-- scope / context bar -->
+    <div class="flex flex-wrap items-center gap-3 mb-5 p-3.5 rounded-xl border border-slate-800 bg-slate-900/40">
+      <div class="text-[11px] uppercase tracking-wider text-slate-500">Editing guardrails for</div>
+      <!-- sandbox selector -->
+      <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-950/50">
+        <svg class="w-4 h-4 text-slate-400"><use href="#i-pkg"/></svg>
+        <span class="text-[10px] uppercase tracking-wider text-slate-500 border border-slate-700 rounded px-1">L2 sandbox</span>
+        <select id="sbSelect" onchange="renderEvents()" class="bg-transparent text-sm text-slate-100 mono focus:outline-none">
+          <option>web-agent-01</option>
+          <option>ci-runner</option>
+          <option>research-01</option>
+          <option>data-pipeline</option>
+        </select>
+        <svg class="w-4 h-4 text-slate-600"><use href="#i-chev"/></svg>
+      </div>
+      <span class="text-slate-700">/</span>
+      <!-- UID selector -->
+      <div class="flex items-center gap-1 p-1 rounded-lg border border-slate-700 bg-slate-950/50">
+        <button onclick="setUid('agent', this)" id="uidAgent" class="tabseg active flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] text-slate-400">
+          <svg class="w-3.5 h-3.5"><use href="#i-user"/></svg> agent UID <span class="mono text-slate-500">1001</span>
+        </button>
+        <button onclick="setUid('operator', this)" id="uidOperator" class="tabseg flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] text-slate-400">
+          <svg class="w-3.5 h-3.5"><use href="#i-user"/></svg> operator UID <span class="mono text-slate-500">1000</span>
+        </button>
+      </div>
+      <div class="flex-1"></div>
+      <div class="flex items-center gap-2 text-[11px] text-slate-500">
+        Profile applied:
+        <button onclick="showScreen('prof')" class="px-2 py-1 rounded-md border border-sky-500/30 bg-sky-500/10 text-sky-300 mono text-[11px] hover:border-sky-400">researcher</button>
+      </div>
+      <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 text-[12px] hover:bg-emerald-500/25">
+        <svg class="w-4 h-4"><use href="#i-check"/></svg> Apply &amp; reconcile
+      </button>
+    </div>
+
+    <p id="uidNote" class="text-[11.5px] text-amber-300/80 mb-4 -mt-2 flex items-center gap-2">
+      <svg class="w-3.5 h-3.5"><use href="#i-bolt"/></svg>
+      <span>Showing the <b>agent UID (1001)</b> ruleset — scoped/delegated. The operator UID has its own, broader ruleset in the same sandbox.</span>
+    </p>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+
+      <!-- ---------- Filesystem ACLs ---------- -->
+      <div class="card rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+        <div class="flex items-center gap-2.5 mb-1">
+          <span class="w-8 h-8 rounded-lg bg-sky-500/15 border border-sky-500/30 grid place-items-center text-sky-300"><svg class="w-4 h-4"><use href="#i-files"/></svg></span>
+          <div>
+            <h2 class="font-semibold text-slate-100 text-sm">Filesystem ACLs</h2>
+            <p class="text-[10.5px] text-slate-500">path allow / deny · enforced by Tetragon FS layer</p>
+          </div>
+          <div class="flex-1"></div>
+          <span class="text-[10px] text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 rounded px-1.5 py-0.5">default-deny</span>
+        </div>
+        <p class="text-[11px] text-slate-500 mb-3">Human owns the workspace; the agent UID is granted portions. The kernel enforces the grants — traversal outside is denied regardless of process beliefs.</p>
+        <div id="fsRules" class="space-y-1.5"></div>
+        <button class="mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-slate-700 text-slate-500 text-[12px] hover:border-slate-500 hover:text-slate-300">
+          <svg class="w-4 h-4"><use href="#i-plus"/></svg> Add path rule
+        </button>
+      </div>
+
+      <!-- ---------- Syscall policy ---------- -->
+      <div class="card rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+        <div class="flex items-center gap-2.5 mb-1">
+          <span class="w-8 h-8 rounded-lg bg-violet-500/15 border border-violet-500/30 grid place-items-center text-violet-300"><svg class="w-4 h-4"><use href="#i-cpu"/></svg></span>
+          <div>
+            <h2 class="font-semibold text-slate-100 text-sm">Syscall policy</h2>
+            <p class="text-[10.5px] text-slate-500">deny dangerous syscalls · Tetragon kprobe enforcement</p>
+          </div>
+          <div class="flex-1"></div>
+          <span class="text-[10px] text-violet-300 border border-violet-500/30 bg-violet-500/10 rounded px-1.5 py-0.5">allow normal dev</span>
+        </div>
+        <p class="text-[11px] text-slate-500 mb-3">Normal development syscalls pass; a tight set of dangerous calls is blocked for the agent UID. Non-bypassable from userspace.</p>
+        <div id="syscallDeny" class="space-y-1.5"></div>
+        <div class="mt-3 pt-3 border-t border-slate-800">
+          <div class="text-[10.5px] uppercase tracking-wider text-slate-600 mb-2">Allowed (normal dev)</div>
+          <div id="syscallAllow" class="flex flex-wrap gap-1.5"></div>
+        </div>
+      </div>
+
+      <!-- ---------- Network ACLs ---------- -->
+      <div class="card rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+        <div class="flex items-center gap-2.5 mb-1">
+          <span class="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 grid place-items-center text-amber-300"><svg class="w-4 h-4"><use href="#i-net"/></svg></span>
+          <div>
+            <h2 class="font-semibold text-slate-100 text-sm">Network ACLs</h2>
+            <p class="text-[10.5px] text-slate-500">egress allowlist · Incus policy + Tetragon</p>
+          </div>
+          <div class="flex-1"></div>
+          <span class="text-[10px] text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 rounded px-1.5 py-0.5">default-deny egress</span>
+        </div>
+        <p class="text-[11px] text-slate-500 mb-3">All egress denied by default. LLM traffic only via LiteLLM (virtual keys); HTTP(S) forced through mitmproxy for inspection.</p>
+        <div id="netRules" class="space-y-1.5"></div>
+        <button class="mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-slate-700 text-slate-500 text-[12px] hover:border-slate-500 hover:text-slate-300">
+          <svg class="w-4 h-4"><use href="#i-plus"/></svg> Add destination rule
+        </button>
+      </div>
+    </div>
+
+    <!-- ---------- live event feed ---------- -->
+    <div class="mt-5 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+      <div class="flex items-center gap-2.5 mb-3">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 blink"></span>
+        <h2 class="font-semibold text-slate-100 text-sm">Enforcement event feed</h2>
+        <span class="text-[10.5px] text-slate-500">Tetragon eBPF · live allow / deny decisions for the selected sandbox + UID</span>
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-3 text-[11px]">
+          <span class="flex items-center gap-1.5 text-emerald-300"><svg class="w-3.5 h-3.5"><use href="#i-check"/></svg>allow</span>
+          <span class="flex items-center gap-1.5 text-rose-300"><svg class="w-3.5 h-3.5"><use href="#i-x"/></svg>deny</span>
+        </div>
+      </div>
+      <div class="grid grid-cols-[80px_56px_120px_1fr] gap-x-4 px-2 pb-1.5 text-[10px] uppercase tracking-wider text-slate-600 border-b border-slate-800">
+        <span>time</span><span>verdict</span><span>domain</span><span>detail</span>
+      </div>
+      <div id="eventFeed" class="mono text-[12px] divide-y divide-slate-800/60 max-h-[260px] overflow-y-auto"></div>
+    </div>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- ==================== SCREEN 2 — AGENT PROFILES ==================== -->
+  <!-- =================================================================== -->
+  <section id="screen-prof" class="hidden">
+
+    <!-- gallery toolbar -->
+    <div id="profGallery">
+      <div class="flex flex-wrap items-center gap-3 mb-5">
+        <div>
+          <h2 class="text-base font-semibold text-white">Agent profiles</h2>
+          <p class="text-[11.5px] text-slate-500">Reusable named bundles of guardrail boundaries — filesystem + syscall + network ACLs, resource limits, allowed tools &amp; LLM budget. Assign to a sandbox UID to make the security boundary legible and repeatable.</p>
+        </div>
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/50">
+          <svg class="w-4 h-4 text-slate-500"><use href="#i-search"/></svg>
+          <input placeholder="Filter profiles…" class="bg-transparent text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none w-36">
+        </div>
+        <button class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-sky-500/15 border border-sky-500/40 text-sky-200 text-[12.5px] hover:bg-sky-500/25">
+          <svg class="w-4 h-4"><use href="#i-plus"/></svg> New profile
+        </button>
+      </div>
+
+      <div id="profCards" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5"></div>
+
+      <p class="text-[11px] text-slate-600 mt-5 flex items-center gap-2">
+        <svg class="w-3.5 h-3.5"><use href="#i-lock"/></svg>
+        Every profile runs <span class="text-slate-400">unprivileged</span> (L2 LXC) with <span class="text-slate-400">rootless</span> L3 where enabled. Profiles never grant privilege — they only narrow the default-deny boundary.
+      </p>
+    </div>
+
+    <!-- profile detail / edit -->
+    <div id="profDetail" class="hidden"></div>
+  </section>
+
+</div>
+
+<script>
+const icon = (id, cls="w-4 h-4") => `<svg class="${cls}"><use href="#i-${id}"/></svg>`;
+
+/* =========================================================================
+   SCREEN 1 — GUARDRAILS  (data is per-UID)
+   ========================================================================= */
+let currentUid = "agent";
+
+const FS_RULES = {
+  agent: [
+    { mode:"RW",   path:"/workspace/scratch",            note:"delegated write area" },
+    { mode:"RO",   path:"/workspace/repo",               note:"source checkout · read-only" },
+    { mode:"RO",   path:"/workspace/docs",               note:"reference material" },
+    { mode:"DENY", path:"/etc",                          note:"system config" },
+    { mode:"DENY", path:"/home/operator",                note:"other UID home" },
+    { mode:"DENY", path:"* (outside grants)",            note:"default-deny · everything else" },
+  ],
+  operator: [
+    { mode:"RW",   path:"/workspace",                    note:"owns the full workspace" },
+    { mode:"RW",   path:"/home/operator",                note:"operator home" },
+    { mode:"RO",   path:"/etc",                          note:"inspect system config" },
+    { mode:"DENY", path:"/home/agent",                   note:"agent UID home" },
+    { mode:"DENY", path:"* (outside grants)",            note:"default-deny · everything else" },
+  ],
+};
+
+const SYSCALL_DENY = {
+  agent:    ["ptrace","mount","umount2","kexec_load","init_module","finit_module","delete_module","bpf","setns","unshare(CLONE_NEWNS)","pivot_root","perf_event_open"],
+  operator: ["kexec_load","init_module","finit_module","delete_module","bpf"],
+};
+const SYSCALL_ALLOW = ["openat","read","write","execve","clone","fork","socket(via ACL)","stat","mmap","futex","epoll_wait"];
+
+const NET_RULES = {
+  agent: [
+    { verdict:"allow", dst:"litellm.svc:4000",      proto:"HTTPS", note:"LLM only · virtual key vk-researcher-7f3" },
+    { verdict:"allow", dst:"mitmproxy.svc:8080",    proto:"HTTP(S)", note:"all web egress forced through proxy" },
+    { verdict:"allow", dst:"docs.python.org:443",   proto:"HTTPS", note:"allowlisted docs (via mitmproxy)" },
+    { verdict:"deny",  dst:"0.0.0.0/0",             proto:"any",   note:"default-deny · raw egress blocked" },
+    { verdict:"deny",  dst:"169.254.169.254",       proto:"any",   note:"cloud metadata endpoint" },
+  ],
+  operator: [
+    { verdict:"allow", dst:"litellm.svc:4000",      proto:"HTTPS", note:"LLM via virtual key" },
+    { verdict:"allow", dst:"mitmproxy.svc:8080",    proto:"HTTP(S)", note:"inspected web egress" },
+    { verdict:"allow", dst:"github.com:443",        proto:"HTTPS", note:"operator may push/pull" },
+    { verdict:"deny",  dst:"0.0.0.0/0",             proto:"any",   note:"default-deny remainder" },
+  ],
+};
+
+function fsRow(r){
+  const map = {
+    RW:   "text-emerald-300 border-emerald-500/30 bg-emerald-500/10",
+    RO:   "text-sky-300 border-sky-500/30 bg-sky-500/10",
+    DENY: "text-rose-300 border-rose-500/30 bg-rose-500/10",
+  };
+  const deny = r.mode==="DENY";
+  return `<div class="group flex items-center gap-2.5 px-2.5 py-2 rounded-lg border border-slate-800 bg-slate-950/40 hover:border-slate-700">
+    <span class="text-[10px] font-semibold w-12 text-center rounded border px-1 py-0.5 ${map[r.mode]}">${r.mode}</span>
+    <span class="mono text-[12.5px] ${deny?'text-slate-400 line-through decoration-rose-500/40':'text-slate-100'} flex-1 truncate">${r.path}</span>
+    <span class="text-[10.5px] text-slate-500 hidden sm:block">${r.note}</span>
+    <button class="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-slate-300">${icon("edit","w-3.5 h-3.5")}</button>
+  </div>`;
+}
+
+function syscallRow(s){
+  return `<div class="group flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 hover:border-slate-700">
+    <span class="text-rose-400">${icon("x","w-3.5 h-3.5")}</span>
+    <span class="mono text-[12.5px] text-slate-200 flex-1">${s}</span>
+    <span class="text-[10px] text-rose-300/80 border border-rose-500/25 rounded px-1">deny</span>
+  </div>`;
+}
+
+function netRow(r){
+  const allow = r.verdict==="allow";
+  return `<div class="group flex items-center gap-2.5 px-2.5 py-2 rounded-lg border border-slate-800 bg-slate-950/40 hover:border-slate-700">
+    <span class="${allow?'text-emerald-400':'text-rose-400'}">${icon(allow?'check':'x',"w-4 h-4")}</span>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2">
+        <span class="mono text-[12.5px] ${allow?'text-slate-100':'text-slate-400 line-through decoration-rose-500/40'} truncate">${r.dst}</span>
+        <span class="text-[9.5px] uppercase tracking-wide text-slate-500 border border-slate-700 rounded px-1">${r.proto}</span>
+      </div>
+      <div class="text-[10.5px] text-slate-500 truncate">${r.note}</div>
+    </div>
+    <button class="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-slate-300">${icon("edit","w-3.5 h-3.5")}</button>
+  </div>`;
+}
+
+function renderRules(){
+  document.getElementById("fsRules").innerHTML       = FS_RULES[currentUid].map(fsRow).join("");
+  document.getElementById("syscallDeny").innerHTML   = SYSCALL_DENY[currentUid].map(syscallRow).join("");
+  document.getElementById("syscallAllow").innerHTML  = SYSCALL_ALLOW.map(s =>
+    `<span class="mono text-[11px] text-emerald-300/90 border border-emerald-500/20 bg-emerald-500/5 rounded px-1.5 py-0.5">${s}</span>`).join("");
+  document.getElementById("netRules").innerHTML      = NET_RULES[currentUid].map(netRow).join("");
+}
+
+function setUid(uid, btn){
+  currentUid = uid;
+  document.querySelectorAll(".tabseg").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  const agent = uid==="agent";
+  document.getElementById("uidNote").innerHTML = agent
+    ? `${icon("bolt","w-3.5 h-3.5")}<span>Showing the <b>agent UID (1001)</b> ruleset — scoped/delegated. The operator UID has its own, broader ruleset in the same sandbox.</span>`
+    : `${icon("bolt","w-3.5 h-3.5")}<span>Showing the <b>operator UID (1000)</b> ruleset — the human owns the workspace and has broader egress; still unprivileged, still default-deny at the edges.</span>`;
+  document.getElementById("uidNote").className = agent
+    ? "text-[11.5px] text-amber-300/80 mb-4 -mt-2 flex items-center gap-2"
+    : "text-[11.5px] text-violet-300/80 mb-4 -mt-2 flex items-center gap-2";
+  renderRules();
+  renderEvents();
+}
+
+/* ---- live event feed ---- */
+const FEED_TEMPLATES = {
+  agent: [
+    { v:"deny",  d:"filesystem", t:`openat <span class="text-slate-300">/etc/shadow</span> → EACCES (outside grants)` },
+    { v:"allow", d:"filesystem", t:`write <span class="text-slate-300">/workspace/scratch/out.json</span>` },
+    { v:"deny",  d:"syscall",    t:`ptrace(PTRACE_ATTACH) → blocked` },
+    { v:"allow", d:"network",    t:`connect <span class="text-slate-300">litellm.svc:4000</span> (vk-researcher-7f3)` },
+    { v:"deny",  d:"network",    t:`connect <span class="text-slate-300">198.51.100.7:443</span> → not in allowlist` },
+    { v:"allow", d:"network",    t:`connect <span class="text-slate-300">mitmproxy.svc:8080</span> → docs.python.org` },
+    { v:"deny",  d:"syscall",    t:`mount(tmpfs) → blocked` },
+    { v:"allow", d:"filesystem", t:`read <span class="text-slate-300">/workspace/repo/src/api.ts</span>` },
+    { v:"deny",  d:"network",    t:`connect <span class="text-slate-300">169.254.169.254</span> → metadata blocked` },
+    { v:"deny",  d:"syscall",    t:`bpf(BPF_PROG_LOAD) → blocked` },
+  ],
+  operator: [
+    { v:"allow", d:"filesystem", t:`write <span class="text-slate-300">/workspace/repo/README.md</span>` },
+    { v:"allow", d:"network",    t:`connect <span class="text-slate-300">github.com:443</span> (push)` },
+    { v:"allow", d:"filesystem", t:`read <span class="text-slate-300">/etc/os-release</span>` },
+    { v:"deny",  d:"filesystem", t:`openat <span class="text-slate-300">/home/agent/.ssh</span> → EACCES` },
+    { v:"allow", d:"network",    t:`connect <span class="text-slate-300">litellm.svc:4000</span>` },
+    { v:"deny",  d:"network",    t:`connect <span class="text-slate-300">203.0.113.9:22</span> → default-deny` },
+  ],
+};
+const DOM_COLOR = { filesystem:"text-sky-300", syscall:"text-violet-300", network:"text-amber-300" };
+
+let feedLog = [];
+function nowStr(){ const d=new Date(); return d.toTimeString().slice(0,8); }
+function eventLine(e){
+  const allow = e.v==="allow";
+  return `<div class="slidein grid grid-cols-[80px_56px_120px_1fr] gap-x-4 items-center px-2 py-1.5">
+    <span class="text-slate-600">${e.time}</span>
+    <span class="flex items-center gap-1 ${allow?'text-emerald-300':'text-rose-300'}">${icon(allow?'check':'x',"w-3.5 h-3.5")}${allow?'allow':'deny'}</span>
+    <span class="${DOM_COLOR[e.d]}">${e.d}</span>
+    <span class="text-slate-400">${e.t}</span>
+  </div>`;
+}
+function seedFeed(){
+  const sb = document.getElementById("sbSelect").value;
+  const pool = FEED_TEMPLATES[currentUid];
+  feedLog = [];
+  for(let i=0;i<8;i++){
+    const e = {...pool[Math.floor(Math.random()*pool.length)], time:nowStr(), sb};
+    feedLog.unshift(e);
+  }
+  drawFeed();
+}
+function drawFeed(){
+  document.getElementById("eventFeed").innerHTML = feedLog.map(eventLine).join("");
+}
+function renderEvents(){ seedFeed(); }
+
+let feedTimer = null;
+function startFeed(){
+  if(feedTimer) clearInterval(feedTimer);
+  feedTimer = setInterval(()=>{
+    if(document.getElementById("screen-guard").classList.contains("hidden")) return;
+    const pool = FEED_TEMPLATES[currentUid];
+    const e = {...pool[Math.floor(Math.random()*pool.length)], time:nowStr()};
+    feedLog.unshift(e);
+    if(feedLog.length>40) feedLog.pop();
+    drawFeed();
+  }, 2200);
+}
+
+/* =========================================================================
+   SCREEN 2 — AGENT PROFILES
+   ========================================================================= */
+const PROFILES = [
+  {
+    id:"researcher", accent:"sky", tagline:"Broad read, web/docs egress, no builds",
+    desc:"Reads widely across the workspace and reaches documentation on the web (always through mitmproxy). Cannot write outside scratch and cannot build containers. Tuned for exploration and synthesis.",
+    fs:{ rw:["/workspace/scratch"], ro:["/workspace/repo","/workspace/docs"], deny:["/etc","everything outside grants"] },
+    syscall:"standard dev set; deny ptrace / mount / bpf / module ops",
+    net:{ allow:["LiteLLM (LLM)","mitmproxy → docs & web allowlist"], deny:["raw egress","metadata endpoint"] },
+    l3:false, budget:"generous", budgetPct:85, key:"vk-researcher-*", limits:"2 vCPU · 4 GB",
+    allows:["Read repo, docs, scratch","Web/docs egress via mitmproxy","Generous LLM budget"],
+    denies:["No repo writes","No container builds (L3 off)","No raw egress"],
+    agents:[{n:"agent-browse",sb:"research-01"},{n:"agent-claude",sb:"web-agent-01"}],
+  },
+  {
+    id:"tester", accent:"emerald", tagline:"RW repo, run tests, L3 test infra",
+    desc:"Writes to the repo and runs the test suite, with rootless L3 containers enabled to stand up test infrastructure (databases, fixtures). Egress is limited to package mirrors and the LLM.",
+    fs:{ rw:["/workspace/repo","/workspace/scratch"], ro:["/workspace/docs"], deny:["/etc","everything outside grants"] },
+    syscall:"dev set + container runtime syscalls (rootless); deny ptrace / mount(host) / bpf",
+    net:{ allow:["LiteLLM (LLM)","mitmproxy → pkg mirrors"], deny:["general web","raw egress"] },
+    l3:true, budget:"medium", budgetPct:50, key:"vk-tester-*", limits:"4 vCPU · 8 GB",
+    allows:["RW repo + scratch","Run tests","L3 (rootless) test infra"],
+    denies:["No general web egress","No host mounts","Medium LLM budget cap"],
+    agents:[{n:"agent-aux",sb:"web-agent-01"}],
+  },
+  {
+    id:"builder", accent:"amber", tagline:"RW repo + artifacts, build images",
+    desc:"Builds artifacts and container images with rootless L3 enabled, writing to the repo and an artifacts area. Egress is allowlisted to package and image registries; everything else stays default-deny.",
+    fs:{ rw:["/workspace/repo","/workspace/artifacts","/workspace/scratch"], ro:["/workspace/docs"], deny:["/etc","everything outside grants"] },
+    syscall:"dev set + build/container syscalls (rootless); deny ptrace / mount(host) / bpf",
+    net:{ allow:["LiteLLM (LLM)","registries & pkg mirrors via mitmproxy"], deny:["general web","raw egress"] },
+    l3:true, budget:"medium", budgetPct:50, key:"vk-builder-*", limits:"6 vCPU · 12 GB",
+    allows:["RW repo + artifacts","Build images (L3 rootless)","Registry / package egress"],
+    denies:["No general web egress","No privileged build","Medium LLM budget cap"],
+    agents:[{n:"agent-ci",sb:"ci-runner"}],
+  },
+  {
+    id:"validation", accent:"rose", tagline:"Read-only everything, checks only, no egress",
+    desc:"The tightest profile. Reads everything read-only, runs checks/linters, writes nothing, and has the smallest syscall set. No egress at all except the LLM. Use for untrusted code review and gating.",
+    fs:{ rw:[], ro:["/workspace (all)"], deny:["/etc","all writes","everything outside grants"] },
+    syscall:"minimal read/exec set; deny writes-as-policy, ptrace, mount, bpf, network syscalls except LLM",
+    net:{ allow:["LiteLLM (LLM) only"], deny:["all web","mitmproxy passthrough","raw egress"] },
+    l3:false, budget:"small", budgetPct:18, key:"vk-validation-*", limits:"1 vCPU · 2 GB",
+    allows:["Read-only all of /workspace","Run checks / linters","LLM only"],
+    denies:["No writes anywhere","No egress except LLM","No L3, tightest syscalls"],
+    agents:[{n:"agent-review",sb:"data-pipeline"}],
+  },
+  {
+    id:"orchestrator", accent:"violet", tagline:"Coordinate agents, launch sandboxes, no raw egress",
+    desc:"Coordinates other agents over NATS and can launch/stop sandboxes via the control plane. Touches almost no filesystem directly and has a broad LLM budget, but never gets raw internet egress.",
+    fs:{ rw:["/workspace/coord"], ro:["/workspace/repo (metadata)"], deny:["agent homes","/etc","everything outside grants"] },
+    syscall:"control-plane set; deny ptrace / mount / bpf / module ops",
+    net:{ allow:["LiteLLM (LLM)","NATS bus (coordination)","llmsctl control socket"], deny:["raw egress","general web"] },
+    l3:false, budget:"broad", budgetPct:78, key:"vk-orchestrator-*", limits:"2 vCPU · 4 GB",
+    allows:["Coordinate agents via NATS","Launch / stop sandboxes","Broad LLM budget"],
+    denies:["Minimal direct filesystem","No raw egress / general web","No L3 builds"],
+    agents:[{n:"agent-conductor",sb:"web-agent-01"}],
+  },
+];
+
+const ACCENT = {
+  sky:    { txt:"text-sky-300",    br:"border-sky-500/30",    bg:"bg-sky-500/10",    bar:"bg-sky-400",    glow:"hover:shadow-sky-500/10" },
+  emerald:{ txt:"text-emerald-300",br:"border-emerald-500/30",bg:"bg-emerald-500/10",bar:"bg-emerald-400",glow:"hover:shadow-emerald-500/10" },
+  amber:  { txt:"text-amber-300",  br:"border-amber-500/30",  bg:"bg-amber-500/10",  bar:"bg-amber-400",  glow:"hover:shadow-amber-500/10" },
+  rose:   { txt:"text-rose-300",   br:"border-rose-500/30",   bg:"bg-rose-500/10",   bar:"bg-rose-400",   glow:"hover:shadow-rose-500/10" },
+  violet: { txt:"text-violet-300", br:"border-violet-500/30", bg:"bg-violet-500/10", bar:"bg-violet-400", glow:"hover:shadow-violet-500/10" },
+};
+
+function domainChip(label, ok){
+  return `<span class="flex items-center gap-1 text-[10.5px] ${ok?'text-emerald-300/90':'text-rose-300/80'}">
+    ${icon(ok?'check':'x','w-3 h-3')}${label}</span>`;
+}
+
+function profileCard(p){
+  const a = ACCENT[p.accent];
+  return `<div onclick="openProfile('${p.id}')" class="pcard card cursor-pointer rounded-2xl border border-slate-800 bg-slate-900/40 p-4 shadow-lg shadow-black/0 ${a.glow} hover:shadow-xl">
+    <div class="flex items-start gap-2.5 mb-3">
+      <span class="w-9 h-9 rounded-lg ${a.bg} border ${a.br} grid place-items-center ${a.txt}">${icon("id","w-5 h-5")}</span>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <h3 class="font-semibold text-slate-100 mono text-[15px]">${p.id}</h3>
+          ${p.l3 ? `<span class="text-[9.5px] inline-flex items-center gap-1 text-sky-300/90 border border-sky-500/30 bg-sky-500/10 rounded px-1 py-0.5">${icon("pkg","w-3 h-3")}L3</span>` : `<span class="text-[9.5px] text-slate-600 border border-slate-800 rounded px-1 py-0.5">L3 off</span>`}
+        </div>
+        <p class="text-[11px] text-slate-500 leading-snug mt-0.5">${p.tagline}</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mb-3 pb-3 border-b border-slate-800">
+      ${domainChip("FS write", p.fs.rw.length>0)}
+      ${domainChip("Web egress", p.net.allow.some(x=>/mitmproxy|web|registr|pkg/i.test(x)))}
+      ${domainChip("L3 containers", p.l3)}
+      ${domainChip("Raw egress", false)}
+    </div>
+
+    <div class="space-y-1 mb-3">
+      ${p.allows.map(x=>`<div class="flex items-start gap-1.5 text-[11.5px] text-slate-300">${icon("check","w-3.5 h-3.5 mt-px text-emerald-400 shrink-0")}<span>${x}</span></div>`).join("")}
+      ${p.denies.map(x=>`<div class="flex items-start gap-1.5 text-[11.5px] text-slate-500">${icon("x","w-3.5 h-3.5 mt-px text-rose-400/80 shrink-0")}<span>${x}</span></div>`).join("")}
+    </div>
+
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-1.5 text-[11px] text-slate-400">${icon("llm","w-3.5 h-3.5 "+a.txt)}LLM budget · <span class="${a.txt}">${p.budget}</span></div>
+      <span class="text-[10.5px] text-slate-500 mono">${p.limits}</span>
+    </div>
+    <div class="scopebar mb-3"><div class="h-full ${a.bar}" style="width:${p.budgetPct}%"></div></div>
+
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-1.5">
+        <div class="flex -space-x-1.5">
+          ${p.agents.map(ag=>`<span class="w-6 h-6 rounded-full bg-slate-700/60 border border-slate-600 grid place-items-center text-[9px] text-slate-200" title="${ag.n} · ${ag.sb}">${ag.n.replace('agent-','').slice(0,2).toUpperCase()}</span>`).join("")}
+        </div>
+        <span class="text-[10.5px] text-slate-500">${p.agents.length} agent${p.agents.length===1?'':'s'} using</span>
+      </div>
+      <span class="text-[11px] ${a.txt} flex items-center gap-0.5">Open ${icon("chev","w-3.5 h-3.5")}</span>
+    </div>
+  </div>`;
+}
+
+function renderProfiles(){
+  document.getElementById("profCards").innerHTML = PROFILES.map(profileCard).join("");
+}
+
+function listBlock(title, iconId, rows){
+  return `<div>
+    <div class="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">${icon(iconId,"w-3.5 h-3.5")}${title}</div>
+    <div class="space-y-1">${rows}</div>
+  </div>`;
+}
+
+function openProfile(id){
+  const p = PROFILES.find(x=>x.id===id); const a = ACCENT[p.accent];
+  document.getElementById("profGallery").classList.add("hidden");
+  const fsRows = [
+    ...p.fs.rw.map(x=>`<div class="flex items-center gap-2 text-[12px]"><span class="text-[9px] w-9 text-center rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 px-1">RW</span><span class="mono text-slate-200">${x}</span></div>`),
+    ...p.fs.ro.map(x=>`<div class="flex items-center gap-2 text-[12px]"><span class="text-[9px] w-9 text-center rounded border border-sky-500/30 bg-sky-500/10 text-sky-300 px-1">RO</span><span class="mono text-slate-200">${x}</span></div>`),
+    ...p.fs.deny.map(x=>`<div class="flex items-center gap-2 text-[12px]"><span class="text-[9px] w-9 text-center rounded border border-rose-500/30 bg-rose-500/10 text-rose-300 px-1">DENY</span><span class="mono text-slate-400">${x}</span></div>`),
+  ].join("");
+  const netRows = [
+    ...p.net.allow.map(x=>`<div class="flex items-center gap-2 text-[12px] text-slate-200">${icon("check","w-3.5 h-3.5 text-emerald-400")}${x}</div>`),
+    ...p.net.deny.map(x=>`<div class="flex items-center gap-2 text-[12px] text-slate-400">${icon("x","w-3.5 h-3.5 text-rose-400")}${x}</div>`),
+  ].join("");
+
+  document.getElementById("profDetail").innerHTML = `
+  <div class="slidein">
+    <button onclick="closeProfile()" class="flex items-center gap-1.5 text-[12px] text-slate-400 hover:text-slate-200 mb-4">
+      <svg class="w-4 h-4 rotate-180"><use href="#i-chev"/></svg> All profiles
+    </button>
+
+    <div class="flex flex-wrap items-start gap-4 mb-5">
+      <span class="w-12 h-12 rounded-xl ${a.bg} border ${a.br} grid place-items-center ${a.txt}">${icon("id","w-6 h-6")}</span>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2.5">
+          <h2 class="text-xl font-semibold text-white mono">${p.id}</h2>
+          ${p.l3 ? `<span class="text-[10px] inline-flex items-center gap-1 text-sky-300 border border-sky-500/30 bg-sky-500/10 rounded px-1.5 py-0.5">${icon("pkg","w-3 h-3")}L3 rootless</span>` : `<span class="text-[10px] text-slate-500 border border-slate-700 rounded px-1.5 py-0.5">L3 off</span>`}
+          <span class="text-[10px] text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 rounded px-1.5 py-0.5">unprivileged</span>
+        </div>
+        <p class="text-[12.5px] text-slate-400 max-w-2xl mt-1">${p.desc}</p>
+      </div>
+      <div class="flex-1"></div>
+      <div class="flex items-center gap-2">
+        <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 text-[12.5px] hover:border-slate-500">${icon("edit","w-4 h-4")} Edit</button>
+        <button onclick="openAssign('${p.id}')" class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg ${a.bg} border ${a.br} ${a.txt} text-[12.5px] hover:brightness-125">${icon("plus","w-4 h-4")} Assign to sandbox</button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <!-- left: boundaries -->
+      <div class="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+          <div class="flex items-center gap-2 mb-3"><span class="w-7 h-7 rounded-lg bg-sky-500/15 border border-sky-500/30 grid place-items-center text-sky-300">${icon("files","w-4 h-4")}</span><h3 class="font-semibold text-slate-100 text-sm">Filesystem ACLs</h3></div>
+          <div class="space-y-1.5">${fsRows}</div>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+          <div class="flex items-center gap-2 mb-3"><span class="w-7 h-7 rounded-lg bg-violet-500/15 border border-violet-500/30 grid place-items-center text-violet-300">${icon("cpu","w-4 h-4")}</span><h3 class="font-semibold text-slate-100 text-sm">Syscall policy</h3></div>
+          <p class="text-[12px] text-slate-400 leading-relaxed">${p.syscall}</p>
+          <div class="mt-3 text-[11px] text-slate-500">Enforced by Tetragon eBPF · per-UID · non-bypassable.</div>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+          <div class="flex items-center gap-2 mb-3"><span class="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 grid place-items-center text-amber-300">${icon("net","w-4 h-4")}</span><h3 class="font-semibold text-slate-100 text-sm">Network ACLs</h3><span class="ml-auto text-[10px] text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 rounded px-1.5">default-deny</span></div>
+          <div class="space-y-1.5">${netRows}</div>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+          <div class="flex items-center gap-2 mb-3"><span class="w-7 h-7 rounded-lg bg-sky-500/15 border border-sky-500/30 grid place-items-center text-sky-300">${icon("pkg","w-4 h-4")}</span><h3 class="font-semibold text-slate-100 text-sm">App containers (L3)</h3></div>
+          <div class="text-[12.5px] ${p.l3?'text-emerald-300':'text-slate-500'} flex items-center gap-2">${icon(p.l3?'check':'x','w-4 h-4')}${p.l3?'Nested rootless Docker/Podman enabled':'Nested containers disabled'}</div>
+          <p class="text-[11px] text-slate-500 mt-2">${p.l3?'Rootless only — no privilege, no DinD. Uses security.nesting.':'No container builds permitted under this profile.'}</p>
+        </div>
+      </div>
+
+      <!-- right: limits / budget / key / assigned agents -->
+      <div class="space-y-4">
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+          <h3 class="font-semibold text-slate-100 text-sm mb-3">Resource &amp; LLM</h3>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between text-[12.5px]"><span class="text-slate-400 flex items-center gap-1.5">${icon("cpu","w-4 h-4 text-slate-500")}Limits</span><span class="mono text-slate-200">${p.limits}</span></div>
+            <div>
+              <div class="flex items-center justify-between text-[12.5px] mb-1.5"><span class="text-slate-400 flex items-center gap-1.5">${icon("llm","w-4 h-4 "+a.txt)}LLM budget</span><span class="${a.txt}">${p.budget}</span></div>
+              <div class="scopebar"><div class="h-full ${a.bar}" style="width:${p.budgetPct}%"></div></div>
+            </div>
+            <div class="flex items-center justify-between text-[12.5px]"><span class="text-slate-400 flex items-center gap-1.5">${icon("key","w-4 h-4 text-slate-500")}Virtual key scope</span><span class="mono text-slate-300">${p.key}</span></div>
+            <p class="text-[10.5px] text-slate-600">Agents never hold real credentials — only LiteLLM virtual keys scoped to this profile.</p>
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+          <div class="flex items-center justify-between mb-3"><h3 class="font-semibold text-slate-100 text-sm">Agents using this profile</h3><span class="text-[11px] text-slate-500">${p.agents.length}</span></div>
+          <div class="space-y-2">
+            ${p.agents.map(ag=>`<div class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg border border-slate-800 bg-slate-950/40">
+              <span class="w-7 h-7 rounded-full bg-slate-700/50 border border-slate-600 grid place-items-center text-[10px] text-slate-200">${ag.n.replace('agent-','').slice(0,2).toUpperCase()}</span>
+              <div class="min-w-0 flex-1"><div class="text-[12.5px] mono text-slate-100">${ag.n}</div><div class="text-[10.5px] text-slate-500">in ${ag.sb} · L2</div></div>
+              <span class="text-[10px] text-slate-500 border border-slate-700 rounded px-1.5 py-0.5">active</span>
+            </div>`).join("")}
+            <button class="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-slate-700 text-slate-500 text-[12px] hover:border-slate-500 hover:text-slate-300">${icon("plus","w-4 h-4")} Assign another</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById("profDetail").classList.remove("hidden");
+  window.scrollTo({top:0});
+}
+
+function closeProfile(){
+  document.getElementById("profDetail").classList.add("hidden");
+  document.getElementById("profGallery").classList.remove("hidden");
+}
+
+/* ---- assign modal ---- */
+function openAssign(id){
+  const p = PROFILES.find(x=>x.id===id); const a = ACCENT[p.accent];
+  const m = document.createElement("div");
+  m.id="assignModal";
+  m.className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-4";
+  m.innerHTML = `<div class="slidein w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+    <div class="flex items-center gap-2.5 mb-1">
+      <span class="w-8 h-8 rounded-lg ${a.bg} border ${a.br} grid place-items-center ${a.txt}">${icon("id","w-4 h-4")}</span>
+      <h3 class="font-semibold text-white">Assign <span class="mono ${a.txt}">${p.id}</span></h3>
+      <button onclick="closeAssign()" class="ml-auto text-slate-500 hover:text-slate-200">${icon("x","w-5 h-5")}</button>
+    </div>
+    <p class="text-[12px] text-slate-500 mb-4">Bind this profile's ACL bundle to a sandbox UID. The kernel reconciles immediately.</p>
+    <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">Target sandbox (L2)</label>
+    <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-950/50 mb-3">
+      ${icon("pkg","w-4 h-4 text-slate-400")}
+      <select class="bg-transparent text-sm text-slate-100 mono flex-1 focus:outline-none"><option>web-agent-01</option><option>ci-runner</option><option>research-01</option><option>data-pipeline</option></select>
+    </div>
+    <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">Apply to UID</label>
+    <div class="flex gap-2 mb-5">
+      <button class="flex-1 px-3 py-2 rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-200 text-[12.5px]">agent UID 1001</button>
+      <button class="flex-1 px-3 py-2 rounded-lg border border-slate-700 text-slate-400 text-[12.5px]">operator UID 1000</button>
+    </div>
+    <div class="mono text-[11px] text-slate-500 bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2 mb-4">$ llmsctl security assign --profile ${p.id} agent@web-agent-01</div>
+    <div class="flex gap-2">
+      <button onclick="closeAssign()" class="flex-1 px-3 py-2 rounded-lg border border-slate-700 text-slate-300 text-[12.5px] hover:border-slate-500">Cancel</button>
+      <button onclick="closeAssign()" class="flex-1 px-3 py-2 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 text-[12.5px] hover:bg-emerald-500/25 flex items-center justify-center gap-1.5">${icon("check","w-4 h-4")} Assign &amp; reconcile</button>
+    </div>
+  </div>`;
+  m.addEventListener("click", e=>{ if(e.target===m) closeAssign(); });
+  document.body.appendChild(m);
+}
+function closeAssign(){ const m=document.getElementById("assignModal"); if(m) m.remove(); }
+
+/* =========================================================================
+   app shell
+   ========================================================================= */
+function showScreen(s){
+  const guard = s==="guard";
+  document.getElementById("screen-guard").classList.toggle("hidden", !guard);
+  document.getElementById("screen-prof").classList.toggle("hidden", guard);
+  document.getElementById("navGuard").classList.toggle("active", guard);
+  document.getElementById("navProf").classList.toggle("active", !guard);
+  if(!guard) closeProfile();
+}
+
+renderRules();
+renderProfiles();
+seedFeed();
+startFeed();
+</script>
+</body>
+</html>
