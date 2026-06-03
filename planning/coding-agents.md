@@ -48,6 +48,16 @@ agent pointed at LiteLLM can then use them. One gateway, many backends:
   Ollama**, **OpenRouter**, … — all LiteLLM providers.
 - This keeps agents backend-agnostic and centralizes credential handling + budgets + tracing.
 
+## Credential rule (firm)
+
+**Real provider/subscription credentials live ONLY in service containers** (e.g. `svc-litellm`) —
+holding credentials is a service container's purpose, and a service container is **not a sandbox**.
+**L2 *sandboxes* hold ONLY LiteLLM virtual keys** — never a real API key or subscription token.
+
+Consequence: we use the **proxy-held** credential mode, and we explicitly do **not** use LiteLLM's
+*forward-client-credential* modes (its "BYOK" mode, and the documented `max_subscription` flow) —
+those keep the real credential on the **client**, i.e. in the sandbox, which this rule forbids.
+
 ## Two credentialing modes (the real design fork)
 
 ### Mode 1 — Gateway / virtual-key (preferred; fits the isolation model)
