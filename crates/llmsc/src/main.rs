@@ -35,8 +35,8 @@ enum Command {
     /// Create and start a sandbox.
     Launch {
         name: String,
-        /// Base image (Incus image ref).
-        #[arg(long, default_value = "images:debian/13")]
+        /// Base image (Incus image ref). Alpine by default — minimal + fast.
+        #[arg(long, default_value = "images:alpine/3.21")]
         image: String,
     },
     /// List sandboxes.

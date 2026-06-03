@@ -3,10 +3,10 @@
 //! Deployers stand a service up inside the VM (in its own L2 container by default), driving
 //! `incus` via `limactl shell` through the [`CommandRunner`] boundary.
 //!
-//! ⚠️ **Unverified against a real VM.** The LiteLLM install/config/systemd sequence below is a
-//! first cut: the command *construction* is unit-tested, but it has not yet been run end-to-end
-//! (it also needs a provider API key + a real model). Treat as scaffolding to validate against
-//! the VM, not a finished, working deploy.
+//! Verified on the VM: deploys and starts LiteLLM in its own **debian/12** L2 container
+//! (the proxy comes up and `/health/liveliness` responds). Still TODO for real use: supply a
+//! provider API key + a real model, and mint per-agent **virtual keys** — the `master_key`
+//! and model in the generated config are placeholders.
 
 use crate::error::{Error, Result};
 use crate::process::{CommandRunner, RunOutput};
@@ -26,7 +26,8 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         Self {
             vm: vm.into(),
             container: "svc-litellm".into(),
-            image: "images:debian/13".into(),
+            // debian/13 (trixie) systemd hangs at boot under this Incus → no networking; bookworm works.
+            image: "images:debian/12".into(),
             port: 4000,
             runner,
         }
