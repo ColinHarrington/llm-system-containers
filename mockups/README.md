@@ -23,6 +23,19 @@ Each variant is its own self-contained app shell (sidebar nav between screens).
 | **B** | [`b-approachable/`](b-approachable/index.html) | Clean, light, generous whitespace; lowers the barrier; plain-language labels | Docker Desktop, OrbStack, Tailscale |
 | **C** | [`c-controlroom/`](c-controlroom/index.html) | Data-forward mission-control with panels, charts, live feeds; foregrounds observe/interrupt/steer + security | Grafana, Datadog, NOC console |
 
+## Concept screens (style-neutral, to fold into the chosen variant)
+
+Beyond the three full directions, several **single-purpose concept screens** explore specific
+ideas. They share one dark "concept" style and will be restyled to match whichever variant
+(A/B/C) is chosen.
+
+| Tab | Dir | What it explores |
+|---|---|---|
+| Topology (rich) | [`nested-view/`](nested-view/index.html) | Nested map VM→sandboxes→agents with per-agent activity + tool icons |
+| Topology (MVP) | [`nested-simple/`](nested-simple/index.html) | Same nesting, simplified: agents **listed only**, no per-agent status |
+| Networking | [`networking/`](networking/index.html) | VM networks and which sandboxes attach to which; egress + inspection |
+| Security & profiles | [`security/`](security/index.html) | Guardrails (file/syscall/network ACLs) + reusable agent profiles |
+
 ## Screens each variant covers
 
 1. **First-run setup wizard** — resources, services (+ L1-vs-L2 placement), networking, review.

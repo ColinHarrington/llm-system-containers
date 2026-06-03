@@ -121,8 +121,14 @@
       blurb: "Clean, light, generous whitespace. Docker Desktop / OrbStack / Tailscale vibe." },
     { id: "c", dir: "c-controlroom",  label: "C · Control-room",       color: "#d29922",
       blurb: "Data-forward panels & charts. Grafana / mission-control vibe." },
-    { id: "n", dir: "nested-view",    label: "Topology (concept)",     color: "#a371f7",
-      blurb: "Nested map: VM -> sandboxes -> agents, with per-agent tool icons." },
+    { id: "n", dir: "nested-view",    label: "Topology (rich)",        color: "#a371f7", sep: true,
+      blurb: "Nested map: VM -> sandboxes -> agents, with per-agent activity + tool icons." },
+    { id: "s", dir: "nested-simple",  label: "Topology (MVP)",         color: "#a371f7",
+      blurb: "Nested map, simplified: agents listed only, no per-agent status." },
+    { id: "net", dir: "networking",   label: "Networking",             color: "#2dd4bf",
+      blurb: "VM networks and which sandboxes attach to which; egress + inspection." },
+    { id: "sec", dir: "security",     label: "Security & profiles",    color: "#f778ba",
+      blurb: "Guardrails (file/syscall/network ACLs) + reusable agent profiles." },
   ];
 
   const tabsEl = document.getElementById("tabs");
@@ -144,6 +150,11 @@
   }
 
   variants.forEach((v, i) => {
+    if (v.sep) {
+      const d = document.createElement("div");
+      d.style.cssText = "width:1px;height:26px;background:var(--border);margin:0 4px;flex:0 0 auto;";
+      tabsEl.appendChild(d);
+    }
     const b = document.createElement("button");
     b.className = "tab";
     b.dataset.id = v.id;
