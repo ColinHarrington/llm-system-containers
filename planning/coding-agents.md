@@ -71,9 +71,71 @@ https://code.claude.com/docs/en/llm-gateway — see the research doc):
   it never enters the sandbox. Whether LiteLLM accepts the OAuth token as a static upstream
   credential (vs. only forwarding the client header) is still to be confirmed.
 
-**Decision needed:** for subscription-backed Claude Code, do we accept the token-in-sandbox (B1,
-works today) or hold out for proxy-held (B2, better isolation)? Until B2 is confirmed, B1 is the
-working path, with the token treated as a sandbox-scoped secret.
+**Decision (project owner): no real auth token in an L2 sandbox.** That rules out B1. The sandbox
+holds only a LiteLLM **virtual key**; the real credential stays in `svc-litellm`; and the agent's
+egress is **forced through** the proxy. Full detail below.
+
+## How a sandboxed agent reaches models — no token in the sandbox, egress forced through LiteLLM
+
+The enforced gateway pattern (config verified against the LiteLLM gateway + BYOK docs):
+
+### 1. Credential placement
+- **The real upstream credential lives only in `svc-litellm`.** Standard (non-BYOK) LiteLLM holds
+  it server-side:
+  ```yaml
+  model_list:
+    - model_name: claude
+      litellm_params:
+        model: anthropic/claude-sonnet-4-5
+        api_key: os.environ/ANTHROPIC_API_KEY   # real key — only in the proxy container
+  ```
+  (source: https://docs.litellm.ai/docs/tutorials/claude_code_byok. Note: LiteLLM's *BYOK* mode
+  is the opposite — it **forwards the client's** key — so we deliberately do **not** use BYOK.)
+- **The sandbox holds only a LiteLLM virtual key** (`POST /key/generate` → `sk-litellm-…`). It is
+  *not* an Anthropic credential: it authenticates to **LiteLLM only**, is scoped + budgeted +
+  revocable, and is useless against `api.anthropic.com` directly.
+
+### 2. Claude Code config in the sandbox (pure gateway mode — no `/login`)
+```bash
+export ANTHROPIC_BASE_URL=http://svc-litellm.llmsc:4000
+export ANTHROPIC_AUTH_TOKEN=sk-litellm-<agent-virtual-key>   # sent as Authorization: Bearer to LiteLLM
+```
+Claude Code does **not** run subscription `/login` in the sandbox (that would write a real token
+to `~/.claude/.credentials.json`). It only ever holds the virtual key.
+
+### 3. Per-request flow
+```
+Claude Code ──POST /v1/messages, Authorization: Bearer <virtual-key>──▶ svc-litellm:4000
+svc-litellm: authenticate virtual key → enforce budget/rate-limit → log/trace (Phoenix)
+svc-litellm ──real credential (x-api-key)──▶ api.anthropic.com ──▶ response ──▶ Claude Code
+```
+The sandbox sees only its virtual key and the model response — never the real key.
+
+### 4. Forced egress (the "tighter" part — enforcement, not just config)
+- Sandbox network policy = **default-deny egress, allow only `svc-litellm:4000`** (plus required
+  internal services), enforced at the kernel via **Incus network ACLs + Tetragon**, per-UID
+  ([security-model.md](security-model.md), [architecture/networking.md](architecture/networking.md)).
+- So even a rogue process or a leaked credential **cannot reach `api.anthropic.com` directly** —
+  there's no route/permission to anything but the proxy. Model traffic is structurally funneled
+  through LiteLLM.
+- `svc-litellm` itself gets a tight egress policy: it may reach **only** the chosen backends
+  (e.g. `api.anthropic.com`). Optionally route that through **mitmproxy/Zeek** for inspection.
+- Net effect: compromising a sandbox yields a **revocable virtual key**, not the real credential;
+  and the agent physically cannot reach a model except through the audited proxy.
+
+### 5. The subscription caveat (honest)
+- **API key upstream → fully supported, today.** Proxy-held `api_key` + per-agent virtual keys, no
+  token in the sandbox. This is the clean path.
+- **Subscription upstream + no token in sandbox → not a documented LiteLLM path.** Both documented
+  subscription/BYOK flows *forward the client's* credential (token lands in the sandbox). LiteLLM
+  holding a **subscription OAuth token** as a static upstream isn't documented — and it would need
+  to be sent as `Authorization: Bearer`, whereas LiteLLM's anthropic provider sends API keys as
+  `x-api-key`. Possible-but-unverified workarounds: a static `extra_headers: { Authorization:
+  "Bearer <oauth-token>" }` on the proxy model, or a thin forwarding shim in `svc-litellm`. Plus
+  the ToS gray area for proxying one subscription across many agents.
+- **Bottom line:** the no-token-in-sandbox architecture is clean and works **today with an API
+  key**. Doing it with your **subscription** needs a confirmed LiteLLM mechanism (test
+  `extra_headers`) or a small shim — see open items.
 
 ## Installing agents into a sandbox
 
@@ -109,8 +171,13 @@ warrant a Debian-based sandbox image instead — the base image is per-sandbox c
 
 ## Open items
 
-- Confirm **B2** (proxy-held subscription token) against the LiteLLM `byok` tutorial.
-- Pin/verify the LiteLLM version in the deployer.
+- **Subscription with token-out-of-sandbox:** confirm/implement a proxy-held subscription OAuth
+  token (test `extra_headers: Authorization: Bearer <oauth>` on the proxy model, or a forwarding
+  shim in `svc-litellm`). BYOK + max_subscription both *forward the client token* (token in
+  sandbox), which the owner has ruled out — so this needs solving for the subscription path.
+- ✅ LiteLLM version **pinned** (1.87.0) in the deployer.
+- Implement the **forced-egress** network policy (default-deny except `svc-litellm`) + the
+  proxy-held `api_key` config + virtual-key minting in the deployer (currently placeholder config).
 - Per-agent install recipes (Claude Code, Pi, Codex, Aider, …) — image vs on-launch.
 - Clarify Pi's exact gateway config (`models.json` custom provider pointing at LiteLLM).
 - Decide the default credentialing mode per agent (gateway vs native/subscription).
