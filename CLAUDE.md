@@ -10,11 +10,11 @@ config, or application code. Do not invent build/test commands; there are none t
 
 **Tech stack is chosen** (see `planning/tech-stack.md`): **Rust** core in a shared
 **`llmsc-core`** crate that the CLIs (`llmsc`, `llmsctl`) and the **Tauri** GUI all link;
-**CLI-first** (the CLI is fully capable standalone); **declarative on-disk config** (TOML
-leaning) shared by CLI and GUI; **Incus is the runtime source of truth** (managed in its own
-Incus project, raw `incus` always usable) with config reconciled to it; **library-first, daemon
-deferred**. Incus is reached via its **REST API**; Lima via **`limactl`**. A few preference
-details (config TOML vs YAML, React vs Svelte) remain open in `planning/open-questions.md`.
+**CLI-first** (the CLI is fully capable standalone); **declarative on-disk config** (**TOML**)
+shared by CLI and GUI; **Incus is the runtime source of truth** (managed in its own Incus
+project, raw `incus` always usable) with config reconciled to it; **library-first, daemon
+deferred**. Incus is reached via its **REST API**; Lima via **`limactl`**. Frontend framework
+(React vs Svelte) remains open in `planning/open-questions.md`.
 
 ## What this project is
 

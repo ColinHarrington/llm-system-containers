@@ -27,8 +27,7 @@ between CLI and GUI**, with **Incus usable directly** a layer beneath our toolin
 
 - Configuration is **durable on-disk files** that both CLI and GUI read/write — the single
   source of **intent**.
-- Format: **TOML** (idiomatic Rust, supports comments, fewer footguns than YAML). YAML is the
-  fallback given infra familiarity. *(Open — see below.)*
+- Format: **TOML** (decided) — idiomatic Rust, supports comments, fewer footguns than YAML.
 - Layout: global/user config under XDG (`~/.config/llmsc/`), plus an optional **per-project
   `llmsc.toml`** declaring a repo's sandboxes — checks into a repo, ideal for the
   software-factory model.
@@ -66,7 +65,6 @@ between CLI and GUI**, with **Incus usable directly** a layer beneath our toolin
 
 ## Open items
 
-- **Config format**: TOML (recommended) vs YAML.
 - **Frontend framework**: React vs Svelte.
 - **Reconcile model** details: drift handling, and the balance between declarative `apply` and
   imperative commands (`llmsc launch …`).
