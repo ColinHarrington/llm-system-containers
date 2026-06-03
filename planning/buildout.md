@@ -36,7 +36,7 @@ core logic is unit-testable with fakes.
   smoke (`--help`) via `assert_cmd`.
 - **Done-when:** `cargo test` green in CI; a sample `llmsc.toml` round-trips losslessly.
 
-### M1 — Platform bring-up (`llmsctl`) — codifies spike phase 0
+### M1 — Platform bring-up (`llmsctl`) — codifies spike phase 0 ✅ DONE
 - **Deliverables:** Lima `VmDriver` (shell out to `limactl`): create/start/stop/status. Incus
   bootstrap inside the VM (`admin init`, persist `kernel.apparmor_restrict_unprivileged_userns=0`,
   set bridge `dns.domain=llmsc`). `llmsctl init` (minimal), `up`, `down`, `status`.
