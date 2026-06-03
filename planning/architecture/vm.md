@@ -20,7 +20,9 @@ to host this project's Incus-based system containers and services.
   a full VM inside a sandbox, and is not required for the core stack.
 - Host **Incus**, which manages all L2 system containers (both workspace-role and
   service-role — see [system-containers.md](system-containers.md)).
-- Configure internal **networking**, services, and bootstrap items the project needs.
+- Configure internal **networking**, services, and bootstrap items the project needs —
+  including routable container addressing and split-horizon `.llmsc` DNS so containers are
+  reachable (and SSH-able) from the host. See [networking.md](networking.md).
 
 ## Provisioning wizard
 

@@ -28,6 +28,9 @@ Loose ends to resolve in dedicated sessions. This is the umbrella project's "par
   ([architecture/system-containers.md](architecture/system-containers.md)).
 - **Unprivileged nesting** (L3) — Incus profile specifics for reliable rootless
   Docker/Podman ([architecture/app-containers.md](architecture/app-containers.md)).
+- **Routable addressing + split-horizon DNS** — making the container subnet routable from the
+  host per VM driver, `.llmsc` resolver setup, and SSH auth model
+  ([architecture/networking.md](architecture/networking.md)). Needs spike validation.
 - **Tetragon policy authoring** model and mapping to per-agent grants
   ([security-model.md](security-model.md)).
 - **Agent profile** format, inheritance, and how profiles compile to concrete

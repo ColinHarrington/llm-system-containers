@@ -30,6 +30,7 @@ platform). Target platforms: **Linux and macOS**.
   - [vm.md](architecture/vm.md) — L1: the VM, Incus, nested containerization, VM driver abstraction
   - [system-containers.md](architecture/system-containers.md) — L2: the LLMSC — user model, GUI/X-forwarding, workspace mounts
   - [app-containers.md](architecture/app-containers.md) — L3: nested Docker/Podman (key differentiator)
+  - [networking.md](architecture/networking.md) — Addressing, split-horizon `.llmsc` DNS, host↔container routing, SSH
 - [security-model.md](security-model.md) — Defense-in-depth, Tetragon, network + workspace controls
 - [agent-profiles.md](agent-profiles.md) — Reusable permission bundles (researcher/tester/builder/validation/orchestrator)
 - **services/** — shared infra; may run in L1 or in their own L2 container

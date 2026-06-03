@@ -18,6 +18,12 @@ Default leanings (to be confirmed): isolate anything that holds credentials or i
 traffic (LiteLLM, mitmproxy) in its own L2 container; co-locating lighter observability
 pieces in L1 is acceptable.
 
+A second reason to give a service its own L2 container is a **routable service interface (its
+own IP)** — needed when a service must be reachable from the host or bind a fixed port. E.g.
+**Forgejo** needs `:22` for git-over-SSH, which only works with its own IP (the host's single
+`:22` is taken by the host sshd); **LiteLLM** is convenient to call from host tooling. See
+[../architecture/networking.md](../architecture/networking.md).
+
 ## Plugin model
 
 Services are intended to become **configurable plugins**. The wizard (`llmsctl init`) lets

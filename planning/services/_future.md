@@ -8,6 +8,9 @@ Services not in the MVP/Core path. Kept here as known expansion points.
 
 - Lets agents push/pull without touching external services.
 - **Not required for MVP** — explicitly optional / user-enabled.
+- Runs in its **own L2 container** so it gets a **routable IP** and can bind **`:22`** for
+  git-over-SSH (and be reachable from the host, e.g. `forgejo.llmsc`). See
+  [../architecture/networking.md](../architecture/networking.md).
 
 ## NATS — agent-to-agent communication (Future)
 
