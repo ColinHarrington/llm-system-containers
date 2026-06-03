@@ -89,7 +89,7 @@ mod tests {
             },
             sandboxes: vec![Sandbox {
                 name: "web-agent-01".into(),
-                image: "images:ubuntu/24.04".into(),
+                image: "images:debian/13".into(),
                 nesting: true,
                 users: vec![
                     User {
@@ -138,7 +138,7 @@ mod tests {
 
             [[sandbox]]
             name = "web-agent-01"
-            image = "images:ubuntu/24.04"
+            image = "images:debian/13"
             nesting = true
 
             [[sandbox.user]]

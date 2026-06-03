@@ -45,6 +45,11 @@ Loose ends to resolve in dedicated sessions. This is the umbrella project's "par
   ([services/shared-storage.md](services/shared-storage.md)).
 - **Custom image** build format + registry implementation
   ([custom-images.md](custom-images.md)).
+- **Base distro decided: Debian** (smaller than Ubuntu) for L2 sandboxes. ⬜ Open: whether the
+  **L1 VM** should also be Debian — a Debian L1 likely avoids the Ubuntu `apparmor_restrict_
+  unprivileged_userns` workaround needed for rootless L3 ([architecture/vm.md](architecture/vm.md)).
+- **Architecture** handled automatically (aarch64 on Apple Silicon / amd64 on x86_64 Linux);
+  Incus + Lima resolve host arch; binaries cross-compiled per target.
 
 ## Future features
 - **Agent-to-agent communication** (NATS) design ([services/_future.md](services/_future.md)).

@@ -26,6 +26,11 @@ explicit **pass/fail** criterion, and passing steps become CI integration tests 
 > reports per-step pass/fail and prints the manual sudo/host commands for Phase 3/4. The commands
 > below document what it does.
 
+> **Base image & arch:** sandboxes use a **Debian** base (`images:debian/13`, smaller than
+> Ubuntu). Incus resolves the **host arch** automatically (aarch64 on Apple Silicon, amd64 on
+> x86_64 Linux). Note: the apparmor-userns workaround (Phase 2) is **L1-VM-OS-specific** —
+> a Debian *L1 VM* likely avoids it; worth evaluating alongside the Debian base.
+
 ---
 
 ## Phase 0 — VM with Incus
@@ -46,7 +51,7 @@ incus version
 
 ## Phase 1 — L2 unprivileged system container + users
 ```
-incus launch images:ubuntu/24.04 web-agent-01
+incus launch images:debian/13 web-agent-01
 incus config get web-agent-01 security.privileged      # expect empty/false (unprivileged)
 incus exec web-agent-01 -- useradd -m -s /bin/bash operator
 incus exec web-agent-01 -- useradd -m -s /bin/bash agent-claude
@@ -104,7 +109,7 @@ and record per-platform differences (this is the whole point of the spike).
 
 ## Phase 4 — Service in its own L2 with routable `:22` (Forgejo-shaped)
 ```
-incus launch images:ubuntu/24.04 forgejo
+incus launch images:debian/13 forgejo
 incus network set ... ; (same routing/DNS as Phase 3)
 # run anything binding :22 with its own IP; verify from host:
 ssh -p 22 someuser@forgejo.llmsc

@@ -125,7 +125,7 @@ def phase1(cfg: Cfg, r: Results) -> None:
         return
     rc, _ = incus(cfg, f"info {cfg.container}", quiet=True)
     if rc != 0:
-        lrc, _ = incus(cfg, f"launch images:ubuntu/24.04 {cfg.container}")
+        lrc, _ = incus(cfg, f"launch images:debian/13 {cfg.container}")
         if lrc != 0:
             r.add("1 L2 + users", False, "incus launch failed — check Phase 0 (incus init) / image server")
             return
@@ -150,12 +150,14 @@ def phase2(cfg: Cfg, r: Results) -> None:
     if not require_vm(cfg, r, "2 rootless L3 ⭐"):
         return
     incus(cfg, f"config set {cfg.container} security.nesting true")
-    # Ubuntu 23.10+ defaults kernel.apparmor_restrict_unprivileged_userns=1, which blocks the
-    # nested user namespace rootless podman/docker needs ("cannot clone: Permission denied").
-    # Relax it on the VM (persisted) — required for the L3 differentiator on Ubuntu hosts.
+    # L1-VM-specific: Ubuntu 23.10+ defaults kernel.apparmor_restrict_unprivileged_userns=1,
+    # which blocks the nested user namespace rootless podman/docker needs ("cannot clone:
+    # Permission denied"). Relax it on the VM (persisted). Tolerant: a Debian L1 VM has no such
+    # sysctl (and likely doesn't need the workaround at all), so this is best-effort.
     vm(cfg, "echo 'kernel.apparmor_restrict_unprivileged_userns=0' | "
-            "sudo tee /etc/sysctl.d/99-llmsc-userns.conf >/dev/null && "
-            "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0", quiet=True)
+            "sudo tee /etc/sysctl.d/99-llmsc-userns.conf >/dev/null 2>&1; "
+            "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 2>/dev/null || true",
+            quiet=True)
     incus(cfg, f"restart {cfg.container}")
     sh("sleep 3", quiet=True)
     incus(cfg, f"exec {cfg.container} -- bash -lc 'command -v podman >/dev/null || "
@@ -236,7 +238,7 @@ def phase4(cfg: Cfg, r: Results) -> None:
         return
     rc, _ = incus(cfg, f"info {cfg.service}", quiet=True)
     if rc != 0:
-        incus(cfg, f"launch images:ubuntu/24.04 {cfg.service}")
+        incus(cfg, f"launch images:debian/13 {cfg.service}")
     incus(cfg, f"exec {cfg.service} -- bash -lc 'command -v sshd >/dev/null || "
                f"(apt-get update && apt-get install -y openssh-server)'")
     incus(cfg, f"exec {cfg.service} -- systemctl enable --now ssh 2>/dev/null || true", quiet=True)

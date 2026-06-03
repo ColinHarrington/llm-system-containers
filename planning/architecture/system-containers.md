@@ -31,7 +31,9 @@ containers.
   safer (disposable). Lifecycle spectrum: throwaway sandboxes → long-lived environments
   hosting many agents.
 - Created from **images** — base distro or user-built custom images (pre-packaged tooling,
-  IDEs, browsers, runtimes). See [../custom-images.md](../custom-images.md).
+  IDEs, browsers, runtimes). Default base is **Debian** (smaller/quicker to provision than
+  Ubuntu). Incus resolves the **host architecture** automatically — **aarch64** on Apple
+  Silicon, **amd64** on x86_64 Linux. See [../custom-images.md](../custom-images.md).
 
 ## User model
 

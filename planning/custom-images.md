@@ -30,5 +30,8 @@ custom images so sandboxes can start pre-loaded with the tooling they need.
 - Registry implementation (Incus's simplestreams, a custom registry, or reuse of shared
   storage).
 - Versioning, tagging, and sharing/exporting images between users.
-- Base image set shipped by default (e.g. a "dev environment" image with X-forwarding +
-  browser preconfigured).
+- Default base distro is **Debian** (smaller/quicker than Ubuntu). Base image set shipped by
+  default (e.g. a "dev environment" image with X-forwarding + browser preconfigured).
+- **Architecture:** images are arch-specific, but Incus resolves the host arch automatically
+  (**aarch64** on Apple Silicon, **amd64** on x86_64 Linux); custom-image builds must produce
+  the matching arch (no cross-arch in the common path).

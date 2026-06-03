@@ -11,7 +11,12 @@ to host this project's Incus-based system containers and services.
 ## Responsibilities
 
 - Run a native VM matching the **host architecture** (no cross-arch emulation in the common
-  path → near-native performance).
+  path → near-native performance): **aarch64** on Apple Silicon (e.g. an M-series Mac),
+  **amd64** on x86_64 Linux. Incus image refs (e.g. `images:debian/13`) and Lima both resolve
+  the host arch automatically; our binaries are cross-compiled per target.
+- **VM OS:** the spike used an Ubuntu L1 VM (Lima default), which required relaxing
+  `kernel.apparmor_restrict_unprivileged_userns` for rootless L3. A **Debian L1 VM** likely
+  avoids that Ubuntu-specific restriction entirely — worth evaluating (open item).
 - Provide a Linux kernel supporting **unprivileged container nesting** (user namespaces,
   cgroup delegation) so L2 system containers can themselves run L3 app containers
   (Docker/Podman) via `security.nesting`. This is **container-in-container (shared kernel),

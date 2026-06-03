@@ -57,9 +57,11 @@ Rootless **Podman builds and runs inside an unprivileged Incus container** — n
 no privileged DinD, **overlay** storage (fuse-overlayfs). Confirmed on Linux via
 [../spike-plan.md](../spike-plan.md). **VM-bootstrap requirements** that fall out of this:
 
-- **`kernel.apparmor_restrict_unprivileged_userns=0`** on the VM — Ubuntu 23.10+ defaults this
-  to `1`, which blocks the nested user namespace (`cannot clone: Permission denied`). The VM
-  image/bootstrap must set it (persisted in `/etc/sysctl.d`), or ship an AppArmor profile.
+- **`kernel.apparmor_restrict_unprivileged_userns=0`** on the VM — **L1-VM-OS-specific**:
+  Ubuntu 23.10+ defaults this to `1`, which blocks the nested user namespace (`cannot clone:
+  Permission denied`); the VM image/bootstrap must set it (persisted in `/etc/sysctl.d`) or
+  ship an AppArmor profile. A **Debian L1 VM** has no such restriction and likely needs no
+  workaround — to validate.
 - **`security.nesting=true`** on each L2 sandbox that runs L3.
 - subuid/subgid ranges for the agent user (Ubuntu `useradd` adds these automatically).
 - rootless deps in the image: `podman uidmap slirp4netns fuse-overlayfs`.
