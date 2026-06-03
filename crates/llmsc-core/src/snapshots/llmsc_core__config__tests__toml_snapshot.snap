@@ -1,0 +1,23 @@
+---
+source: crates/llmsc-core/src/config.rs
+expression: sample().to_toml().unwrap()
+---
+[vm]
+name = "llmsc"
+cpus = 4
+memory_gib = 8
+disk_gib = 100
+driver = "lima"
+
+[[sandbox]]
+name = "web-agent-01"
+image = "images:debian/13"
+nesting = true
+
+[[sandbox.user]]
+name = "agent-claude"
+role = "agent"
+
+[[sandbox.user]]
+name = "operator"
+role = "human"

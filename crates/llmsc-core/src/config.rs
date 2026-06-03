@@ -154,4 +154,75 @@ mod tests {
         assert_eq!(c.sandboxes[0].users.len(), 2);
         assert_eq!(c.sandboxes[0].users[1].role, UserRole::Human);
     }
+
+    #[test]
+    fn toml_snapshot() {
+        insta::assert_snapshot!(sample().to_toml().unwrap());
+    }
+
+    use proptest::prelude::*;
+
+    fn arb_driver() -> impl Strategy<Value = VmDriverKind> {
+        prop_oneof![
+            Just(VmDriverKind::Lima),
+            Just(VmDriverKind::Parallels),
+            Just(VmDriverKind::Libvirt),
+            Just(VmDriverKind::Proxmox),
+        ]
+    }
+
+    fn arb_name() -> impl Strategy<Value = String> {
+        "[a-z][a-z0-9-]{0,12}".prop_map(|s| s)
+    }
+
+    fn arb_user() -> impl Strategy<Value = User> {
+        (
+            arb_name(),
+            prop_oneof![Just(UserRole::Agent), Just(UserRole::Human)],
+        )
+            .prop_map(|(name, role)| User { name, role })
+    }
+
+    fn arb_sandbox() -> impl Strategy<Value = Sandbox> {
+        (
+            arb_name(),
+            arb_name(),
+            any::<bool>(),
+            proptest::collection::vec(arb_user(), 0..3),
+        )
+            .prop_map(|(name, image, nesting, users)| Sandbox {
+                name,
+                image,
+                nesting,
+                users,
+            })
+    }
+
+    fn arb_config() -> impl Strategy<Value = Config> {
+        let vm = (
+            arb_name(),
+            any::<u32>(),
+            any::<u32>(),
+            any::<u32>(),
+            arb_driver(),
+        )
+            .prop_map(|(name, cpus, memory_gib, disk_gib, driver)| VmConfig {
+                name,
+                cpus,
+                memory_gib,
+                disk_gib,
+                driver,
+            });
+        (vm, proptest::collection::vec(arb_sandbox(), 0..3))
+            .prop_map(|(vm, sandboxes)| Config { vm, sandboxes })
+    }
+
+    proptest! {
+        #[test]
+        fn round_trips_arbitrary(c in arb_config()) {
+            let s = c.to_toml().unwrap();
+            let back = Config::from_toml(&s).unwrap();
+            prop_assert_eq!(c, back);
+        }
+    }
 }

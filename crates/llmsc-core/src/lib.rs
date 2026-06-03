@@ -5,3 +5,6 @@
 //! See `planning/tech-stack.md` and `planning/buildout.md`.
 
 pub mod config;
+pub mod error;
+pub mod incus;
+pub mod vm;
