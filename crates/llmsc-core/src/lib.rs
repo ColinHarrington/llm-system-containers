@@ -7,4 +7,5 @@
 pub mod config;
 pub mod error;
 pub mod incus;
+pub mod process;
 pub mod vm;

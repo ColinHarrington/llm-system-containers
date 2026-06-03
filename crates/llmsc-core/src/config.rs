@@ -5,12 +5,12 @@
 use serde::{Deserialize, Serialize};
 
 /// Top-level llmsc configuration.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Config {
     /// The L1 VM that hosts everything.
     pub vm: VmConfig,
     /// Declared L2 sandboxes (desired state).
-    #[serde(default, rename = "sandbox")]
+    #[serde(default, rename = "sandbox", skip_serializing_if = "Vec::is_empty")]
     pub sandboxes: Vec<Sandbox>,
 }
 
@@ -44,7 +44,7 @@ pub struct Sandbox {
     /// Allow nested rootless app containers (L3).
     #[serde(default)]
     pub nesting: bool,
-    #[serde(default, rename = "user")]
+    #[serde(default, rename = "user", skip_serializing_if = "Vec::is_empty")]
     pub users: Vec<User>,
 }
 
@@ -71,6 +71,18 @@ impl Config {
     /// Serialize this [`Config`] back to a TOML document.
     pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
         toml::to_string_pretty(self)
+    }
+}
+
+impl Default for VmConfig {
+    fn default() -> Self {
+        Self {
+            name: "llmsc".into(),
+            cpus: 4,
+            memory_gib: 8,
+            disk_gib: 100,
+            driver: VmDriverKind::default(),
+        }
     }
 }
 

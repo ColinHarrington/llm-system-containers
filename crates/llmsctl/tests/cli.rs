@@ -18,12 +18,15 @@ fn help_lists_subcommands() {
 }
 
 #[test]
-fn status_runs() {
+fn init_prints_default_config() {
+    // `init` is deterministic (no VM/IO), so it's the safe command to smoke-test here;
+    // up/down/status touch the environment and are covered by core unit + future integration tests.
     llmsctl()
-        .arg("status")
+        .arg("init")
         .assert()
         .success()
-        .stdout(contains("not yet implemented"));
+        .stdout(contains("[vm]"))
+        .stdout(contains("llmsc"));
 }
 
 #[test]
