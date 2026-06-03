@@ -47,6 +47,7 @@ platform). Target platforms: **Linux and macOS**.
 - [testing.md](testing.md) — Red-green TDD, test plan per feature, tooling + CI
 - [spike-plan.md](spike-plan.md) — De-risking spike: rootless L3 nesting + routable/`.llmsc`/SSH networking
 - [mvp.md](mvp.md) — The MVP path, scoped
+- [buildout.md](buildout.md) — Implementation roadmap: milestones M0–M8, workspace layout, MVP cut
 - [open-questions.md](open-questions.md) — Naming, plugin interfaces, tech-stack decisions
 
 ## Status
