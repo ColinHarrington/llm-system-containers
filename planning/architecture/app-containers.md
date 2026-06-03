@@ -51,10 +51,24 @@ security posture. The isolation and kernel-level enforcement from
 [../security-model.md](../security-model.md) still apply at L2 and below — nesting does not
 require relaxing them. This is the crux: capability without the usual security trade-off.
 
+## Validated (spike)
+
+Rootless **Podman builds and runs inside an unprivileged Incus container** — no `--privileged`,
+no privileged DinD, **overlay** storage (fuse-overlayfs). Confirmed on Linux via
+[../spike-plan.md](../spike-plan.md). **VM-bootstrap requirements** that fall out of this:
+
+- **`kernel.apparmor_restrict_unprivileged_userns=0`** on the VM — Ubuntu 23.10+ defaults this
+  to `1`, which blocks the nested user namespace (`cannot clone: Permission denied`). The VM
+  image/bootstrap must set it (persisted in `/etc/sysctl.d`), or ship an AppArmor profile.
+- **`security.nesting=true`** on each L2 sandbox that runs L3.
+- subuid/subgid ranges for the agent user (Ubuntu `useradd` adds these automatically).
+- rootless deps in the image: `podman uidmap slirp4netns fuse-overlayfs`.
+
 ## Open items
 
 - Default runtime: Podman (rootless-first) vs. Docker — and whether both are offered.
-- Incus profile specifics for reliable unprivileged nesting (`security.nesting`, idmap,
-  cgroup delegation).
+- Whether to relax apparmor userns broadly on the VM vs. a scoped AppArmor profile (security
+  tradeoff — the VM is already the isolation boundary).
+- Confirm the same on **macOS (Apple Silicon)** host (spike phase 5).
 - Whether L3 networking is subject to the same inspection/policy as L2 (mitmproxy/Zeek,
   Tetragon) and how egress from nested containers is handled.

@@ -122,12 +122,22 @@ the resolver setup). **Pass:** core results hold on both, with deviations docume
 
 | Phase | Linux | macOS (Apple Silicon) | Notes / blockers |
 |---|---|---|---|
-| 0 VM + Incus | ☐ | ☐ | |
-| 1 L2 + users | ☐ | ☐ | |
-| 2 rootless L3 ⭐ | ☐ | ☐ | |
+| 0 VM + Incus | ✅ PASS | ☐ | Lima `template://default` (Ubuntu 24.04) + Incus 6.0.0 via apt |
+| 1 L2 + users | ✅ PASS | ☐ | unprivileged; `useradd` auto-adds subuid/subgid (165536:65536) |
+| 2 rootless L3 ⭐ | ✅ PASS | ☐ | **see finding below**; storage driver = overlay (fuse-overlayfs) |
 | 3 routable + DNS + SSH ⭐ | ☐ | ☐ | |
 | 4 service `:22` | ☐ | ☐ | |
 | 5 cross-platform delta | ☐ | ☐ | |
+
+### Recorded finding — Phase 2 (Linux)
+
+Rootless Podman **builds and runs inside an unprivileged Incus container** (no `--privileged`,
+no privileged DinD) — the L3 differentiator holds. **Required on Ubuntu 23.10+ hosts:** the VM
+must set **`kernel.apparmor_restrict_unprivileged_userns=0`** (its new default-on AppArmor
+restriction otherwise blocks the nested user namespace → `cannot clone: Permission denied`), plus
+**`security.nesting=true`** on the sandbox and a container restart. Rootless deps installed:
+`podman uidmap slirp4netns fuse-overlayfs`. This is now automated in `scripts/spike.py` phase2
+and is a **VM-bootstrap requirement** (see [architecture/app-containers.md](architecture/app-containers.md)).
 
 **Decision after spike:** which assumptions held, what needs a different approach (e.g.
 overlay/WireGuard if host-route routing is too painful on macOS), and which steps become CI

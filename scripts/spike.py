@@ -146,19 +146,30 @@ def phase2(cfg: Cfg, r: Results) -> None:
     if not require_vm(cfg, r, "2 rootless L3 ⭐"):
         return
     incus(cfg, f"config set {cfg.container} security.nesting true")
+    # Ubuntu 23.10+ defaults kernel.apparmor_restrict_unprivileged_userns=1, which blocks the
+    # nested user namespace rootless podman/docker needs ("cannot clone: Permission denied").
+    # Relax it on the VM (persisted) — required for the L3 differentiator on Ubuntu hosts.
+    vm(cfg, "echo 'kernel.apparmor_restrict_unprivileged_userns=0' | "
+            "sudo tee /etc/sysctl.d/99-llmsc-userns.conf >/dev/null && "
+            "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0", quiet=True)
+    incus(cfg, f"restart {cfg.container}")
+    sh("sleep 3", quiet=True)
     incus(cfg, f"exec {cfg.container} -- bash -lc 'command -v podman >/dev/null || "
-               f"(apt-get update && apt-get install -y podman)'")
+               f"(apt-get update && apt-get install -y podman uidmap slirp4netns fuse-overlayfs)'")
     # rootless, AS THE AGENT USER, in an unprivileged container, no --privileged:
     run = (f"exec {cfg.container} -- su - {cfg.agent} -c "
-           + shlex.quote("podman run --rm hello-world >/dev/null 2>&1 && "
-                         "printf 'FROM alpine\\nRUN echo hi > /x\\n' > Dockerfile && "
+           + shlex.quote("cd ~ && podman run --rm hello-world >/dev/null 2>&1 && "
+                         "printf 'FROM alpine\\nRUN echo hi-from-L3 > /x\\n' > Dockerfile && "
                          "podman build -t spiketest . >/dev/null 2>&1 && "
                          "podman run --rm spiketest cat /x"))
     rc, out = incus(cfg, run)
-    ok = rc == 0 and "hi" in out
+    ok = rc == 0 and "hi-from-L3" in out
+    _, drv = incus(cfg, f"exec {cfg.container} -- su - {cfg.agent} -c "
+                        + shlex.quote("podman info --format {{.Store.GraphDriverName}}"), quiet=True)
     r.add("2 rootless L3 ⭐", ok,
-          "rootless build+run OK (the differentiator holds)" if ok
-          else "rootless nesting failed — check security.nesting + /etc/subuid,subgid + userns")
+          f"rootless build+run OK (storage: {drv.strip().splitlines()[-1] if drv.strip() else '?'}) — differentiator holds"
+          if ok else "rootless nesting failed — check apparmor_restrict_unprivileged_userns + "
+                     "security.nesting + /etc/subuid,subgid")
 
 
 def _container_ip(cfg: Cfg) -> str | None:
