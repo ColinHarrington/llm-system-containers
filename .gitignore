@@ -8,5 +8,7 @@ __pycache__/
 *.pyc
 
 # editor / OS
+.idea/
+.vscode/
 .DS_Store
 *.swp
