@@ -1,0 +1,15 @@
+[package]
+name = "llmsc"
+description = "CLI for individual LLM System Containers (L2 sandboxes)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "llmsc"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true

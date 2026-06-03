@@ -1,0 +1,15 @@
+[package]
+name = "llmsctl"
+description = "CLI for the llmsc platform (L1 VM + services)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "llmsctl"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true

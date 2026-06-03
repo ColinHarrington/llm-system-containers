@@ -1,0 +1,12 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.orig
+
+# uv / python
+__pycache__/
+*.pyc
+
+# editor / OS
+.DS_Store
+*.swp
