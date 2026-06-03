@@ -9,11 +9,12 @@ are imperfect; they should not be the only thing standing between an agent and t
 
 ## The idea
 
-Provide **sandboxed Linux system container environments for AI agents** with infrastructure
+Provide **Linux system container environments for AI agents** with infrastructure
 backstops at the kernel, container, user, and network layers. Built on **Incus /
-unprivileged LXC** — *system* containers, not application/process containers. Each
-container behaves like a full, lightweight Linux machine: its own init, users, services,
-and the ability to run nested Docker/Podman and GUI apps.
+unprivileged LXC** — *system* containers, not application/process containers. Each unit is
+an **LLM System Container (LLMSC)** — a full, lightweight Linux machine with its own init,
+users, services, and the ability to run nested Docker/Podman and GUI apps — typically run as
+an ephemeral, safer **sandbox**. See [naming.md](naming.md).
 
 The platform is meant to be usable to operate a **software factory** — letting technical
 people build many kinds of agent orchestrations inside a controlled, observable

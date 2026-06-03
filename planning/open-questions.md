@@ -3,10 +3,11 @@
 Loose ends to resolve in dedicated sessions. This is the umbrella project's "parking lot."
 
 ## Naming
-- Formal name for the **project** — align usage with something tangible. Dedicated session
-  planned.
-- Working name: **LLM Sandbox** (*Little Linux Managed* + *Large Language Model*).
-- Working name for the VM: **Playground** / **Sandbox Playground**.
+- ✅ **Resolved** — project **llm-system-containers**; unit **LLMSC** (*Little Linux Managed
+  System Container*); CLIs **`llmsc`** (containers) + **`llmsctl`** (platform). "sandbox" is
+  a mode, not the name. See [naming.md](naming.md).
+- ⬜ **Still open:** name for the **VM** (Layer 1) — working name **Playground** /
+  **Sandbox Playground**.
 
 ## Tech stack (undecided)
 - **GUI app** framework/language (Tauri, Electron, native, …).

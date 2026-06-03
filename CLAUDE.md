@@ -13,12 +13,20 @@ are resolved.
 
 ## What this project is
 
-**LLM Sandbox** (working name) is an open-source platform that provisions **sandboxed Linux
-system container environments for AI agents**, built on **Incus / unprivileged LXC** —
-*system* containers (full lightweight Linux machines), not application/process containers
-like Docker. The goal is defense-in-depth infrastructure backstops so an agent's own
-(imperfect) permission framework is never the only thing protecting the host. Targets
-**Linux and macOS**.
+**llm-system-containers** is an open-source platform/tool that enables **LLM System
+Containers (LLMSC)** — *Little Linux Managed System Containers* — for AI agents. Built on
+**Incus / unprivileged LXC**: *system* containers (full lightweight Linux machines), not
+application/process containers like Docker. Each LLMSC is typically run as an ephemeral,
+safer **sandbox** ("sandbox" is a mode, not the name). The goal is defense-in-depth
+infrastructure backstops so an agent's own (imperfect) permission framework is never the
+only thing protecting the host. Targets **Linux and macOS**.
+
+Two CLIs are planned (names decided, implementation language not — see
+`planning/naming.md`):
+- **`llmsc`** — daily driver for individual containers (`launch`, `ls`, `shell user@<name>`,
+  `rm`).
+- **`llmsctl`** — platform/host control plane (`init`, `up`/`down`, `status`,
+  `services …`).
 
 ## Three-layer architecture (the big picture)
 

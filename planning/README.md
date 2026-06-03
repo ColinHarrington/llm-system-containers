@@ -8,19 +8,23 @@ Internal design and planning documentation for the **LLM Sandbox** project.
 
 ## Project at a glance
 
-**Working name:** *LLM Sandbox* — *Little Linux Managed* + *Large Language Model*
-(double meaning intended). Formal naming is deferred to a dedicated session.
+**Project:** **llm-system-containers** — a platform/tool that enables **LLM System
+Containers (LLMSC)**, i.e. *Little Linux Managed System Containers*. ("LLM" = *Little Linux
+Managed* + *Large Language Model*.) See [naming.md](naming.md) for the full naming decisions.
 
-An open-source platform that provisions **sandboxed Linux system container environments
-for AI agents**, built on **Incus / unprivileged LXC** (system containers, not
-application/process containers). Each container is a full, lightweight Linux development
-environment. The platform provides defense-in-depth infrastructure backstops so that
-imperfect agent permission frameworks are not the only thing protecting the host.
+An open-source platform that provisions **Linux system container environments for AI
+agents**, built on **Incus / unprivileged LXC** (system containers, not application/process
+containers). Each container is a full, lightweight Linux development environment, typically
+run as an ephemeral, safer **sandbox**. The platform provides defense-in-depth
+infrastructure backstops so that imperfect agent permission frameworks are not the only
+thing protecting the host.
 
-Target platforms: **Linux and macOS**.
+Two CLIs: **`llmsc`** (manage individual containers) and **`llmsctl`** (manage the
+platform). Target platforms: **Linux and macOS**.
 
 ## Index
 
+- [naming.md](naming.md) — Project/unit names, the `llmsc`/`llmsctl` CLI split, and rationale
 - [overview.md](overview.md) — Vision, software-factory framing, the three-layer architecture
 - **architecture/**
   - [playground-vm.md](architecture/playground-vm.md) — Layer 1: the VM, Incus, nested virtualization, VM provider abstraction

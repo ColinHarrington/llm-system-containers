@@ -14,9 +14,18 @@ A desktop GUI app to **manage Playgrounds and sandboxes**:
 
 ## CLI tooling
 
-CLI alongside the GUI for scripting and power users — same operations as the GUI, suitable
-for automation and for the "software factory" use case where orchestrations are built
-programmatically.
+Two commands, split by audience and cadence (control plane vs. daily driver) — see
+[naming.md](naming.md):
+
+- **`llmsctl`** — platform / host control plane (occasional): `init`, `up`/`down`,
+  `status`, `services enable …`. Drives the Playground VM and service containers.
+- **`llmsc`** — container plane (daily driver): `launch`, `ls`, `shell user@<name>`, `rm`.
+  Manages individual LLM System Containers.
+
+Both cover the same operations as the GUI, suitable for automation and the "software
+factory" use case where orchestrations are built programmatically. The `user@<container>`
+form reflects the two-user model (agent users + human operator) in
+[architecture/sandbox-containers.md](architecture/sandbox-containers.md).
 
 ## Shared control plane
 
@@ -29,6 +38,8 @@ operations live.
 These are tracked in [open-questions.md](open-questions.md):
 
 - GUI framework / language (e.g. Tauri, Electron, native, etc.).
-- CLI language (likely aligned with the provisioning layer; Go pairs naturally with Lima/Incus).
+- CLI language (likely aligned with the provisioning layer; Go pairs naturally with
+  Lima/Incus). Command names are decided (`llmsc`, `llmsctl`); the implementation language
+  is not.
 - Control-plane API shape (local daemon? library? REST/gRPC?).
 - How the GUI/CLI talk to Lima, Incus, and the services inside the Playground.
