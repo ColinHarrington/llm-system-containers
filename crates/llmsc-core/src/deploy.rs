@@ -66,11 +66,25 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
             }
         }
 
-        reporter.step("Installing LiteLLM (venv + pip)");
-        self.exec(
-            "command -v python3 >/dev/null || (apt-get update && apt-get install -y python3 python3-venv)",
+        reporter.step("Installing Python (apt)");
+        // Always install python3-venv: the base image ships python3 but not the venv module.
+        let o = self.exec(
+            "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv",
         )?;
-        self.exec("test -d /opt/litellm || python3 -m venv /opt/litellm")?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "apt install python: {}",
+                o.stderr.trim()
+            )));
+        }
+
+        reporter.step("Creating virtualenv");
+        let o = self.exec("test -x /opt/litellm/bin/pip || python3 -m venv /opt/litellm")?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("python venv: {}", o.stderr.trim())));
+        }
+
+        reporter.step("Installing LiteLLM (pip)");
         let code = self
             .exec_streamed("/opt/litellm/bin/pip install --quiet --upgrade pip 'litellm[proxy]'")?;
         if code != 0 {
