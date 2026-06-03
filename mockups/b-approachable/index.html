@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>llm-system-containers — Desktop</title>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">L</div>
+      <div>
+        <div class="name">LLM System Containers</div>
+        <div class="sub">llmsc · llmsctl</div>
+      </div>
+    </div>
+
+    <div class="nav-label">Workspace</div>
+    <div class="nav-item active" data-screen="dashboard" onclick="navigate('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 10.5 12 4l9 6.5"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-6h5v6"/></svg>
+      <span>Home</span>
+    </div>
+    <div class="nav-item" data-screen="sandboxes" onclick="navigate('sandboxes')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg>
+      <span>Sandboxes</span>
+      <span class="badge">4</span>
+    </div>
+    <div class="nav-item" data-screen="agent" onclick="navigate('agent')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 4v3M9 12h.01M15 12h.01M9 16h6"/></svg>
+      <span>Agent control</span>
+      <span class="badge">3</span>
+    </div>
+
+    <div class="nav-label">Platform</div>
+    <div class="nav-item" data-screen="services" onclick="navigate('services')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+      <span>Services</span>
+      <span class="badge">5</span>
+    </div>
+    <div class="nav-item" data-screen="images" onclick="navigate('images')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m4 18 5-4 4 3 3-2 4 3"/></svg>
+      <span>Images</span>
+    </div>
+    <div class="nav-item" data-screen="wizard" onclick="navigate('wizard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg>
+      <span>Setup wizard</span>
+    </div>
+
+    <div class="sidebar-foot">
+      <div class="vm-card">
+        <div class="row">
+          <span class="dot ok" data-vm-dot></span>
+          <span class="vm-name">VM</span>
+          <span class="right small t2" data-vm-label>Running</span>
+        </div>
+        <div class="vm-meta">llmsc-vm · Lima · arm64</div>
+        <button class="btn sm" style="width:100%; margin-top:10px; justify-content:center" data-vm-btn onclick="toggleVm()"></button>
+      </div>
+      <div class="flex gap8" style="padding:0 2px">
+        <div class="avatar human sm">CH</div>
+        <div class="small">
+          <div class="strong" style="font-size:12.5px">operator</div>
+          <div class="muted xsmall">colin · host</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="page-title">Home</h1>
+        <div class="crumb" id="page-crumb"></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn" onclick="navigate('sandboxes'); openModal('modal-new-sandbox')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>
+        <span>New sandbox</span>
+      </button>
+      <button class="iconbtn" title="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      </button>
+      <button class="iconbtn" title="Toggle theme" onclick="toggleTheme()"><span id="theme-ico"></span></button>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- DASHBOARD                                                -->
+    <!-- ======================================================= -->
+    <section class="screen active" id="screen-dashboard">
+      <div class="content">
+
+        <!-- VM hero -->
+        <div class="card pad mb16" style="display:flex; align-items:center; gap:20px;">
+          <div style="width:54px;height:54px;border-radius:14px;background:var(--accent-soft);display:grid;place-items:center;color:var(--accent)">
+            <svg style="width:28px;height:28px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+          </div>
+          <div>
+            <div class="flex gap10">
+              <span class="strong" style="font-size:16px">llmsc-vm</span>
+              <span class="pill ok"><span class="dot ok" data-vm-dot></span> <span data-vm-label>Running</span></span>
+              <span class="tag">L1 · the VM</span>
+            </div>
+            <div class="muted small mt4">Host-native VM running Incus · Lima driver · Apple Virtualization · up 2 days 4h</div>
+          </div>
+          <div class="right flex gap8">
+            <button class="btn" onclick="navigate('sandboxes'); openModal('modal-new-sandbox')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg><span>New sandbox</span>
+            </button>
+            <button class="btn" data-vm-btn onclick="toggleVm()"></button>
+          </div>
+        </div>
+
+        <!-- Stat tiles -->
+        <div class="grid g-4 mb16">
+          <div class="card pad stat">
+            <div class="label">Sandboxes</div>
+            <div class="num">4 <small>/ 4 healthy</small></div>
+            <div class="delta" style="color:var(--ok)">3 running · 1 stopped</div>
+          </div>
+          <div class="card pad stat">
+            <div class="label">Active agents</div>
+            <div class="num">3 <small>working</small></div>
+            <div class="delta t2">1 paused by operator</div>
+          </div>
+          <div class="card pad stat">
+            <div class="label">Nested containers <span class="muted">(L3)</span></div>
+            <div class="num">7 <small>rootless</small></div>
+            <div class="delta t2">across 3 sandboxes</div>
+          </div>
+          <div class="card pad stat">
+            <div class="label">Services</div>
+            <div class="num">5 <small>/ 5 up</small></div>
+            <div class="delta" style="color:var(--ok)">all healthy</div>
+          </div>
+        </div>
+
+        <div class="grid g-2 mb16">
+          <!-- Host resources -->
+          <div class="card">
+            <div class="card-head"><h3>Host resources</h3><span class="right hint">Allocated to llmsc-vm</span></div>
+            <div class="pad">
+              <div class="mb16">
+                <div class="flex"><span class="small strong">CPU</span><span class="right small mono t2">5.2 / 8 cores</span></div>
+                <div class="meter mt8"><i style="width:65%"></i></div>
+              </div>
+              <div class="mb16">
+                <div class="flex"><span class="small strong">Memory</span><span class="right small mono t2">9.4 / 16 GB</span></div>
+                <div class="meter mt8"><i class="warn" style="width:59%"></i></div>
+              </div>
+              <div>
+                <div class="flex"><span class="small strong">Disk</span><span class="right small mono t2">34 / 120 GB</span></div>
+                <div class="meter mt8"><i class="ok" style="width:28%"></i></div>
+              </div>
+              <div class="divider"></div>
+              <div class="flex gap8 small t2">
+                <svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+                Tetragon eBPF enforcement active · network policy applied to all sandboxes
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick actions -->
+          <div class="card">
+            <div class="card-head"><h3>Quick actions</h3></div>
+            <div class="pad grid" style="gap:10px">
+              <div class="card-2 flex gap12" style="padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card-2);cursor:pointer" onclick="navigate('sandboxes'); openModal('modal-new-sandbox')">
+                <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center"><svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg></div>
+                <div><div class="strong small">New sandbox</div><div class="muted xsmall">Spin up a fresh LLMSC workspace</div></div>
+              </div>
+              <div class="card-2 flex gap12" style="padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card-2);cursor:pointer" onclick="navigate('sandbox-detail')">
+                <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center"><svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3M13 15h4"/></svg></div>
+                <div style="flex:1"><div class="strong small">Open a shell</div><div class="muted xsmall"><span class="mono">llmsc shell operator@web-agent-01</span></div></div>
+              </div>
+              <div class="card-2 flex gap12" style="padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card-2);cursor:pointer" onclick="navigate('agent')">
+                <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center"><svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3v6.5M3.6 8 9.5 11M20.4 8 14.5 11"/></svg></div>
+                <div><div class="strong small">Steer an agent</div><div class="muted xsmall">Observe, pause or inject a message</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent sandboxes -->
+        <div class="card">
+          <div class="card-head"><h3>Sandboxes</h3><span class="sub">L2 system containers</span>
+            <button class="btn sm right" onclick="navigate('sandboxes')"><span>View all</span></button>
+          </div>
+          <table class="tbl">
+            <thead><tr><th>Name</th><th>Role</th><th>Image</th><th>Users</th><th>L3</th><th>CPU / Mem</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr class="clickable" onclick="navigate('sandbox-detail')">
+                <td><div class="strong">web-agent-01</div></td>
+                <td><span class="pill accent">workspace</span></td>
+                <td><span class="tag mono">dev-ubuntu-24.04</span></td>
+                <td><div class="flex gap6"><div class="avatar agent sm">aC</div><div class="avatar aux sm">aX</div><div class="avatar human sm">op</div></div></td>
+                <td><span class="mono small">3</span></td>
+                <td class="mono small t2">2c · 3.1 GB</td>
+                <td><span class="pill ok"><span class="dot ok"></span> Running</span></td>
+              </tr>
+              <tr class="clickable" onclick="navigate('sandbox-detail')">
+                <td><div class="strong">ci-runner</div></td>
+                <td><span class="pill accent">workspace</span></td>
+                <td><span class="tag mono">dev-ubuntu-24.04</span></td>
+                <td><div class="flex gap6"><div class="avatar agent sm">aC</div><div class="avatar human sm">op</div></div></td>
+                <td><span class="mono small">4</span></td>
+                <td class="mono small t2">2c · 2.4 GB</td>
+                <td><span class="pill ok"><span class="dot ok pulse"></span> Running</span></td>
+              </tr>
+              <tr class="clickable" onclick="navigate('sandbox-detail')">
+                <td><div class="strong">data-pipeline</div></td>
+                <td><span class="pill accent">workspace</span></td>
+                <td><span class="tag mono">data-tools</span></td>
+                <td><div class="flex gap6"><div class="avatar agent sm">aC</div><div class="avatar human sm">op</div></div></td>
+                <td><span class="mono small">0</span></td>
+                <td class="mono small t2">1c · 1.8 GB</td>
+                <td><span class="pill ok"><span class="dot ok"></span> Running</span></td>
+              </tr>
+              <tr class="clickable" onclick="navigate('sandbox-detail')">
+                <td><div class="strong">browser-bot</div></td>
+                <td><span class="pill accent">workspace</span></td>
+                <td><span class="tag mono">browser-tools</span></td>
+                <td><div class="flex gap6"><div class="avatar agent sm">aC</div><div class="avatar human sm">op</div></div></td>
+                <td><span class="mono small">0</span></td>
+                <td class="mono small t2">—</td>
+                <td><span class="pill"><span class="dot muted"></span> Stopped</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ======================================================= -->
+    <!-- SANDBOXES (list)                                         -->
+    <!-- ======================================================= -->
+    <section class="screen" id="screen-sandboxes">
+      <div class="content">
+        <div class="banner info mb16">
+          <svg style="width:18px;height:18px;flex:none" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+          <span>Every sandbox is an <strong>unprivileged</strong> system container. Agents authenticate to LLMs with <strong>virtual keys</strong> — never real API keys.</span>
+        </div>
+
+        <div class="flex gap12 mb16">
+          <div class="code-chip" style="flex:1;max-width:420px">
+            <svg style="width:16px;height:16px;color:var(--text-3)" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <span class="t2">Search sandboxes…</span>
+          </div>
+          <div class="seg right">
+            <button class="on">All</button><button>Running</button><button>Stopped</button>
+          </div>
+          <button class="btn primary" onclick="openModal('modal-new-sandbox')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg><span>New sandbox</span>
+          </button>
+        </div>
+
+        <div class="grid g-3">
+          <!-- card 1 -->
+          <div class="card pad" style="cursor:pointer" onclick="navigate('sandbox-detail')">
+            <div class="flex gap10 mb12">
+              <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center"><svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5"/></svg></div>
+              <div><div class="strong">web-agent-01</div><div class="muted xsmall mono">dev-ubuntu-24.04</div></div>
+              <span class="pill ok right"><span class="dot ok pulse"></span> Running</span>
+            </div>
+            <div class="flex gap6 wrap mb12"><span class="tag">workspace</span><span class="tag">unprivileged</span><span class="tag">nesting on</span></div>
+            <div class="grid g-2" style="gap:10px">
+              <div><div class="muted xsmall">Users</div><div class="flex gap6 mt4"><div class="avatar agent sm">aC</div><div class="avatar aux sm">aX</div><div class="avatar human sm">op</div></div></div>
+              <div><div class="muted xsmall">Nested L3</div><div class="strong mono mt4">3 containers</div></div>
+              <div><div class="muted xsmall">CPU</div><div class="strong mono mt4">2 cores</div></div>
+              <div><div class="muted xsmall">Memory</div><div class="strong mono mt4">3.1 / 4 GB</div></div>
+            </div>
+          </div>
+          <!-- card 2 -->
+          <div class="card pad" style="cursor:pointer" onclick="navigate('sandbox-detail')">
+            <div class="flex gap10 mb12">
+              <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center"><svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5"/></svg></div>
+              <div><div class="strong">ci-runner</div><div class="muted xsmall mono">dev-ubuntu-24.04</div></div>
+              <span class="pill ok right"><span class="dot ok pulse"></span> Running</span>
+            </div>
+            <div class="flex gap6 wrap mb12"><span class="tag">workspace</span><span class="tag">unprivileged</span><span class="tag">nesting on</span></div>
+            <div class="grid g-2" style="gap:10px">
+              <div><div class="muted xsmall">Users</div><div class="flex gap6 mt4"><div class="avatar agent sm">aC</div><div class="avatar human sm">op</div></div></div>
+              <div><div class="muted xsmall">Nested L3</div><div class="strong mono mt4">4 containers</div></div>
+              <div><div class="muted xsmall">CPU</div><div class="strong mono mt4">2 cores</div></div>
+              <div><div class="muted xsmall">Memory</div><div class="strong mono mt4">2.4 / 4 GB</div></div>
+            </div>
+          </div>
+          <!-- card 3 -->
+          <div class="card pad" style="cursor:pointer" onclick="navigate('sandbox-detail')">
+            <div class="flex gap10 mb12">
+              <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center"><svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5"/></svg></div>
+              <div><div class="strong">data-pipeline</div><div class="muted xsmall mono">data-tools</div></div>
+              <span class="pill ok right"><span class="dot ok"></span> Running</span>
+            </div>
+            <div class="flex gap6 wrap mb12"><span class="tag">workspace</span><span class="tag">unprivileged</span></div>
+            <div class="grid g-2" style="gap:10px">
+              <div><div class="muted xsmall">Users</div><div class="flex gap6 mt4"><div class="avatar agent sm">aC</div><div class="avatar human sm">op</div></div></div>
+              <div><div class="muted xsmall">Nested L3</div><div class="strong mono mt4">0 containers</div></div>
+              <div><div class="muted xsmall">CPU</div><div class="strong mono mt4">1 core</div></div>
+              <div><div class="muted xsmall">Memory</div><div class="strong mono mt4">1.8 / 2 GB</div></div>
+            </div>
+          </div>
+          <!-- card 4 stopped -->
+          <div class="card pad" style="cursor:pointer;opacity:.85" onclick="navigate('sandbox-detail')">
+            <div class="flex gap10 mb12">
+              <div style="width:36px;height:36px;border-radius:10px;background:var(--card-2);color:var(--text-3);display:grid;place-items:center;border:1px solid var(--border)"><svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5"/></svg></div>
+              <div><div class="strong">browser-bot</div><div class="muted xsmall mono">browser-tools</div></div>
+              <span class="pill right"><span class="dot muted"></span> Stopped</span>
+            </div>
+            <div class="flex gap6 wrap mb12"><span class="tag">workspace</span><span class="tag">ephemeral</span></div>
+            <div class="grid g-2" style="gap:10px">
+              <div><div class="muted xsmall">Users</div><div class="flex gap6 mt4"><div class="avatar agent sm">aC</div><div class="avatar human sm">op</div></div></div>
+              <div><div class="muted xsmall">Nested L3</div><div class="strong mono mt4">—</div></div>
+              <div><div class="muted xsmall">CPU</div><div class="strong mono mt4">1 core</div></div>
+              <div><div class="muted xsmall">Memory</div><div class="strong mono mt4">— / 2 GB</div></div>
+            </div>
+          </div>
+          <!-- New sandbox tile -->
+          <div class="card pad center" style="cursor:pointer;border-style:dashed;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;color:var(--text-3);min-height:200px" onclick="openModal('modal-new-sandbox')">
+            <div style="width:44px;height:44px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center"><svg style="width:22px;height:22px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg></div>
+            <div class="strong" style="color:var(--text)">New sandbox</div>
+            <div class="xsmall">Launch a fresh LLMSC workspace</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================= -->
+    <!-- SANDBOX DETAIL                                           -->
+    <!-- ======================================================= -->
+    <section class="screen" id="screen-sandbox-detail" data-tabscope>
+      <div class="content">
+        <button class="btn ghost sm mb12" onclick="navigate('sandboxes')">‹ Back to sandboxes</button>
+
+        <div class="card pad mb16" style="display:flex;align-items:center;gap:18px">
+          <div style="width:48px;height:48px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center"><svg style="width:24px;height:24px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5"/></svg></div>
+          <div>
+            <div class="flex gap10"><span class="strong" style="font-size:17px">web-agent-01</span>
+              <span class="pill ok"><span class="dot ok pulse"></span> Running</span>
+              <span class="tag">L2 · system container</span></div>
+            <div class="muted small mt4 mono">dev-ubuntu-24.04 · unprivileged · security.nesting=true · up 1d 6h</div>
+          </div>
+          <div class="right flex gap8">
+            <button class="btn" onclick="navigate('agent')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3v6.5M3.6 8 9.5 11M20.4 8 14.5 11"/></svg><span>Agent control</span></button>
+            <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3M13 15h4"/></svg><span>Open shell</span></button>
+            <button class="btn danger icon" title="Destroy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+          </div>
+        </div>
+
+        <!-- tabs -->
+        <div class="seg mb16">
+          <button data-tab="overview" class="on" onclick="tabClick(this)">Overview</button>
+          <button data-tab="users" onclick="tabClick(this)">Users &amp; access</button>
+          <button data-tab="mounts" onclick="tabClick(this)">Workspace mounts</button>
+          <button data-tab="l3" onclick="tabClick(this)">Nested containers (L3)</button>
+        </div>
+
+        <!-- overview panel -->
+        <div data-tabpanel="overview">
+          <div class="grid g-3 mb16">
+            <div class="card pad stat"><div class="label">CPU</div><div class="num">2 <small>cores</small></div><div class="meter mt8"><i style="width:48%"></i></div></div>
+            <div class="card pad stat"><div class="label">Memory</div><div class="num">3.1 <small>/ 4 GB</small></div><div class="meter mt8"><i class="warn" style="width:78%"></i></div></div>
+            <div class="card pad stat"><div class="label">Nested L3</div><div class="num">3 <small>rootless</small></div><div class="delta t2">2 running · 1 exited</div></div>
+          </div>
+          <div class="grid g-2">
+            <div class="card">
+              <div class="card-head"><h3>Details</h3></div>
+              <div class="pad">
+                <div class="kv"><span class="k">Image</span><span class="v mono">dev-ubuntu-24.04</span></div>
+                <div class="kv"><span class="k">Role</span><span class="v">Workspace</span></div>
+                <div class="kv"><span class="k">Mode</span><span class="v">Sandbox (ephemeral)</span></div>
+                <div class="kv"><span class="k">Privilege</span><span class="v">Unprivileged LXC</span></div>
+                <div class="kv"><span class="k">UID map</span><span class="v mono">1000000–1065535</span></div>
+                <div class="kv"><span class="k">Created</span><span class="v">Jun 1, 09:14</span></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>Security &amp; network</h3>
+                <svg class="right" style="width:18px;height:18px;color:var(--ok)" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+              </div>
+              <div class="pad">
+                <div class="kv"><span class="k">Tetragon eBPF</span><span class="v"><span class="pill ok"><span class="dot ok"></span> enforcing</span></span></div>
+                <div class="kv"><span class="k">Network policy</span><span class="v">egress allowlist</span></div>
+                <div class="kv"><span class="k">LiteLLM access</span><span class="v"><span class="pill accent">virtual key</span></span></div>
+                <div class="kv"><span class="k">Traffic inspection</span><span class="v">mitmproxy + Zeek</span></div>
+                <div class="kv"><span class="k">Display forwarding</span><span class="v">Wayland (browser)</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- users panel -->
+        <div data-tabpanel="users" style="display:none">
+          <div class="card">
+            <div class="card-head"><h3>Users</h3><span class="sub">One Linux user per agent + a human operator — the first isolation boundary</span></div>
+            <table class="tbl">
+              <thead><tr><th>User</th><th>Kind</th><th>UID</th><th>Workspace access</th><th>Shell</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><div class="flex gap10"><div class="avatar agent">aC</div><div><div class="strong">agent-claude</div><div class="muted xsmall">primary coding agent</div></div></div></td>
+                  <td><span class="pill accent">agent</span></td>
+                  <td class="mono small">1001</td>
+                  <td><span class="pill warn">scoped · write to /work/src</span></td>
+                  <td><span class="code-chip">llmsc shell agent-claude@web-agent-01 <span class="copy" onclick="copyChip(this)" data-copy="llmsc shell agent-claude@web-agent-01"><svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span></span></td>
+                  <td><button class="btn sm">Manage</button></td>
+                </tr>
+                <tr>
+                  <td><div class="flex gap10"><div class="avatar aux">aX</div><div><div class="strong">agent-aux</div><div class="muted xsmall">test / review agent</div></div></div></td>
+                  <td><span class="pill accent">agent</span></td>
+                  <td class="mono small">1002</td>
+                  <td><span class="pill">read-only</span></td>
+                  <td><span class="code-chip">llmsc shell agent-aux@web-agent-01 <span class="copy" onclick="copyChip(this)" data-copy="llmsc shell agent-aux@web-agent-01"><svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span></span></td>
+                  <td><button class="btn sm">Manage</button></td>
+                </tr>
+                <tr>
+                  <td><div class="flex gap10"><div class="avatar human">op</div><div><div class="strong">operator</div><div class="muted xsmall">human login</div></div></div></td>
+                  <td><span class="pill">human</span></td>
+                  <td class="mono small">1000</td>
+                  <td><span class="pill ok">full read / write</span></td>
+                  <td><span class="code-chip">llmsc shell operator@web-agent-01 <span class="copy" onclick="copyChip(this)" data-copy="llmsc shell operator@web-agent-01"><svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span></span></td>
+                  <td><button class="btn sm">Manage</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- mounts panel -->
+        <div data-tabpanel="mounts" style="display:none">
+          <div class="card">
+            <div class="card-head"><h3>Workspace mounts</h3><span class="sub">Host directories with tiered, per-user access</span></div>
+            <table class="tbl">
+              <thead><tr><th>Host path</th><th>Mount point</th><th>operator</th><th>agent-claude</th><th>agent-aux</th></tr></thead>
+              <tbody>
+                <tr><td class="mono small">~/projects/acme-web</td><td class="mono small">/work/src</td><td><span class="pill ok">rw</span></td><td><span class="pill warn">rw (scoped)</span></td><td><span class="pill">ro</span></td></tr>
+                <tr><td class="mono small">~/.cache/llmsc/shared</td><td class="mono small">/work/shared</td><td><span class="pill ok">rw</span></td><td><span class="pill ok">rw</span></td><td><span class="pill ok">rw</span></td></tr>
+                <tr><td class="mono small">seaweedfs://team/datasets</td><td class="mono small">/work/data</td><td><span class="pill ok">rw</span></td><td><span class="pill">ro</span></td><td><span class="pill">ro</span></td></tr>
+              </tbody>
+            </table>
+            <div class="pad"><span class="hint">Access tiers backed by kernel-level enforcement. Shared storage paths are served by SeaweedFS.</span></div>
+          </div>
+        </div>
+
+        <!-- L3 panel -->
+        <div data-tabpanel="l3" style="display:none">
+          <div class="banner info mb16">
+            <svg style="width:18px;height:18px;flex:none" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>
+            <span>Nested <strong>rootless</strong> Docker/Podman — real <span class="mono">docker build</span> &amp; <span class="mono">compose</span> with <strong>no privileged DinD</strong> and backstops intact.</span>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>App containers (L3)</h3><span class="sub">Running inside web-agent-01 as agent-claude</span>
+              <span class="tag right mono">podman · rootless</span></div>
+            <table class="tbl">
+              <thead><tr><th>Container</th><th>Image</th><th>Owner (UID)</th><th>Ports</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td class="strong mono small">acme-web</td><td class="mono small">acme/web:dev</td><td class="mono small">agent-claude</td><td class="mono small">3000→3000</td><td><span class="pill ok"><span class="dot ok"></span> Up 14m</span></td></tr>
+                <tr><td class="strong mono small">postgres</td><td class="mono small">postgres:16</td><td class="mono small">agent-claude</td><td class="mono small">5432</td><td><span class="pill ok"><span class="dot ok"></span> Up 14m</span></td></tr>
+                <tr><td class="strong mono small">redis</td><td class="mono small">redis:7-alpine</td><td class="mono small">agent-claude</td><td class="mono small">6379</td><td><span class="pill"><span class="dot muted"></span> Exited (0)</span></td></tr>
+              </tbody>
+            </table>
+            <div class="pad l3"><span class="mono small t2">$ podman compose up -d &nbsp;·&nbsp; compose stack: web + db + cache (local integration test)</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================= -->
+    <!-- AGENT CONTROL                                            -->
+    <!-- ======================================================= -->
+    <section class="screen" id="screen-agent">
+      <div class="content">
+
+        <!-- agent header + controls -->
+        <div class="card pad mb16">
+          <div class="flex gap12 wrap">
+            <div class="avatar agent" style="width:40px;height:40px;border-radius:11px;font-size:14px">aC</div>
+            <div>
+              <div class="flex gap10"><span class="strong" style="font-size:16px">agent-claude</span>
+                <span class="pill ok" id="agent-status-pill"><span class="dot ok pulse"></span> Working</span></div>
+              <div class="muted small mt4 mono">web-agent-01 · UID 1001 · session 1h 12m · model claude-opus-4-8</div>
+            </div>
+            <div class="right flex gap8 wrap">
+              <button class="btn" id="btn-pause" onclick="togglePause()"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg><span>Pause</span></button>
+              <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11V5a1.5 1.5 0 0 1 3 0v6M12 11V4a1.5 1.5 0 0 1 3 0v7M15 11V6a1.5 1.5 0 0 1 3 0v8a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L4 15a1.5 1.5 0 0 1 2.4-1.8L9 16"/></svg><span>Interrupt</span></button>
+              <button class="btn primary" onclick="openModal('modal-steer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3v6.5M3.6 8 9.5 11M20.4 8 14.5 11"/></svg><span>Steer</span></button>
+              <button class="btn danger"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span>Terminate</span></button>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="flex gap16 wrap small t2">
+            <span class="flex gap6"><svg style="width:15px;height:15px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="8" cy="15" r="4"/><path d="M11 12 21 2M18 5l2 2M15 8l2 2"/></svg> LLM via <span class="mono">litellm</span> virtual key <span class="mono">sk-vk-…a91f</span></span>
+            <span class="flex gap6"><svg style="width:15px;height:15px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6l-8-3Z"/></svg> Tetragon enforcing</span>
+            <span class="flex gap6">Current task: <span class="strong" style="color:var(--text)">Fix failing auth tests &amp; open PR</span></span>
+          </div>
+        </div>
+
+        <div class="grid" style="grid-template-columns: 1.55fr 1fr; gap:16px;">
+          <!-- left: trace + log -->
+          <div class="grid" style="gap:16px">
+            <div class="card">
+              <div class="card-head"><h3>Live activity</h3><span class="sub">LLM call trace · Phoenix</span>
+                <span class="pill ok right"><span class="dot ok pulse"></span> streaming</span></div>
+              <div class="pad trace">
+                <div class="trace-row"><span style="width:64px" class="t2">12:47:02</span><div class="trace-bar" style="width:34%"></div><span class="t2">llm.chat · 1.2s · 980 tok</span></div>
+                <div class="trace-row"><span style="width:64px" class="t2">12:47:04</span><div class="trace-bar tool" style="width:18%"></div><span class="t2">tool · read_file(auth_test.py)</span></div>
+                <div class="trace-row"><span style="width:64px" class="t2">12:47:09</span><div class="trace-bar tool" style="width:46%"></div><span class="t2">tool · run(pytest -k auth) · 3.4s</span></div>
+                <div class="trace-row"><span style="width:64px" class="t2">12:47:21</span><div class="trace-bar" style="width:52%"></div><span class="t2">llm.chat · 2.1s · 1,540 tok</span></div>
+                <div class="trace-row"><span style="width:64px" class="t2">12:47:26</span><div class="trace-bar tool" style="width:24%"></div><span class="t2">tool · edit_file(auth.py)</span></div>
+                <div class="trace-row"><span style="width:64px" class="t2">12:47:38</span><div class="trace-bar retr" style="width:14%"></div><span class="t2">retrieval · docs (4 chunks)</span></div>
+                <div class="trace-row"><span style="width:64px" class="t2">12:47:44</span><div class="trace-bar" style="width:60%" ></div><span class="t2">llm.chat · 2.6s · 1,910 tok</span></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><h3>Logs</h3><span class="sub">stdout · Loki</span>
+                <div class="seg right"><button class="on">All</button><button>Agent</button><button>System</button></div></div>
+              <div class="pad">
+                <div class="console" id="agent-log">
+                  <div><span class="ts">12:47:09</span> <span class="lvl-info">[run]</span> $ pytest -k auth -q</div>
+                  <div><span class="ts">12:47:12</span> <span class="lvl-err">FAILED</span> tests/test_auth.py::test_refresh_token</div>
+                  <div><span class="ts">12:47:21</span> <span class="agent">[agent-claude]</span> Reading failure; token TTL mismatch suspected.</div>
+                  <div><span class="ts">12:47:26</span> <span class="lvl-info">[edit]</span> auth.py — set refresh TTL to 30m</div>
+                  <div><span class="ts">12:47:40</span> <span class="lvl-warn">[net]</span> egress to api.anthropic.com via litellm proxy (vk)</div>
+                  <div><span class="ts">12:47:55</span> <span class="lvl-info">[run]</span> $ pytest -k auth -q</div>
+                  <div><span class="ts">12:48:01</span> <span class="lvl-ok">PASSED</span> 2 passed in 1.9s</div>
+                  <div><span class="ts">12:48:03</span> <span class="agent">[agent-claude]</span> Tests green. Preparing PR…</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- right: token usage + other agents -->
+          <div class="grid" style="gap:16px">
+            <div class="card">
+              <div class="card-head"><h3>Token usage</h3><span class="sub">this session</span></div>
+              <div class="pad">
+                <div class="flex"><div><div class="stat"><div class="num" style="font-size:24px">142.8K <small>tokens</small></div></div></div>
+                  <div class="right center"><div class="strong" style="font-size:18px">$0.86</div><div class="muted xsmall">est. cost</div></div></div>
+                <div class="bars mt16">
+                  <i style="height:30%"></i><i style="height:55%"></i><i style="height:40%"></i><i class="hi" style="height:80%"></i><i style="height:50%"></i><i class="hi" style="height:95%"></i><i style="height:60%"></i><i style="height:45%"></i><i class="hi" style="height:70%"></i><i style="height:38%"></i><i style="height:62%"></i><i class="hi" style="height:88%"></i>
+                </div>
+                <div class="divider"></div>
+                <div class="kv"><span class="k">Input</span><span class="v mono">118.2K</span></div>
+                <div class="kv"><span class="k">Output</span><span class="v mono">24.6K</span></div>
+                <div class="kv"><span class="k">LLM calls</span><span class="v mono">37</span></div>
+                <div class="kv"><span class="k">Tool calls</span><span class="v mono">58</span></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><h3>Other agents</h3></div>
+              <div class="pad grid" style="gap:10px">
+                <div class="flex gap10"><div class="avatar aux sm">aX</div><div><div class="strong small">agent-aux</div><div class="muted xsmall">ci-runner · reviewing</div></div><span class="pill ok right"><span class="dot ok pulse"></span></span></div>
+                <div class="flex gap10"><div class="avatar agent sm">aC</div><div><div class="strong small">agent-claude</div><div class="muted xsmall">data-pipeline · idle</div></div><span class="pill warn right"><span class="dot warn"></span></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================= -->
+    <!-- SERVICES                                                 -->
+    <!-- ======================================================= -->
+    <section class="screen" id="screen-services">
+      <div class="content">
+        <div class="grid g-2 mb16">
+          <!-- service cards -->
+          <div class="card pad">
+            <div class="flex gap12 mb8"><div class="svc-ico" style="background:#6b5bd2">Li</div>
+              <div><div class="strong">LiteLLM</div><div class="muted xsmall">LLM proxy · virtual keys</div></div>
+              <span class="pill ok right"><span class="dot ok"></span> Healthy</span></div>
+            <div class="small t2 mb12">Agents call models through virtual keys; real API keys never enter a sandbox.</div>
+            <div class="flex gap8 wrap"><span class="tag">own L2 container</span><span class="tag">isolated</span><span class="tag mono">litellm-svc</span></div>
+          </div>
+          <div class="card pad">
+            <div class="flex gap12 mb8"><div class="svc-ico" style="background:#e06f3a">Ph</div>
+              <div><div class="strong">Phoenix</div><div class="muted xsmall">LLM/agent observability</div></div>
+              <span class="pill ok right"><span class="dot ok"></span> Healthy</span></div>
+            <div class="small t2 mb12">Traces, token usage and prompt inspection for every agent call.</div>
+            <div class="flex gap8 wrap"><span class="tag">in L1 VM</span><span class="tag mono">phoenix</span></div>
+          </div>
+          <div class="card pad">
+            <div class="flex gap12 mb8"><div class="svc-ico" style="background:#2a9d8f">Gr</div>
+              <div><div class="strong">VictoriaMetrics · Loki · Grafana</div><div class="muted xsmall">System metrics &amp; logs</div></div>
+              <span class="pill ok right"><span class="dot ok"></span> Healthy</span></div>
+            <div class="small t2 mb12">Memory-efficient metrics and log aggregation across the VM and sandboxes.</div>
+            <div class="flex gap8 wrap"><span class="tag">in L1 VM</span><span class="tag mono">grafana-stack</span></div>
+          </div>
+          <div class="card pad">
+            <div class="flex gap12 mb8"><div class="svc-ico" style="background:#3a7de0">Sw</div>
+              <div><div class="strong">SeaweedFS</div><div class="muted xsmall">Shared storage</div></div>
+              <span class="pill ok right"><span class="dot ok"></span> Healthy</span></div>
+            <div class="small t2 mb12">Shared storage across host ↔ sandboxes and sandbox ↔ sandbox with scoped paths.</div>
+            <div class="flex gap8 wrap"><span class="tag">own L2 container</span><span class="tag mono">seaweed-svc</span></div>
+          </div>
+          <div class="card pad">
+            <div class="flex gap12 mb8"><div class="svc-ico" style="background:#c0455a">Mi</div>
+              <div><div class="strong">mitmproxy + Zeek</div><div class="muted xsmall">Network inspection</div></div>
+              <span class="pill ok right"><span class="dot ok"></span> Healthy</span></div>
+            <div class="small t2 mb12">Proxy and traffic capture for every sandbox's egress — paired with Tetragon enforcement.</div>
+            <div class="flex gap8 wrap"><span class="tag">own L2 container</span><span class="tag">handles traffic</span></div>
+          </div>
+          <div class="card pad" style="border-style:dashed;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;color:var(--text-3)">
+            <div class="strong" style="color:var(--text)">Forgejo · NATS</div>
+            <div class="xsmall">Optional / future services — enable in the wizard</div>
+            <button class="btn sm mt8" onclick="navigate('wizard')">Configure services</button>
+          </div>
+        </div>
+
+        <!-- LiteLLM virtual keys -->
+        <div class="card">
+          <div class="card-head"><h3>LiteLLM virtual keys</h3><span class="sub">Per-agent keys — scoped, rotatable, revocable</span>
+            <button class="btn sm right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg><span>Issue key</span></button></div>
+          <table class="tbl">
+            <thead><tr><th>Key</th><th>Assigned to</th><th>Models</th><th>Budget</th><th>Used (24h)</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td class="mono small">sk-vk-…a91f</td><td>agent-claude @ web-agent-01</td><td class="small t2">opus, sonnet</td><td class="mono small">$50 / day</td><td class="mono small">$0.86</td><td><span class="pill ok"><span class="dot ok"></span> active</span></td></tr>
+              <tr><td class="mono small">sk-vk-…77c2</td><td>agent-aux @ ci-runner</td><td class="small t2">sonnet, haiku</td><td class="mono small">$20 / day</td><td class="mono small">$3.40</td><td><span class="pill ok"><span class="dot ok"></span> active</span></td></tr>
+              <tr><td class="mono small">sk-vk-…1d08</td><td>agent-claude @ data-pipeline</td><td class="small t2">sonnet</td><td class="mono small">$20 / day</td><td class="mono small">$0.00</td><td><span class="pill warn"><span class="dot warn"></span> idle</span></td></tr>
+              <tr><td class="mono small">sk-vk-…be40</td><td>browser-bot (stopped)</td><td class="small t2">haiku</td><td class="mono small">$10 / day</td><td class="mono small">—</td><td><span class="pill"><span class="dot muted"></span> revoked</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================= -->
+    <!-- IMAGES                                                   -->
+    <!-- ======================================================= -->
+    <section class="screen" id="screen-images">
+      <div class="content">
+        <div class="flex mb16"><div class="hint">Base distros and custom images with pre-packaged tooling, browsers and runtimes.</div>
+          <button class="btn primary right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg><span>Build image</span></button></div>
+        <div class="card">
+          <table class="tbl">
+            <thead><tr><th>Image</th><th>Base</th><th>Size</th><th>Tooling</th><th>Used by</th><th>Updated</th></tr></thead>
+            <tbody>
+              <tr><td><div class="strong mono small">dev-ubuntu-24.04</div><div class="muted xsmall">general dev workspace</div></td><td class="small t2">ubuntu 24.04</td><td class="mono small">1.4 GB</td><td class="small t2">node, python, podman, git</td><td class="mono small">2 sandboxes</td><td class="small t2">3d ago</td></tr>
+              <tr><td><div class="strong mono small">browser-tools</div><div class="muted xsmall">headed browser automation</div></td><td class="small t2">dev-ubuntu-24.04</td><td class="mono small">2.1 GB</td><td class="small t2">+ chromium, playwright, Wayland</td><td class="mono small">1 sandbox</td><td class="small t2">5d ago</td></tr>
+              <tr><td><div class="strong mono small">data-tools</div><div class="muted xsmall">data pipelines</div></td><td class="small t2">dev-ubuntu-24.04</td><td class="mono small">1.9 GB</td><td class="small t2">+ duckdb, pandas, polars</td><td class="mono small">1 sandbox</td><td class="small t2">1w ago</td></tr>
+              <tr><td><div class="strong mono small">base-debian-12</div><div class="muted xsmall">minimal base</div></td><td class="small t2">debian 12</td><td class="mono small">320 MB</td><td class="small t2">core only</td><td class="mono small">—</td><td class="small t2">2w ago</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================= -->
+    <!-- WIZARD                                                   -->
+    <!-- ======================================================= -->
+    <section class="screen" id="screen-wizard">
+      <div class="content">
+        <div class="banner info mb16">
+          <svg style="width:18px;height:18px;flex:none" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6l-8-3Z"/></svg>
+          <span>This sets up <strong>llmsc-vm</strong> — the host-native VM (L1) that runs Incus and hosts your sandboxes. Equivalent to <span class="mono">llmsctl init</span>.</span>
+        </div>
+
+        <div class="wizard-wrap">
+          <!-- steps -->
+          <div class="steps">
+            <div class="step active" onclick="gotoStep(0)"><div class="num">1</div><div><div class="st">Resources</div><div class="sd">CPU · memory · disk</div></div></div>
+            <div class="step" onclick="gotoStep(1)"><div class="num">2</div><div><div class="st">Services</div><div class="sd">Pick &amp; place</div></div></div>
+            <div class="step" onclick="gotoStep(2)"><div class="num">3</div><div><div class="st">Networking</div><div class="sd">Egress &amp; inspection</div></div></div>
+            <div class="step" onclick="gotoStep(3)"><div class="num">4</div><div><div class="st">Review &amp; create</div><div class="sd">Confirm setup</div></div></div>
+          </div>
+
+          <!-- panels -->
+          <div>
+            <!-- step 1 -->
+            <div class="wstep active">
+              <div class="card pad">
+                <h3 style="margin:0 0 4px">How much power should the VM get?</h3>
+                <p class="hint mb16">These are reserved from your host for <span class="mono">llmsc-vm</span>. You can change them later.</p>
+                <div class="field mb20">
+                  <div class="flex"><label>CPU cores <span class="hint">(vCPUs)</span></label><span class="right strong mono" id="res-cpu-out"></span></div>
+                  <input type="range" id="res-cpu" min="1" max="12" value="8" />
+                  <div class="flex small muted mt4"><span>1</span><span class="right">12 available</span></div>
+                </div>
+                <div class="field mb20">
+                  <div class="flex"><label>Memory</label><span class="right strong mono" id="res-mem-out"></span></div>
+                  <input type="range" id="res-mem" min="2" max="24" value="16" />
+                  <div class="flex small muted mt4"><span>2 GB</span><span class="right">24 GB available</span></div>
+                </div>
+                <div class="field">
+                  <div class="flex"><label>Disk <span class="hint">(virtual disk)</span></label><span class="right strong mono" id="res-disk-out"></span></div>
+                  <input type="range" id="res-disk" min="20" max="250" value="120" />
+                  <div class="flex small muted mt4"><span>20 GB</span><span class="right">grows as needed</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- step 2 -->
+            <div class="wstep">
+              <div class="card">
+                <div class="card-head"><h3>Choose your services</h3><span class="sub">Each runs in the VM (L1) or its own isolated sandbox (L2)</span></div>
+                <div>
+                  <!-- service rows -->
+                  <div class="svc-row">
+                    <div class="svc-ico" style="background:#6b5bd2">Li</div>
+                    <div style="flex:1"><div class="strong">LiteLLM <span class="tag">MVP</span></div><div class="hint">LLM proxy — agents use virtual keys, real API keys never exposed.</div>
+                      <div class="seg mt8"><button>In VM (L1)</button><button class="on">Own sandbox (L2)</button></div></div>
+                    <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+                  </div>
+                  <div class="svc-row">
+                    <div class="svc-ico" style="background:#e06f3a">Ph</div>
+                    <div style="flex:1"><div class="strong">Phoenix <span class="tag">MVP</span></div><div class="hint">LLM/agent observability — traces, token usage, prompt inspection.</div>
+                      <div class="seg mt8"><button class="on">In VM (L1)</button><button>Own sandbox (L2)</button></div></div>
+                    <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+                  </div>
+                  <div class="svc-row">
+                    <div class="svc-ico" style="background:#2a9d8f">Gr</div>
+                    <div style="flex:1"><div class="strong">VictoriaMetrics + Loki + Grafana <span class="tag">MVP</span></div><div class="hint">System metrics &amp; log aggregation (memory-efficient).</div>
+                      <div class="seg mt8"><button class="on">In VM (L1)</button><button>Own sandbox (L2)</button></div></div>
+                    <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+                  </div>
+                  <div class="svc-row">
+                    <div class="svc-ico" style="background:#3a7de0">Sw</div>
+                    <div style="flex:1"><div class="strong">SeaweedFS <span class="tag">Core</span></div><div class="hint">Shared storage across host ↔ sandboxes and sandbox ↔ sandbox.</div>
+                      <div class="seg mt8"><button>In VM (L1)</button><button class="on">Own sandbox (L2)</button></div></div>
+                    <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+                  </div>
+                  <div class="svc-row">
+                    <div class="svc-ico" style="background:#c0455a">Mi</div>
+                    <div style="flex:1"><div class="strong">mitmproxy + Zeek <span class="tag">Core</span></div><div class="hint">Network inspection / proxy / traffic capture.</div>
+                      <div class="seg mt8"><button>In VM (L1)</button><button class="on">Own sandbox (L2)</button></div></div>
+                    <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+                  </div>
+                  <div class="svc-row" style="opacity:.7">
+                    <div class="svc-ico" style="background:#8a90a3">Fo</div>
+                    <div style="flex:1"><div class="strong">Forgejo <span class="tag">Optional</span></div><div class="hint">Internal git platform.</div></div>
+                    <label class="switch"><input type="checkbox"><span class="track"></span></label>
+                  </div>
+                </div>
+              </div>
+              <div class="hint mt12">Tip: isolate anything that holds credentials or inspects traffic (LiteLLM, mitmproxy) in its own L2 sandbox.</div>
+            </div>
+
+            <!-- step 3 -->
+            <div class="wstep">
+              <div class="card pad">
+                <h3 style="margin:0 0 4px">Networking</h3>
+                <p class="hint mb16">How sandboxes reach the internet and how traffic is watched. Sensible defaults are pre-selected.</p>
+                <div class="field mb20">
+                  <label>Egress policy</label>
+                  <div class="desc">Controls what agents can reach from inside a sandbox.</div>
+                  <select class="input">
+                    <option>Allowlist (recommended) — only approved hosts + services</option>
+                    <option>Inspect-all — open egress, fully captured</option>
+                    <option>Locked down — services only, no public internet</option>
+                  </select>
+                </div>
+                <div class="flex gap12 mb16" style="align-items:flex-start">
+                  <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+                  <div><div class="strong small">Route LLM traffic through LiteLLM only</div><div class="hint">Agents reach model APIs solely via their virtual key.</div></div>
+                </div>
+                <div class="flex gap12 mb16" style="align-items:flex-start">
+                  <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+                  <div><div class="strong small">Capture &amp; inspect egress (mitmproxy + Zeek)</div><div class="hint">Record sandbox network traffic for review.</div></div>
+                </div>
+                <div class="flex gap12" style="align-items:flex-start">
+                  <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+                  <div><div class="strong small">Tetragon eBPF kernel enforcement</div><div class="hint">Kernel-level backstop for process &amp; network policy, per UID.</div></div>
+                </div>
+                <div class="divider"></div>
+                <div class="field"><label>VM subnet</label><div class="desc">Internal bridge network for the VM and its sandboxes.</div>
+                  <input class="input mono" value="10.118.0.0/24" /></div>
+              </div>
+            </div>
+
+            <!-- step 4 -->
+            <div class="wstep">
+              <div class="card">
+                <div class="card-head"><h3>Review &amp; create</h3><span class="sub">Confirm before we launch llmsc-vm</span></div>
+                <div class="pad">
+                  <div class="grid g-2" style="gap:24px">
+                    <div>
+                      <div class="nav-label" style="padding-left:0">Resources</div>
+                      <div class="kv"><span class="k">CPU</span><span class="v mono">8 cores</span></div>
+                      <div class="kv"><span class="k">Memory</span><span class="v mono">16 GB</span></div>
+                      <div class="kv"><span class="k">Disk</span><span class="v mono">120 GB</span></div>
+                      <div class="kv"><span class="k">VM driver</span><span class="v">Lima · Apple Virtualization</span></div>
+                    </div>
+                    <div>
+                      <div class="nav-label" style="padding-left:0">Networking</div>
+                      <div class="kv"><span class="k">Egress</span><span class="v">Allowlist</span></div>
+                      <div class="kv"><span class="k">LLM routing</span><span class="v">LiteLLM only</span></div>
+                      <div class="kv"><span class="k">Inspection</span><span class="v">mitmproxy + Zeek</span></div>
+                      <div class="kv"><span class="k">Enforcement</span><span class="v">Tetragon eBPF</span></div>
+                    </div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="nav-label" style="padding-left:0">Services</div>
+                  <div class="flex gap8 wrap">
+                    <span class="pill ok"><span class="dot ok"></span> LiteLLM · L2</span>
+                    <span class="pill ok"><span class="dot ok"></span> Phoenix · L1</span>
+                    <span class="pill ok"><span class="dot ok"></span> Grafana stack · L1</span>
+                    <span class="pill ok"><span class="dot ok"></span> SeaweedFS · L2</span>
+                    <span class="pill ok"><span class="dot ok"></span> mitmproxy+Zeek · L2</span>
+                  </div>
+                  <div class="banner info mt16"><svg style="width:18px;height:18px;flex:none" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+                    <span>All sandboxes will run <strong>unprivileged</strong> with nested rootless containers enabled. No privileged DinD anywhere.</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- footer nav -->
+            <div class="flex gap10 mt20">
+              <button class="btn" id="wiz-back" onclick="wizBack()">‹ Back</button>
+              <span class="right"></span>
+              <button class="btn ghost" onclick="navigate('dashboard')">Cancel</button>
+              <button class="btn primary" id="wiz-next" onclick="wizNext()"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============ MODAL: NEW SANDBOX ============ -->
+<div class="modal-bg" id="modal-new-sandbox">
+  <div class="modal">
+    <div class="modal-head"><h3>New sandbox</h3><button class="iconbtn right" onclick="closeModal(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <div class="modal-body">
+      <div class="field mb16"><label>Name</label><input class="input mono" value="web-agent-02" placeholder="my-agent" /></div>
+      <div class="field mb16"><label>Image</label>
+        <select class="input"><option>dev-ubuntu-24.04 — general dev workspace</option><option>browser-tools — headed browser automation</option><option>data-tools — data pipelines</option><option>base-debian-12 — minimal</option></select></div>
+      <div class="grid g-2 mb16" style="gap:14px">
+        <div class="field"><label>CPU cores</label><select class="input"><option>1</option><option selected>2</option><option>4</option></select></div>
+        <div class="field"><label>Memory</label><select class="input"><option>1 GB</option><option>2 GB</option><option selected>4 GB</option><option>8 GB</option></select></div>
+      </div>
+      <div class="field mb16"><label>Users</label><div class="hint mb8">One Linux user per agent + a human operator login.</div>
+        <div class="flex gap8 wrap">
+          <span class="pill accent"><div class="avatar agent sm" style="margin:-2px 0">aC</div> agent-claude <svg style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 6l12 12M18 6 6 18"/></svg></span>
+          <span class="pill"><div class="avatar human sm" style="margin:-2px 0">op</div> operator</span>
+          <span class="pill" style="cursor:pointer"><svg style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg> add agent</span>
+        </div></div>
+      <div class="field mb16"><label>Workspace mount</label><input class="input mono" value="~/projects/acme-web → /work/src" /></div>
+      <div class="flex gap12" style="align-items:flex-start">
+        <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+        <div><div class="strong small">Enable nested containers (L3)</div><div class="hint">Rootless Docker/Podman inside the sandbox — no privileged DinD.</div></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span class="code-chip mono right" style="margin-right:auto">llmsc launch web-agent-02 --image dev-ubuntu-24.04</span>
+      <button class="btn" onclick="closeModal(this)">Cancel</button>
+      <button class="btn primary" onclick="closeModal(this); navigate('sandbox-detail')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 5v14l11-7L7 5Z"/></svg><span>Launch sandbox</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: STEER ============ -->
+<div class="modal-bg" id="modal-steer">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-head"><h3>Steer agent-claude</h3><button class="iconbtn right" onclick="closeModal(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <div class="modal-body">
+      <p class="hint mb12">Inject a message into the running agent's context. It will be delivered at the next safe checkpoint.</p>
+      <textarea class="input mono" id="steer-text" rows="4" placeholder="e.g. Don't touch the migrations — only fix the token TTL, then open a draft PR.">Skip the redis change; just fix the token TTL and open a draft PR.</textarea>
+      <div class="flex gap8 mt12">
+        <span class="pill warn"><svg style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11V5a1.5 1.5 0 0 1 3 0v6M12 11V4a1.5 1.5 0 0 1 3 0v7M15 11V6a1.5 1.5 0 0 1 3 0v8a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L4 15a1.5 1.5 0 0 1 2.4-1.8L9 16"/></svg> pause after delivering</span>
+        <span class="pill accent">high priority</span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal(this)">Cancel</button>
+      <button class="btn primary" onclick="sendSteer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Send to agent</span></button>
+    </div>
+  </div>
+</div>
+
+<script src="icons.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

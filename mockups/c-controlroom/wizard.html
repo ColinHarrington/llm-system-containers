@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>First-run Setup — llm-system-containers</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="styles.css">
+<style>
+  body { display:grid; place-items:center; }
+  .wiz { width: 920px; max-width: 96vw; margin: 28px auto; }
+  .wiz-head { text-align:center; margin-bottom: 22px; }
+  .wiz-head .logo { width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--violet));display:grid;place-items:center;margin:0 auto 12px;box-shadow:0 8px 24px -8px var(--accent); }
+  .steps { display:flex; align-items:center; gap:0; margin: 0 0 22px; }
+  .step { display:flex; align-items:center; gap:10px; flex:1; }
+  .step .num { width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px;background:var(--bg-3);border:1px solid var(--line-2);color:var(--txt-2);flex:none; }
+  .step.done .num { background:var(--accent-dim);border-color:var(--accent);color:#fff; }
+  .step.active .num { background:linear-gradient(135deg,var(--accent),#2f7fe0);border-color:var(--accent);color:#fff;box-shadow:0 0 0 4px #4da3ff22; }
+  .step .lbl { font-size:12px; color:var(--txt-2); font-weight:600; }
+  .step.active .lbl, .step.done .lbl { color:var(--txt-0); }
+  .step .bar { flex:1; height:2px; background:var(--line); margin:0 8px; border-radius:2px; }
+  .step.done .bar { background:var(--accent); }
+  .wpane { display:none; } .wpane.active { display:block; animation: fade .18s ease; }
+  .svc-row { display:flex; align-items:center; gap:12px; padding:12px 14px; border-bottom:1px solid var(--line); }
+  .svc-row:last-child { border-bottom:0; }
+  .place { display:inline-flex; background:var(--bg-2); border:1px solid var(--line-2); border-radius:7px; padding:2px; }
+  .place button { border:0;background:transparent;color:var(--txt-2);padding:4px 9px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--mono); }
+  .place button.active { background:var(--bg-4); color:#fff; }
+</style>
+</head>
+<body>
+<div class="wiz">
+  <div class="wiz-head">
+    <div class="logo"><svg viewBox="0 0 24 24" width="26" height="26" fill="none"><path d="M4 7l8-4 8 4-8 4-8-4z" fill="#fff" opacity=".95"/><path d="M4 12l8 4 8-4M4 17l8 4 8-4" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" opacity=".8"/></svg></div>
+    <div style="font-size:18px;font-weight:700">Set up llmsc-vm</div>
+    <div class="muted">Configure the L1 VM that hosts your sandboxes & services · <span class="mono">llmsctl init</span></div>
+  </div>
+
+  <!-- step indicator -->
+  <div class="steps" id="steps">
+    <div class="step active" data-step="0"><span class="num">1</span><span class="lbl">Resources</span><span class="bar"></span></div>
+    <div class="step" data-step="1"><span class="num">2</span><span class="lbl">Services</span><span class="bar"></span></div>
+    <div class="step" data-step="2"><span class="num">3</span><span class="lbl">Networking</span><span class="bar"></span></div>
+    <div class="step" data-step="3"><span class="num">4</span><span class="lbl">Review</span></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-b" style="min-height:380px;padding:22px">
+
+      <!-- STEP 1: Resources -->
+      <div class="wpane active" data-pane="0">
+        <h2 style="margin:0 0 4px;font-size:16px">Host resources for the VM</h2>
+        <p class="muted" style="margin:0 0 20px">A native VM (Lima) matching your host architecture runs Incus. These are the resources the VM may use on your host.</p>
+        <div class="grid cols-2" style="gap:20px">
+          <div>
+            <div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="lbl" style="color:var(--txt-1)">CPU cores</span><span class="mono" style="font-weight:700;font-size:15px">8 <span class="muted">/ 12</span></span></div>
+            <input type="range" min="1" max="12" value="8" style="--p:67%">
+            <div class="row" style="justify-content:space-between;margin-top:16px;margin-bottom:6px"><span class="lbl" style="color:var(--txt-1)">Memory</span><span class="mono" style="font-weight:700;font-size:15px">16 <span class="muted">/ 32 GiB</span></span></div>
+            <input type="range" min="2" max="32" value="16" style="--p:50%">
+            <div class="row" style="justify-content:space-between;margin-top:16px;margin-bottom:6px"><span class="lbl" style="color:var(--txt-1)">Disk</span><span class="mono" style="font-weight:700;font-size:15px">120 <span class="muted">GiB</span></span></div>
+            <input type="range" min="40" max="500" value="120" style="--p:24%">
+          </div>
+          <div class="panel" style="background:var(--bg-2)">
+            <div class="panel-b">
+              <div class="muted" style="font-size:11px;margin-bottom:10px">ALLOCATION PREVIEW</div>
+              <div class="row" style="gap:16px;align-items:center">
+                <div data-chart="donut" data-pct="67" data-color="#4da3ff" data-label="CPU"></div>
+                <div data-chart="donut" data-pct="50" data-color="#2ee6d6" data-label="MEM"></div>
+              </div>
+              <div class="sep"></div>
+              <div class="kv" style="grid-template-columns:auto 1fr;gap:6px 10px;font-size:11.5px">
+                <dt>VM driver</dt><dd class="mono">Lima (QEMU/KVM)</dd>
+                <dt>Arch</dt><dd class="mono">aarch64 (native)</dd>
+                <dt>Nesting</dt><dd><span class="tag shield">enabled · L3 ready</span></dd>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: Services -->
+      <div class="wpane" data-pane="1">
+        <h2 style="margin:0 0 4px;font-size:16px">Enable services</h2>
+        <p class="muted" style="margin:0 0 16px">Each service runs in the <b>L1 VM</b> or its <b>own L2 container</b> — an isolation choice. Defaults isolate anything holding credentials or inspecting traffic.</p>
+        <div class="panel" style="background:var(--bg-2)">
+          <div class="svc-row">
+            <span class="toggle on"></span>
+            <div class="flex1"><div class="row"><b>LiteLLM</b><span class="badge info">MVP</span></div><div class="muted" style="font-size:11px">LLM proxy — agents use virtual keys; real API creds never exposed.</div></div>
+            <div class="place"><button>L1 VM</button><button class="active">own L2</button></div>
+          </div>
+          <div class="svc-row">
+            <span class="toggle on"></span>
+            <div class="flex1"><div class="row"><b>Phoenix</b><span class="badge info">MVP</span></div><div class="muted" style="font-size:11px">LLM/agent observability — traces, evals, prompt inspection.</div></div>
+            <div class="place"><button class="active">L1 VM</button><button>own L2</button></div>
+          </div>
+          <div class="svc-row">
+            <span class="toggle on"></span>
+            <div class="flex1"><div class="row"><b>VictoriaMetrics + Loki + Grafana</b><span class="badge info">MVP</span></div><div class="muted" style="font-size:11px">System metrics + log aggregation (memory-efficient).</div></div>
+            <div class="place"><button class="active">L1 VM</button><button>own L2</button></div>
+          </div>
+          <div class="svc-row">
+            <span class="toggle on"></span>
+            <div class="flex1"><div class="row"><b>SeaweedFS</b><span class="badge">Core</span></div><div class="muted" style="font-size:11px">Shared storage across host ↔ containers and container ↔ container.</div></div>
+            <div class="place"><button class="active">L1 VM</button><button>own L2</button></div>
+          </div>
+          <div class="svc-row">
+            <span class="toggle on"></span>
+            <div class="flex1"><div class="row"><b>mitmproxy + Zeek</b><span class="badge">Core</span></div><div class="muted" style="font-size:11px">Network inspection / proxy / traffic capture for agent egress.</div></div>
+            <div class="place"><button>L1 VM</button><button class="active">own L2</button></div>
+          </div>
+          <div class="svc-row" style="opacity:.7">
+            <span class="toggle"></span>
+            <div class="flex1"><div class="row"><b>Forgejo</b><span class="badge idle">Optional</span></div><div class="muted" style="font-size:11px">Internal git platform.</div></div>
+            <div class="place"><button class="active">L1 VM</button><button>own L2</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 3: Networking -->
+      <div class="wpane" data-pane="2">
+        <h2 style="margin:0 0 4px;font-size:16px">Networking</h2>
+        <p class="muted" style="margin:0 0 18px">Incus manages a bridge network inside the VM. Agent egress is policy-controlled and routed through inspection.</p>
+        <div class="grid cols-2" style="gap:18px">
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <label class="field"><span class="lbl">Bridge subnet (internal)</span><input class="input mono" value="10.62.0.0/24"></label>
+            <label class="field"><span class="lbl">VM ⇄ Host port forwards</span><input class="input mono" value="3000 (Grafana), 6006 (Phoenix)"></label>
+            <label class="row" style="gap:10px;font-size:12.5px"><span class="toggle on"></span> Route agent egress through mitmproxy</label>
+            <label class="row" style="gap:10px;font-size:12.5px"><span class="toggle on"></span> Default-deny egress (allowlist only)</label>
+            <label class="row" style="gap:10px;font-size:12.5px"><span class="toggle on"></span> Enforce per-UID network policy</label>
+          </div>
+          <div class="panel" style="background:var(--bg-2)">
+            <div class="panel-b">
+              <div class="muted" style="font-size:11px;margin-bottom:10px">EGRESS ALLOWLIST</div>
+              <div class="wrap">
+                <span class="tag">api.anthropic.com</span><span class="tag">api.openai.com</span>
+                <span class="tag">api.github.com</span><span class="tag">registry-1.docker.io</span>
+                <span class="tag">pypi.org</span><span class="tag">+ add…</span>
+              </div>
+              <div class="sep"></div>
+              <div class="row"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--green)" stroke-width="1.8"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/></svg><span class="muted" style="font-size:11px">LLM traffic is forced through LiteLLM; agents receive virtual keys, never real API keys.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 4: Review -->
+      <div class="wpane" data-pane="3">
+        <h2 style="margin:0 0 4px;font-size:16px">Review & create</h2>
+        <p class="muted" style="margin:0 0 18px">Confirm the configuration. <span class="mono">llmsctl up</span> will launch the VM and bootstrap Incus + selected services.</p>
+        <div class="grid cols-3">
+          <div class="panel"><div class="panel-h"><h3>Resources</h3></div><div class="panel-b kv" style="grid-template-columns:auto 1fr;gap:7px 10px;font-size:12px"><dt>CPU</dt><dd class="mono">8 cores</dd><dt>Memory</dt><dd class="mono">16 GiB</dd><dt>Disk</dt><dd class="mono">120 GiB</dd><dt>Driver</dt><dd class="mono">Lima</dd></div></div>
+          <div class="panel"><div class="panel-h"><h3>Services</h3></div><div class="panel-b" style="display:flex;flex-direction:column;gap:6px;font-size:12px">
+            <div class="row"><span class="dot ok"></span>LiteLLM<span class="badge violet right">own L2</span></div>
+            <div class="row"><span class="dot ok"></span>Phoenix<span class="badge info right">L1</span></div>
+            <div class="row"><span class="dot ok"></span>Metrics+Logs<span class="badge info right">L1</span></div>
+            <div class="row"><span class="dot ok"></span>SeaweedFS<span class="badge info right">L1</span></div>
+            <div class="row"><span class="dot ok"></span>mitmproxy+Zeek<span class="badge violet right">own L2</span></div>
+          </div></div>
+          <div class="panel"><div class="panel-h"><h3>Networking</h3></div><div class="panel-b kv" style="grid-template-columns:auto 1fr;gap:7px 10px;font-size:12px"><dt>Subnet</dt><dd class="mono">10.62.0.0/24</dd><dt>Egress</dt><dd><span class="badge ok">default-deny</span></dd><dt>Inspect</dt><dd><span class="badge info">mitmproxy</span></dd><dt>Policy</dt><dd><span class="badge ok">per-UID</span></dd></div></div>
+        </div>
+        <div class="code-pill" style="margin-top:16px;width:100%"><span class="p">$</span> llmsctl init --cpu 8 --mem 16G --disk 120G --services litellm,phoenix,grafana,seaweedfs,mitmproxy && llmsctl up</div>
+      </div>
+
+    </div>
+    <div class="panel-h" style="border-top:1px solid var(--line);border-bottom:0">
+      <button class="btn ghost" id="backBtn" onclick="step(-1)">Back</button>
+      <span class="muted right" id="stepLbl" style="font-size:11.5px">Step 1 of 4</span>
+      <button class="btn primary" id="nextBtn" onclick="step(1)">Next</button>
+      <a class="btn primary" id="createBtn" href="index.html" style="display:none">Create VM & launch</a>
+    </div>
+  </div>
+  <div style="text-align:center;margin-top:14px"><a href="index.html" class="muted" style="font-size:12px">Skip — open Control Room</a></div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  let cur = 0; const N = 4;
+  function step(d){
+    cur = Math.max(0, Math.min(N-1, cur+d));
+    document.querySelectorAll('.wpane').forEach(p=>p.classList.toggle('active', +p.dataset.pane===cur));
+    document.querySelectorAll('.step').forEach((s,i)=>{ s.classList.toggle('active', i===cur); s.classList.toggle('done', i<cur); });
+    document.getElementById('backBtn').style.visibility = cur===0?'hidden':'visible';
+    document.getElementById('stepLbl').textContent = `Step ${cur+1} of ${N}`;
+    document.getElementById('nextBtn').style.display = cur===N-1?'none':'inline-flex';
+    document.getElementById('createBtn').style.display = cur===N-1?'inline-flex':'none';
+  }
+  // wire placement segmented controls
+  document.querySelectorAll('.place').forEach(p=>p.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{p.querySelectorAll('button').forEach(x=>x.classList.remove('active'));b.classList.add('active');})));
+  step(0);
+</script>
+</body>
+</html>

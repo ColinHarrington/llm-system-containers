@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>llm-system-containers — Control Room</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="styles.css">
+<style>.hidden-x{display:none!important}</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 7l8-4 8 4-8 4-8-4z" fill="#fff" opacity=".95"/><path d="M4 12l8 4 8-4M4 17l8 4 8-4" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" opacity=".8"/></svg>
+      </div>
+      <div>
+        <div class="name">Control Room</div>
+        <div class="sub">llm-system-containers</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-label">Platform</div>
+      <button class="nav-item" data-screen="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="11" width="7" height="10" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/></svg>
+        Mission Control
+      </button>
+      <button class="nav-item" data-screen="sandboxes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><circle cx="7" cy="7" r=".8" fill="currentColor"/><circle cx="7" cy="17" r=".8" fill="currentColor"/></svg>
+        Sandboxes <span class="badge mono" style="padding:1px 7px">5</span>
+      </button>
+      <button class="nav-item" data-screen="agent">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="13" r="1.3" fill="currentColor"/><circle cx="15" cy="13" r="1.3" fill="currentColor"/></svg>
+        Agent Control <span class="dot live" style="margin-left:auto"></span>
+      </button>
+
+      <div class="nav-label">Infrastructure</div>
+      <button class="nav-item" data-screen="services">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><circle cx="12" cy="12" r="3"/></svg>
+        Services
+      </button>
+      <button class="nav-item" data-screen="images">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+        Images
+      </button>
+      <button class="nav-item" data-screen="security">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+        Security Posture
+      </button>
+
+      <div class="nav-label">Setup</div>
+      <a class="nav-item" href="wizard.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19 12a7 7 0 00-.1-1l2-1.6-2-3.5-2.4 1a7 7 0 00-1.7-1l-.4-2.6h-4l-.4 2.6a7 7 0 00-1.7 1l-2.4-1-2 3.5 2 1.6a7 7 0 000 2l-2 1.6 2 3.5 2.4-1a7 7 0 001.7 1l.4 2.6h4l.4-2.6a7 7 0 001.7-1l2.4 1 2-3.5-2-1.6c.07-.33.1-.66.1-1z"/></svg>
+        First-run Wizard
+      </a>
+    </nav>
+
+    <div class="nav-foot">
+      <div class="avatar">CO</div>
+      <div style="min-width:0">
+        <div style="font-size:12px;font-weight:600">operator</div>
+        <div class="mono" style="font-size:10.5px;color:var(--txt-2)">colin@host</div>
+      </div>
+      <svg class="right" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--txt-2)" stroke-width="1.8"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <main class="main">
+    <header class="topbar">
+      <h1 id="topTitle">Mission Control</h1>
+      <span class="crumb" id="topCrumb">/ Overview</span>
+      <div class="spacer"></div>
+      <span class="mono" id="clock" style="color:var(--txt-2);font-size:11.5px"></span>
+      <div class="vmpill">
+        <span class="dot live" data-vmstate></span>
+        <span class="dot idle hidden-x" data-vmstate></span>
+        <span class="lbl">llmsc-vm</span>
+        <span data-vmstate style="font-weight:600;color:var(--green)">Running</span>
+        <span data-vmstate class="hidden-x" style="font-weight:600;color:var(--txt-2)">Stopped</span>
+      </div>
+      <button class="btn sm ghost" id="vmToggle">
+        <span data-vmstate>Stop VM</span><span data-vmstate class="hidden-x">Start VM</span>
+      </button>
+    </header>
+
+    <div class="content">
+
+      <!-- ============================================================
+           SCREEN: DASHBOARD / MISSION CONTROL
+           ============================================================ -->
+      <section id="screen-dashboard" class="screen">
+
+        <!-- top stat tiles -->
+        <div class="grid cols-4" style="margin-bottom:14px">
+          <div class="panel tile">
+            <div class="tile-row">
+              <div>
+                <div class="k">VM · llmsc-vm</div>
+                <div class="v" style="color:var(--green)">Running</div>
+                <div class="meta"><span class="dot live"></span> Incus 6.4 · up 3d 7h</div>
+              </div>
+              <div data-chart="spark" data-seed="2" data-base="20" data-amp="6" data-color="#36d399" data-w="76" data-h="40"></div>
+            </div>
+          </div>
+          <div class="panel tile">
+            <div class="tile-row">
+              <div>
+                <div class="k">Sandboxes (L2)</div>
+                <div class="v">5 <small>/ 8 cap</small></div>
+                <div class="meta"><span class="dot ok"></span> 4 running · <span class="dot idle"></span> 1 stopped</div>
+              </div>
+              <div data-chart="donut" data-pct="62" data-color="#4da3ff" data-sz="62" data-label="cap"></div>
+            </div>
+          </div>
+          <div class="panel tile">
+            <div class="tile-row">
+              <div>
+                <div class="k">Nested L3 containers</div>
+                <div class="v">11</div>
+                <div class="meta"><span class="tag shield">rootless</span> across 3 sandboxes</div>
+              </div>
+              <div data-chart="bars" data-seed="9" data-n="14" data-color="#f5b94d" data-w="76" data-h="42"></div>
+            </div>
+          </div>
+          <div class="panel tile">
+            <div class="tile-row">
+              <div>
+                <div class="k">Services</div>
+                <div class="v">6 <small>/ 6 healthy</small></div>
+                <div class="meta"><span class="dot ok"></span> all health checks green</div>
+              </div>
+              <div data-chart="donut" data-pct="100" data-color="#36d399" data-sz="62" data-label="ok"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- main panels -->
+        <div class="grid cols-3">
+          <!-- host resources -->
+          <div class="panel span-2">
+            <div class="panel-h">
+              <h3>Host resources allocated to VM</h3>
+              <span class="sub">8 vCPU · 16 GiB · 120 GiB disk</span>
+              <div class="spacer"></div>
+              <div class="seg"><button class="active">1h</button><button>6h</button><button>24h</button></div>
+            </div>
+            <div class="panel-b">
+              <div class="row" style="gap:24px;margin-bottom:10px">
+                <div><span class="muted" style="font-size:11px">CPU</span><div style="font-size:18px;font-weight:700;color:var(--accent)">47%</div></div>
+                <div><span class="muted" style="font-size:11px">Memory</span><div style="font-size:18px;font-weight:700;color:var(--cyan)">9.8 GiB</div></div>
+                <div><span class="muted" style="font-size:11px">Disk I/O</span><div style="font-size:18px;font-weight:700;color:var(--violet)">22 MB/s</div></div>
+                <div class="right wrap" style="font-size:11px">
+                  <span class="row"><span class="dot" style="background:var(--accent)"></span> CPU</span>
+                  <span class="row"><span class="dot" style="background:var(--cyan)"></span> Mem</span>
+                </div>
+              </div>
+              <div data-chart="area" data-seed="14" data-color="#4da3ff" data-color2="#2ee6d6" data-base="48" data-base2="40" data-amp="14" data-max="100" data-h="170"></div>
+            </div>
+          </div>
+
+          <!-- security posture -->
+          <div class="panel">
+            <div class="panel-h">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--green)" stroke-width="1.8"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/></svg>
+              <h3>Security posture</h3>
+              <span class="badge ok right">Enforcing</span>
+            </div>
+            <div class="panel-b" style="display:flex;flex-direction:column;gap:11px">
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div style="font-weight:600">Tetragon eBPF</div><div class="muted" style="font-size:11px">Kernel enforcement active · 0 policy gaps</div></div></div>
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div style="font-weight:600">Unprivileged containers</div><div class="muted" style="font-size:11px">5/5 sandboxes unprivileged · 0 privileged</div></div></div>
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div style="font-weight:600">Egress via LiteLLM</div><div class="muted" style="font-size:11px">Agents hold virtual keys only</div></div></div>
+              <div class="row"><span class="dot warn"></span><div class="flex1"><div style="font-weight:600">Network policy</div><div class="muted" style="font-size:11px">3 denied egress attempts (1h)</div></div></div>
+              <div class="sep"></div>
+              <button class="btn ghost sm block" data-screen="security">View live policy events</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- second row -->
+        <div class="grid cols-3" style="margin-top:14px">
+          <!-- quick actions -->
+          <div class="panel">
+            <div class="panel-h"><h3>Quick actions</h3></div>
+            <div class="panel-b" style="display:flex;flex-direction:column;gap:9px">
+              <button class="btn primary block" data-screen="sandboxes">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> New sandbox
+              </button>
+              <button class="btn ghost block" data-screen="agent">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg> Open agent cockpit
+              </button>
+              <div class="code-pill" style="margin-top:2px"><span class="p">$</span> llmsc shell operator@web-agent-01</div>
+              <div class="code-pill"><span class="p">$</span> llmsctl status</div>
+            </div>
+          </div>
+
+          <!-- LLM activity -->
+          <div class="panel">
+            <div class="panel-h"><h3>LLM activity</h3><span class="sub right">via LiteLLM → Phoenix</span></div>
+            <div class="panel-b">
+              <div class="row" style="justify-content:space-between;margin-bottom:6px">
+                <div><div class="muted" style="font-size:11px">Tokens (24h)</div><div style="font-size:20px;font-weight:700">3.42M</div></div>
+                <div style="text-align:right"><div class="muted" style="font-size:11px">Spend (24h)</div><div style="font-size:20px;font-weight:700;color:var(--green)">$14.07</div></div>
+              </div>
+              <div data-live-spark data-seed="22" data-base="60" data-amp="34" data-color="#9b8cff" data-w="280" data-h="46" style="margin:6px 0"></div>
+              <div class="wrap" style="margin-top:8px">
+                <span class="tag">claude-sonnet · 2.1M</span>
+                <span class="tag">gpt-4o · 0.9M</span>
+                <span class="tag">haiku · 0.4M</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- live feed -->
+          <div class="panel">
+            <div class="panel-h"><span class="dot live"></span><h3>Platform event stream</h3></div>
+            <div class="panel-b feed">
+              <div class="line"><span class="t">12:04:11</span><span class="msg"><b style="color:var(--cyan)">launch</b> sandbox <b>ci-runner</b> ready (dev-ubuntu-24.04)</span></div>
+              <div class="line"><span class="t">12:03:52</span><span class="msg"><b style="color:var(--violet)">llm</b> web-agent-01 → 1,204 tok</span></div>
+              <div class="line"><span class="t">12:03:40</span><span class="msg"><b style="color:var(--red)">deny</b> egress 13.107.42.16:443 (uid 1001)</span></div>
+              <div class="line"><span class="t">12:03:18</span><span class="msg"><b style="color:var(--amber)">l3</b> data-pipeline · docker build #47</span></div>
+              <div class="line"><span class="t">12:02:55</span><span class="msg"><b style="color:var(--green)">health</b> phoenix OK · 38ms</span></div>
+              <div class="line"><span class="t">12:02:31</span><span class="msg"><b style="color:var(--cyan)">shell</b> operator@web-agent-01 attached</span></div>
+              <div class="line"><span class="t">12:01:09</span><span class="msg"><b style="color:var(--violet)">key</b> rotated vkey sk-vk-…a91</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: SANDBOXES (LIST)
+           ============================================================ -->
+      <section id="screen-sandboxes" class="screen">
+        <div class="row" style="margin-bottom:14px">
+          <div class="seg" data-tabgroup="sbview">
+            <button data-tab="table" class="active">Table</button>
+            <button data-tab="cards">Cards</button>
+          </div>
+          <input class="input flex1" style="max-width:260px" placeholder="Filter sandboxes…">
+          <div class="right wrap">
+            <span class="badge"><span class="dot ok"></span> 4 running</span>
+            <span class="badge idle"><span class="dot idle"></span> 1 stopped</span>
+            <button class="btn primary" onclick="document.getElementById('newSandbox').scrollIntoView({behavior:'smooth'})">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> New sandbox
+            </button>
+          </div>
+        </div>
+
+        <!-- table view -->
+        <div data-tabpane="sbview" data-tabid="table">
+          <div class="panel">
+            <table class="tbl">
+              <thead><tr>
+                <th>Name</th><th>Image</th><th>Role</th><th>Status</th><th>Users</th><th>CPU / Mem</th><th>L3</th><th></th>
+              </tr></thead>
+              <tbody>
+                <tr onclick="showScreen('sandbox-detail')">
+                  <td><div class="cell-name">web-agent-01</div><div class="cell-sub">created 3d ago · sandbox</div></td>
+                  <td><span class="tag">dev-ubuntu-24.04</span></td>
+                  <td><span class="badge info">workspace</span></td>
+                  <td><span class="badge ok"><span class="dot ok"></span> running</span></td>
+                  <td><span class="badge mono">agent-claude</span> <span class="badge mono">agent-aux</span> <span class="badge mono">operator</span></td>
+                  <td><div class="mono" style="font-size:11px">2c · 38%</div><div class="meter" style="width:80px;margin-top:3px"><span style="width:38%;background:var(--accent)"></span></div></td>
+                  <td><span class="tag shield">3</span></td>
+                  <td><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--txt-2)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></td>
+                </tr>
+                <tr onclick="showScreen('sandbox-detail')">
+                  <td><div class="cell-name">ci-runner</div><div class="cell-sub">created 6h ago · ephemeral</div></td>
+                  <td><span class="tag">dev-ubuntu-24.04</span></td>
+                  <td><span class="badge info">workspace</span></td>
+                  <td><span class="badge ok"><span class="dot ok"></span> running</span></td>
+                  <td><span class="badge mono">agent-ci</span> <span class="badge mono">operator</span></td>
+                  <td><div class="mono" style="font-size:11px">4c · 71%</div><div class="meter" style="width:80px;margin-top:3px"><span style="width:71%;background:var(--amber)"></span></div></td>
+                  <td><span class="tag shield">5</span></td>
+                  <td><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--txt-2)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></td>
+                </tr>
+                <tr onclick="showScreen('sandbox-detail')">
+                  <td><div class="cell-name">data-pipeline</div><div class="cell-sub">created 1d ago · sandbox</div></td>
+                  <td><span class="tag">browser-tools</span></td>
+                  <td><span class="badge info">workspace</span></td>
+                  <td><span class="badge ok"><span class="dot ok"></span> running</span></td>
+                  <td><span class="badge mono">agent-claude</span> <span class="badge mono">operator</span></td>
+                  <td><div class="mono" style="font-size:11px">2c · 24%</div><div class="meter" style="width:80px;margin-top:3px"><span style="width:24%;background:var(--accent)"></span></div></td>
+                  <td><span class="tag shield">3</span></td>
+                  <td><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--txt-2)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></td>
+                </tr>
+                <tr onclick="showScreen('sandbox-detail')">
+                  <td><div class="cell-name">litellm-svc</div><div class="cell-sub">created 3d ago · long-lived</div></td>
+                  <td><span class="tag">svc-litellm</span></td>
+                  <td><span class="badge violet">service</span></td>
+                  <td><span class="badge ok"><span class="dot ok"></span> running</span></td>
+                  <td><span class="badge mono">svc</span></td>
+                  <td><div class="mono" style="font-size:11px">1c · 12%</div><div class="meter" style="width:80px;margin-top:3px"><span style="width:12%;background:var(--green)"></span></div></td>
+                  <td><span class="faint">—</span></td>
+                  <td><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--txt-2)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></td>
+                </tr>
+                <tr onclick="showScreen('sandbox-detail')" style="opacity:.7">
+                  <td><div class="cell-name">scratch-01</div><div class="cell-sub">stopped 2h ago · ephemeral</div></td>
+                  <td><span class="tag">dev-ubuntu-24.04</span></td>
+                  <td><span class="badge info">workspace</span></td>
+                  <td><span class="badge idle"><span class="dot idle"></span> stopped</span></td>
+                  <td><span class="badge mono">agent-aux</span> <span class="badge mono">operator</span></td>
+                  <td><span class="faint mono" style="font-size:11px">—</span></td>
+                  <td><span class="faint">0</span></td>
+                  <td><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--txt-2)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- card view -->
+        <div data-tabpane="sbview" data-tabid="cards" style="display:none">
+          <div class="cards">
+            <div class="panel scard" onclick="showScreen('sandbox-detail')">
+              <div class="row"><span class="dot live"></span><span class="cell-name">web-agent-01</span><span class="badge info right">workspace</span></div>
+              <div class="tag" style="margin:8px 0">dev-ubuntu-24.04</div>
+              <div class="kv" style="grid-template-columns:auto 1fr;font-size:11.5px">
+                <dt>Users</dt><dd class="mono">agent-claude, agent-aux, operator</dd>
+                <dt>L3</dt><dd><span class="tag shield">3 rootless</span></dd>
+              </div>
+              <div class="row" style="margin-top:10px"><span class="muted" style="font-size:11px">CPU 38%</span><div class="meter flex1"><span style="width:38%;background:var(--accent)"></span></div></div>
+            </div>
+            <div class="panel scard" onclick="showScreen('sandbox-detail')">
+              <div class="row"><span class="dot live"></span><span class="cell-name">ci-runner</span><span class="badge info right">workspace</span></div>
+              <div class="tag" style="margin:8px 0">dev-ubuntu-24.04</div>
+              <div class="kv" style="grid-template-columns:auto 1fr;font-size:11.5px">
+                <dt>Users</dt><dd class="mono">agent-ci, operator</dd>
+                <dt>L3</dt><dd><span class="tag shield">5 rootless</span></dd>
+              </div>
+              <div class="row" style="margin-top:10px"><span class="muted" style="font-size:11px">CPU 71%</span><div class="meter flex1"><span style="width:71%;background:var(--amber)"></span></div></div>
+            </div>
+            <div class="panel scard" onclick="showScreen('sandbox-detail')">
+              <div class="row"><span class="dot idle"></span><span class="cell-name">scratch-01</span><span class="badge idle right">stopped</span></div>
+              <div class="tag" style="margin:8px 0">dev-ubuntu-24.04</div>
+              <div class="kv" style="grid-template-columns:auto 1fr;font-size:11.5px">
+                <dt>Users</dt><dd class="mono">agent-aux, operator</dd>
+                <dt>L3</dt><dd class="faint">0</dd>
+              </div>
+              <button class="btn ghost sm block" style="margin-top:10px">Start sandbox</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- New sandbox flow -->
+        <div class="panel" id="newSandbox" style="margin-top:18px">
+          <div class="panel-h">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            <h3>New sandbox</h3>
+            <span class="sub">llmsc launch …</span>
+          </div>
+          <div class="panel-b">
+            <div class="grid cols-2" style="gap:18px">
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <label class="field"><span class="lbl">Name</span><input class="input mono" value="web-agent-02"></label>
+                <label class="field"><span class="lbl">Image</span>
+                  <select class="input"><option>dev-ubuntu-24.04</option><option>browser-tools</option><option>data-science-py</option><option>base-debian-12</option></select>
+                </label>
+                <div class="grid cols-2" style="gap:10px">
+                  <label class="field"><span class="lbl">CPU cores</span><input class="input mono" value="2"></label>
+                  <label class="field"><span class="lbl">Memory</span><input class="input mono" value="4 GiB"></label>
+                </div>
+                <label class="field"><span class="lbl">Role</span>
+                  <select class="input"><option>workspace (sandbox)</option><option>service</option></select>
+                </label>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <div>
+                  <span class="lbl" style="font-size:11px;color:var(--txt-2);font-weight:600">Users</span>
+                  <div class="panel" style="background:var(--bg-2);margin-top:5px">
+                    <div class="panel-b" style="padding:10px;display:flex;flex-direction:column;gap:8px">
+                      <div class="row"><span class="badge mono">agent-claude</span><span class="muted right" style="font-size:11px">agent · scoped</span></div>
+                      <div class="row"><span class="badge mono">agent-aux</span><span class="muted right" style="font-size:11px">agent · scoped</span></div>
+                      <div class="row"><span class="badge mono">operator</span><span class="muted right" style="font-size:11px">human · full</span></div>
+                      <button class="btn ghost sm" style="margin-top:2px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Add user</button>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <span class="lbl" style="font-size:11px;color:var(--txt-2);font-weight:600">Workspace mounts</span>
+                  <div class="panel" style="background:var(--bg-2);margin-top:5px">
+                    <div class="panel-b" style="padding:10px;display:flex;flex-direction:column;gap:8px;font-size:11.5px">
+                      <div class="row"><span class="mono flex1">~/projects/api → /work/api</span><span class="badge">operator: rw</span><span class="badge">agents: ro</span></div>
+                      <div class="row"><span class="mono flex1">SeaweedFS /shared → /shared</span><span class="badge">scoped</span></div>
+                    </div>
+                  </div>
+                </div>
+                <label class="row" style="gap:10px;font-size:12.5px"><span class="toggle on"></span> Enable nested L3 (rootless Docker/Podman)</label>
+              </div>
+            </div>
+            <div class="sep"></div>
+            <div class="row">
+              <div class="code-pill flex1"><span class="p">$</span> llmsc launch web-agent-02 --image dev-ubuntu-24.04 --cpu 2 --mem 4G --nest</div>
+              <button class="btn ghost">Cancel</button>
+              <button class="btn primary">Launch sandbox</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: SANDBOX DETAIL
+           ============================================================ -->
+      <section id="screen-sandbox-detail" class="screen">
+        <div class="backlink" data-screen="sandboxes" style="margin-bottom:12px">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg> All sandboxes
+        </div>
+
+        <div class="panel" style="margin-bottom:14px">
+          <div class="panel-b row" style="gap:14px">
+            <span class="dot live" style="width:10px;height:10px"></span>
+            <div>
+              <div class="row"><span style="font-size:18px;font-weight:700">web-agent-01</span><span class="badge info">workspace</span><span class="badge ok"><span class="dot ok"></span> running</span></div>
+              <div class="muted mono" style="font-size:11.5px;margin-top:2px">dev-ubuntu-24.04 · unprivileged LXC · L2 · created 3d ago</div>
+            </div>
+            <div class="right wrap">
+              <button class="btn ghost sm">Stop</button>
+              <button class="btn ghost sm">Snapshot</button>
+              <button class="btn danger sm">Destroy</button>
+              <button class="btn primary sm" data-screen="agent">Open agent cockpit</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid cols-3">
+          <div class="panel"><div class="tile"><div class="k">CPU</div><div class="v">38<small>%</small></div><div data-chart="spark" data-seed="6" data-base="38" data-amp="14" data-color="#4da3ff" data-w="200" data-h="34" style="margin-top:6px"></div></div></div>
+          <div class="panel"><div class="tile"><div class="k">Memory</div><div class="v">2.4<small>/4 GiB</small></div><div data-chart="spark" data-seed="8" data-base="60" data-amp="10" data-color="#2ee6d6" data-w="200" data-h="34" style="margin-top:6px"></div></div></div>
+          <div class="panel"><div class="tile"><div class="k">Nested L3</div><div class="v">3 <small>rootless</small></div><div class="wrap" style="margin-top:8px"><span class="tag shield">docker</span><span class="tag shield">compose</span></div></div></div>
+        </div>
+
+        <div class="grid cols-3" style="margin-top:14px">
+          <!-- users -->
+          <div class="panel">
+            <div class="panel-h"><h3>Users</h3><span class="sub right">per-UID isolation</span></div>
+            <div class="panel-b" style="display:flex;flex-direction:column;gap:0">
+              <div class="row" style="padding:9px 0;border-bottom:1px solid var(--line)">
+                <div class="avatar" style="background:linear-gradient(135deg,#3a2d6b,#241a4a)">AC</div>
+                <div class="flex1"><div class="mono" style="font-weight:600">agent-claude</div><div class="muted" style="font-size:11px">uid 1001 · agent · /work/api rw-subdir</div></div>
+                <span class="dot live"></span>
+              </div>
+              <div class="row" style="padding:9px 0;border-bottom:1px solid var(--line)">
+                <div class="avatar" style="background:linear-gradient(135deg,#2d4a6b,#1a2f4a)">AX</div>
+                <div class="flex1"><div class="mono" style="font-weight:600">agent-aux</div><div class="muted" style="font-size:11px">uid 1002 · agent · read-only</div></div>
+                <span class="dot idle"></span>
+              </div>
+              <div class="row" style="padding:9px 0">
+                <div class="avatar" style="background:linear-gradient(135deg,#2b3a55,#1a2740)">OP</div>
+                <div class="flex1"><div class="mono" style="font-weight:600">operator</div><div class="muted" style="font-size:11px">uid 1000 · human · full rw</div></div>
+                <span class="badge">you</span>
+              </div>
+              <div class="sep"></div>
+              <div class="code-pill"><span class="p">$</span> llmsc shell <span style="color:var(--amber)">operator@web-agent-01</span></div>
+            </div>
+          </div>
+
+          <!-- nested L3 -->
+          <div class="panel">
+            <div class="panel-h"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--amber)" stroke-width="1.8"><rect x="3" y="8" width="18" height="11" rx="1.5"/><path d="M7 8V5h4v3"/></svg><h3>Nested app containers (L3)</h3></div>
+            <div class="panel-b" style="display:flex;flex-direction:column;gap:9px">
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div class="mono" style="font-weight:600">api</div><div class="muted" style="font-size:11px">node:20 · :3000 · up 2h</div></div><span class="tag shield">rootless</span></div>
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div class="mono" style="font-weight:600">postgres</div><div class="muted" style="font-size:11px">postgres:16 · :5432 · up 2h</div></div><span class="tag shield">rootless</span></div>
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div class="mono" style="font-weight:600">redis</div><div class="muted" style="font-size:11px">redis:7 · :6379 · up 2h</div></div><span class="tag shield">rootless</span></div>
+              <div class="sep"></div>
+              <div class="muted" style="font-size:11px">Runtime: <b class="mono">podman 5.1 (rootless)</b> · no privileged DinD · Tetragon active</div>
+              <div class="code-pill"><span class="p">$</span> docker compose ps</div>
+            </div>
+          </div>
+
+          <!-- mounts + posture -->
+          <div class="panel">
+            <div class="panel-h"><h3>Workspace mounts & policy</h3></div>
+            <div class="panel-b">
+              <div class="kv" style="grid-template-columns:auto 1fr;gap:7px 10px;font-size:11.5px">
+                <dt>Mount</dt><dd class="mono">~/projects/api → /work/api</dd>
+                <dt>operator</dt><dd><span class="badge ok">read / write</span></dd>
+                <dt>agents</dt><dd><span class="badge warn">scoped subdir</span></dd>
+                <dt>Shared</dt><dd class="mono">SeaweedFS /shared (ro)</dd>
+              </div>
+              <div class="sep"></div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div class="row"><span class="dot ok"></span><span class="flex1">Network policy</span><span class="badge ok">enforced</span></div>
+                <div class="row"><span class="dot ok"></span><span class="flex1">Tetragon eBPF</span><span class="badge ok">active</span></div>
+                <div class="row"><span class="dot ok"></span><span class="flex1">Egress</span><span class="badge info">LiteLLM + mitmproxy</span></div>
+                <div class="row"><span class="dot ok"></span><span class="flex1">Privilege</span><span class="badge ok">unprivileged</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: AGENT CONTROL (COCKPIT)
+           ============================================================ -->
+      <section id="screen-agent" class="screen">
+        <!-- agent header + control bar -->
+        <div class="panel" style="margin-bottom:14px">
+          <div class="panel-b row" style="gap:14px;flex-wrap:wrap">
+            <div class="avatar" style="background:linear-gradient(135deg,#3a2d6b,#241a4a);width:34px;height:34px">AC</div>
+            <div>
+              <div class="row"><span style="font-size:16px;font-weight:700" class="mono">agent-claude</span><span class="muted">@</span><span class="mono">web-agent-01</span><span class="badge ok"><span class="dot live"></span> active</span></div>
+              <div class="muted" style="font-size:11.5px;margin-top:1px">Task: <b>Implement null-guard fix in api/handlers.py + add tests</b> · turn 14</div>
+            </div>
+            <div class="right row" style="gap:8px">
+              <button class="btn warn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14M16 5v14"/></svg> Pause</button>
+              <button class="btn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg> Interrupt</button>
+              <button class="btn primary" onclick="openSteer()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Steer</button>
+              <button class="btn danger"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg> Terminate</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid cols-3">
+          <!-- live trace waterfall + feed (span 2) -->
+          <div class="panel span-2">
+            <div class="panel-h"><span class="dot live"></span><h3>Live activity & LLM call trace</h3><span class="sub right">Phoenix · session 7f3a</span></div>
+            <div class="panel-b tight">
+              <!-- current trace waterfall -->
+              <div style="padding:12px 14px;border-bottom:1px solid var(--line)">
+                <div class="muted" style="font-size:11px;margin-bottom:8px">CURRENT TURN · trace span timeline (ms)</div>
+                <div style="display:flex;flex-direction:column;gap:6px;font-size:11px" class="mono">
+                  <div class="row"><span style="width:130px;color:var(--violet)">llm.completion</span><div class="tracebar flex1"><span style="left:0%;width:42%;background:var(--violet)"></span></div><span class="muted" style="width:48px;text-align:right">1842</span></div>
+                  <div class="row"><span style="width:130px;color:var(--cyan)">tool.bash pytest</span><div class="tracebar flex1"><span style="left:42%;width:30%;background:var(--cyan)"></span></div><span class="muted" style="width:48px;text-align:right">4210</span></div>
+                  <div class="row"><span style="width:130px;color:var(--accent)">fs.write handlers</span><div class="tracebar flex1"><span style="left:72%;width:6%;background:var(--accent)"></span></div><span class="muted" style="width:48px;text-align:right">88</span></div>
+                  <div class="row"><span style="width:130px;color:var(--amber)">l3.docker compose</span><div class="tracebar flex1"><span style="left:78%;width:18%;background:var(--amber)"></span></div><span class="muted" style="width:48px;text-align:right">2103</span></div>
+                </div>
+              </div>
+              <!-- live feed -->
+              <div class="feed" id="agentFeed" style="padding:6px 14px;max-height:300px;overflow:auto"></div>
+            </div>
+          </div>
+
+          <!-- token usage + cost -->
+          <div class="panel">
+            <div class="panel-h"><h3>Token usage</h3><span class="sub right">virtual key</span></div>
+            <div class="panel-b">
+              <div class="muted" style="font-size:11px">Session tokens</div>
+              <div style="font-size:26px;font-weight:700" id="tokCounter">184,230</div>
+              <div data-live-spark data-seed="33" data-base="55" data-amp="30" data-color="#9b8cff" data-w="280" data-h="44" style="margin:8px 0"></div>
+              <div class="kv" style="grid-template-columns:auto 1fr;gap:7px 10px;font-size:11.5px;margin-top:6px">
+                <dt>Model</dt><dd class="mono">claude-sonnet</dd>
+                <dt>vkey</dt><dd class="mono">sk-vk-…a91</dd>
+                <dt>Spend</dt><dd style="color:var(--green);font-weight:600">$0.74 / $5.00 cap</dd>
+                <dt>Latency p50</dt><dd class="mono">1.8s</dd>
+              </div>
+              <div class="meter lg" style="margin-top:8px"><span style="width:15%;background:var(--green)"></span></div>
+              <div class="sep"></div>
+              <div class="row"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--green)" stroke-width="1.8"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/></svg><span class="muted" style="font-size:11px">Agent never holds real API keys — egress only via LiteLLM virtual key.</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- bottom: logs + last LLM message + policy -->
+        <div class="grid cols-3" style="margin-top:14px">
+          <div class="panel span-2">
+            <div class="panel-h"><h3>Console / logs</h3>
+              <div class="seg right" data-tabgroup="log"><button data-tab="stdout" class="active">stdout</button><button data-tab="llm">last LLM msg</button><button data-tab="tools">tool calls</button></div>
+            </div>
+            <div class="panel-b feed" data-tabpane="log" data-tabid="stdout" style="max-height:230px;overflow:auto">
+              <div class="line"><span class="t">12:04:09</span><span class="msg">$ pytest -q tests/test_handlers.py</span></div>
+              <div class="line"><span class="t">12:04:13</span><span class="msg" style="color:var(--green)">..... 5 passed in 4.21s</span></div>
+              <div class="line"><span class="t">12:04:14</span><span class="msg">$ git add api/handlers.py tests/test_handlers.py</span></div>
+              <div class="line"><span class="t">12:04:15</span><span class="msg">$ git commit -m "fix: null guard in handler"</span></div>
+              <div class="line"><span class="t">12:04:15</span><span class="msg" style="color:var(--txt-2)">[main 9f2c1a] fix: null guard in handler — 2 files changed</span></div>
+              <div class="line"><span class="t">12:04:31</span><span class="msg">$ docker compose up -d</span></div>
+              <div class="line"><span class="t">12:04:34</span><span class="msg" style="color:var(--amber)">[+] Running 3/3 — api, postgres, redis (rootless)</span></div>
+            </div>
+            <div class="panel-b" data-tabpane="log" data-tabid="llm" style="display:none;max-height:230px;overflow:auto">
+              <div class="muted mono" style="font-size:11px;margin-bottom:6px">assistant · turn 14</div>
+              <div style="font-size:12.5px;line-height:1.6;color:var(--txt-1)">I added a null-guard at the top of <span class="mono" style="color:var(--cyan)">handle_request()</span> and a regression test. All 5 tests pass. I then started the compose stack to verify the endpoint returns 200 on the empty-body case. Next I'll confirm the redis cache key is set, then open a PR.</div>
+            </div>
+            <div class="panel-b feed" data-tabpane="log" data-tabid="tools" style="display:none;max-height:230px;overflow:auto">
+              <div class="line"><span class="t">12:03</span><span style="color:var(--cyan);width:60px">bash</span><span class="msg">pytest -q tests/ → exit 0</span></div>
+              <div class="line"><span class="t">12:03</span><span style="color:var(--accent);width:60px">edit</span><span class="msg">api/handlers.py (+38 −4)</span></div>
+              <div class="line"><span class="t">12:04</span><span style="color:var(--amber);width:60px">docker</span><span class="msg">compose up -d</span></div>
+            </div>
+          </div>
+
+          <!-- policy / steer history -->
+          <div class="panel">
+            <div class="panel-h"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--green)" stroke-width="1.8"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/></svg><h3>Guardrails & steers</h3></div>
+            <div class="panel-b feed">
+              <div class="line"><span class="t">11:58</span><span class="msg"><b style="color:var(--accent)">steer</b> operator: "use the new schema, not v1"</span></div>
+              <div class="line"><span class="t">11:41</span><span class="msg"><b style="color:var(--red)">deny</b> Tetragon: open /etc/shadow (uid 1001)</span></div>
+              <div class="line"><span class="t">11:22</span><span class="msg"><b style="color:var(--red)">deny</b> egress pastebin.com:443</span></div>
+              <div class="line"><span class="t">11:05</span><span class="msg"><b style="color:var(--amber)">pause</b> operator paused 38s</span></div>
+              <div class="line"><span class="t">10:50</span><span class="msg"><b style="color:var(--green)">allow</b> egress api.github.com:443</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: SERVICES
+           ============================================================ -->
+      <section id="screen-services" class="screen">
+        <div class="grid cols-3">
+          <!-- LiteLLM -->
+          <div class="panel">
+            <div class="panel-h"><span class="dot ok"></span><h3>LiteLLM</h3><span class="badge violet right">own L2</span></div>
+            <div class="panel-b">
+              <div class="muted" style="font-size:11.5px">LLM proxy — agents use virtual keys; real API creds never exposed.</div>
+              <div class="sep"></div>
+              <div class="kv" style="grid-template-columns:auto 1fr;gap:6px 10px;font-size:11.5px">
+                <dt>Status</dt><dd><span class="badge ok"><span class="dot ok"></span> healthy</span></dd>
+                <dt>Placement</dt><dd class="mono">litellm-svc (L2)</dd>
+                <dt>Reqs/min</dt><dd class="mono">42</dd>
+                <dt>p50</dt><dd class="mono">1.8s</dd>
+              </div>
+              <div data-chart="spark" data-seed="12" data-base="42" data-amp="18" data-color="#9b8cff" data-w="260" data-h="30" style="margin-top:10px"></div>
+            </div>
+          </div>
+          <!-- Phoenix -->
+          <div class="panel">
+            <div class="panel-h"><span class="dot ok"></span><h3>Phoenix</h3><span class="badge info right">L1 VM</span></div>
+            <div class="panel-b">
+              <div class="muted" style="font-size:11.5px">LLM/agent observability — traces, evals, prompt inspection.</div>
+              <div class="sep"></div>
+              <div class="kv" style="grid-template-columns:auto 1fr;gap:6px 10px;font-size:11.5px">
+                <dt>Status</dt><dd><span class="badge ok"><span class="dot ok"></span> healthy</span></dd>
+                <dt>Traces (24h)</dt><dd class="mono">8,421</dd>
+                <dt>Spans</dt><dd class="mono">51,330</dd>
+              </div>
+              <div data-chart="bars" data-seed="4" data-n="22" data-color="#9b8cff" data-w="260" data-h="34" style="margin-top:10px"></div>
+            </div>
+          </div>
+          <!-- Grafana stack -->
+          <div class="panel">
+            <div class="panel-h"><span class="dot ok"></span><h3>VictoriaMetrics + Loki + Grafana</h3><span class="badge info right">L1 VM</span></div>
+            <div class="panel-b">
+              <div class="muted" style="font-size:11.5px">System metrics + log aggregation (memory-efficient).</div>
+              <div class="sep"></div>
+              <div class="kv" style="grid-template-columns:auto 1fr;gap:6px 10px;font-size:11.5px">
+                <dt>Status</dt><dd><span class="badge ok"><span class="dot ok"></span> healthy</span></dd>
+                <dt>Series</dt><dd class="mono">142k active</dd>
+                <dt>Log rate</dt><dd class="mono">1.1k l/s</dd>
+              </div>
+              <div data-chart="spark" data-seed="17" data-base="40" data-amp="22" data-color="#2ee6d6" data-w="260" data-h="30" style="margin-top:10px"></div>
+            </div>
+          </div>
+          <!-- SeaweedFS -->
+          <div class="panel">
+            <div class="panel-h"><span class="dot ok"></span><h3>SeaweedFS</h3><span class="badge info right">L1 VM</span></div>
+            <div class="panel-b">
+              <div class="muted" style="font-size:11.5px">Shared storage across host ↔ containers and container ↔ container.</div>
+              <div class="sep"></div>
+              <div class="kv" style="grid-template-columns:auto 1fr;gap:6px 10px;font-size:11.5px">
+                <dt>Status</dt><dd><span class="badge ok"><span class="dot ok"></span> healthy</span></dd>
+                <dt>Used</dt><dd class="mono">34.2 / 120 GiB</dd>
+                <dt>Volumes</dt><dd class="mono">6</dd>
+              </div>
+              <div class="meter lg" style="margin-top:10px"><span style="width:28%;background:var(--accent)"></span></div>
+            </div>
+          </div>
+          <!-- mitmproxy + Zeek -->
+          <div class="panel">
+            <div class="panel-h"><span class="dot ok"></span><h3>mitmproxy + Zeek</h3><span class="badge violet right">own L2</span></div>
+            <div class="panel-b">
+              <div class="muted" style="font-size:11.5px">Network inspection / proxy / traffic capture for agent egress.</div>
+              <div class="sep"></div>
+              <div class="kv" style="grid-template-columns:auto 1fr;gap:6px 10px;font-size:11.5px">
+                <dt>Status</dt><dd><span class="badge ok"><span class="dot ok"></span> healthy</span></dd>
+                <dt>Flows (1h)</dt><dd class="mono">2,914</dd>
+                <dt>Blocked</dt><dd class="mono" style="color:var(--red)">37</dd>
+              </div>
+              <div data-chart="spark" data-seed="29" data-base="30" data-amp="20" data-color="#ff79c6" data-w="260" data-h="30" style="margin-top:10px"></div>
+            </div>
+          </div>
+          <!-- Tetragon -->
+          <div class="panel">
+            <div class="panel-h"><span class="dot ok"></span><h3>Tetragon (eBPF)</h3><span class="badge info right">L1 VM</span></div>
+            <div class="panel-b">
+              <div class="muted" style="font-size:11.5px">Kernel-level enforcement backstop — per-container & per-UID policy.</div>
+              <div class="sep"></div>
+              <div class="kv" style="grid-template-columns:auto 1fr;gap:6px 10px;font-size:11.5px">
+                <dt>Status</dt><dd><span class="badge ok"><span class="dot ok"></span> enforcing</span></dd>
+                <dt>Policies</dt><dd class="mono">18 loaded</dd>
+                <dt>Denies (1h)</dt><dd class="mono" style="color:var(--red)">5</dd>
+              </div>
+              <div data-chart="bars" data-seed="44" data-n="22" data-color="#36d399" data-w="260" data-h="34" style="margin-top:10px"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LiteLLM virtual keys -->
+        <div class="panel" style="margin-top:14px">
+          <div class="panel-h"><h3>LiteLLM virtual keys</h3><span class="sub">agents never hold real API keys</span><button class="btn primary sm right"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> New key</button></div>
+          <table class="tbl">
+            <thead><tr><th>Virtual key</th><th>Assigned to</th><th>Models</th><th>Budget</th><th>Spend</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">sk-vk-…a91</td><td class="mono">agent-claude@web-agent-01</td><td><span class="tag">claude-sonnet</span></td><td class="mono">$5.00 / day</td><td class="mono" style="color:var(--green)">$0.74</td><td><span class="badge ok">active</span></td></tr>
+              <tr><td class="mono">sk-vk-…7c2</td><td class="mono">agent-ci@ci-runner</td><td><span class="tag">gpt-4o</span> <span class="tag">haiku</span></td><td class="mono">$10.00 / day</td><td class="mono" style="color:var(--green)">$3.18</td><td><span class="badge ok">active</span></td></tr>
+              <tr><td class="mono">sk-vk-…d40</td><td class="mono">agent-claude@data-pipeline</td><td><span class="tag">claude-sonnet</span></td><td class="mono">$5.00 / day</td><td class="mono" style="color:var(--amber)">$4.61</td><td><span class="badge warn">near cap</span></td></tr>
+              <tr style="opacity:.65"><td class="mono">sk-vk-…b18</td><td class="mono">agent-aux@scratch-01</td><td><span class="tag">haiku</span></td><td class="mono">$2.00 / day</td><td class="mono">$0.00</td><td><span class="badge idle">revoked</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: IMAGES
+           ============================================================ -->
+      <section id="screen-images" class="screen">
+        <div class="row" style="margin-bottom:14px">
+          <span class="muted">Base & custom images used to launch L2 sandboxes.</span>
+          <button class="btn primary right"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Build image</button>
+        </div>
+        <div class="panel">
+          <table class="tbl">
+            <thead><tr><th>Image</th><th>Base</th><th>Tooling</th><th>Size</th><th>Used by</th><th>Built</th></tr></thead>
+            <tbody>
+              <tr><td><div class="cell-name mono">dev-ubuntu-24.04</div><div class="cell-sub">default workspace</div></td><td class="mono">ubuntu:24.04</td><td class="wrap"><span class="tag">git</span><span class="tag">node</span><span class="tag">python</span><span class="tag">podman</span></td><td class="mono">1.8 GiB</td><td><span class="badge">3 sandboxes</span></td><td class="muted">3d ago</td></tr>
+              <tr><td><div class="cell-name mono">browser-tools</div><div class="cell-sub">GUI + automation</div></td><td class="mono">ubuntu:24.04</td><td class="wrap"><span class="tag">chromium</span><span class="tag">playwright</span><span class="tag">x11</span></td><td class="mono">3.1 GiB</td><td><span class="badge">1 sandbox</span></td><td class="muted">1d ago</td></tr>
+              <tr><td><div class="cell-name mono">data-science-py</div><div class="cell-sub">analysis stack</div></td><td class="mono">debian:12</td><td class="wrap"><span class="tag">pandas</span><span class="tag">jupyter</span><span class="tag">duckdb</span></td><td class="mono">2.4 GiB</td><td><span class="faint">—</span></td><td class="muted">5d ago</td></tr>
+              <tr><td><div class="cell-name mono">svc-litellm</div><div class="cell-sub">service image</div></td><td class="mono">debian:12</td><td class="wrap"><span class="tag">litellm</span><span class="tag">redis-cli</span></td><td class="mono">0.6 GiB</td><td><span class="badge violet">litellm-svc</span></td><td class="muted">3d ago</td></tr>
+              <tr><td><div class="cell-name mono">base-debian-12</div><div class="cell-sub">minimal</div></td><td class="mono">debian:12</td><td class="muted">minimal</td><td class="mono">0.3 GiB</td><td><span class="faint">—</span></td><td class="muted">7d ago</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="grid cols-2" style="margin-top:14px">
+          <div class="panel">
+            <div class="panel-h"><h3>Build new image</h3></div>
+            <div class="panel-b" style="display:flex;flex-direction:column;gap:12px">
+              <label class="field"><span class="lbl">Name</span><input class="input mono" value="dev-rust-1.79"></label>
+              <label class="field"><span class="lbl">From base</span><select class="input"><option>ubuntu:24.04</option><option>debian:12</option></select></label>
+              <label class="field"><span class="lbl">Provisioning</span><input class="input mono" value="profiles/rust.yaml"></label>
+              <div class="code-pill"><span class="p">$</span> llmsc image build dev-rust-1.79 --from ubuntu:24.04 -f profiles/rust.yaml</div>
+              <button class="btn primary block">Start build</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-h"><h3>Storage</h3></div>
+            <div class="panel-b">
+              <div class="row" style="gap:18px;align-items:center">
+                <div data-chart="donut" data-pct="51" data-color="#4da3ff" data-label="of 16GiB"></div>
+                <div style="flex:1">
+                  <div class="row" style="justify-content:space-between"><span class="muted">Image store</span><span class="mono">8.2 GiB</span></div>
+                  <div class="meter" style="margin:5px 0 12px"><span style="width:51%;background:var(--accent)"></span></div>
+                  <div class="muted" style="font-size:11px">5 images · dedup enabled · stored in VM Incus pool</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: SECURITY POSTURE
+           ============================================================ -->
+      <section id="screen-security" class="screen">
+        <div class="grid cols-4" style="margin-bottom:14px">
+          <div class="panel tile"><div class="k">Posture</div><div class="v" style="color:var(--green)">Enforcing</div><div class="meta"><span class="dot ok"></span> 18 policies loaded</div></div>
+          <div class="panel tile"><div class="k">Privileged containers</div><div class="v" style="color:var(--green)">0</div><div class="meta">hard rule — never used</div></div>
+          <div class="panel tile"><div class="k">Denies (1h)</div><div class="v" style="color:var(--red)">8</div><div class="meta"><span class="dot crit"></span> 3 egress · 5 syscall</div></div>
+          <div class="panel tile"><div class="k">Egress via proxy</div><div class="v" style="color:var(--cyan)">100<small>%</small></div><div class="meta">LiteLLM + mitmproxy</div></div>
+        </div>
+
+        <div class="grid cols-3">
+          <div class="panel span-2">
+            <div class="panel-h"><span class="dot live"></span><h3>Live policy events — Tetragon eBPF + network</h3><div class="seg right"><button class="active">All</button><button>Denies</button></div></div>
+            <div class="panel-b feed" style="max-height:340px;overflow:auto">
+              <div class="line"><span class="t">12:04:40</span><span style="color:var(--red);width:54px;font-weight:600">DENY</span><span class="msg">tetragon · open <b>/etc/shadow</b> · agent-claude (uid 1001) @ web-agent-01</span></div>
+              <div class="line"><span class="t">12:04:33</span><span style="color:var(--green);width:54px;font-weight:600">ALLOW</span><span class="msg">egress <b>api.anthropic.com:443</b> via LiteLLM · web-agent-01</span></div>
+              <div class="line"><span class="t">12:03:40</span><span style="color:var(--red);width:54px;font-weight:600">DENY</span><span class="msg">network · egress <b>13.107.42.16:443</b> not in allowlist · ci-runner (uid 1001)</span></div>
+              <div class="line"><span class="t">12:02:58</span><span style="color:var(--green);width:54px;font-weight:600">ALLOW</span><span class="msg">egress <b>api.github.com:443</b> via mitmproxy · ci-runner</span></div>
+              <div class="line"><span class="t">12:02:11</span><span style="color:var(--amber);width:54px;font-weight:600">WARN</span><span class="msg">tetragon · setuid attempt · data-pipeline (uid 1002) — blocked</span></div>
+              <div class="line"><span class="t">12:01:44</span><span style="color:var(--red);width:54px;font-weight:600">DENY</span><span class="msg">network · egress <b>pastebin.com:443</b> · agent-aux (uid 1002)</span></div>
+              <div class="line"><span class="t">12:00:30</span><span style="color:var(--green);width:54px;font-weight:600">ALLOW</span><span class="msg">l3 egress <b>registry-1.docker.io:443</b> · data-pipeline (rootless)</span></div>
+              <div class="line"><span class="t">11:59:02</span><span style="color:var(--red);width:54px;font-weight:600">DENY</span><span class="msg">tetragon · ptrace cross-uid · web-agent-01 (uid 1001 → 1000)</span></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-h"><h3>Defense-in-depth backstops</h3></div>
+            <div class="panel-b" style="display:flex;flex-direction:column;gap:11px">
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div style="font-weight:600">L2 unprivileged LXC</div><div class="muted" style="font-size:11px">User namespaces · no privileged containers</div></div><span class="badge ok">5/5</span></div>
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div style="font-weight:600">L3 rootless runtime</div><div class="muted" style="font-size:11px">Podman/Docker without privileged DinD</div></div><span class="badge ok">on</span></div>
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div style="font-weight:600">Per-UID isolation</div><div class="muted" style="font-size:11px">One Linux user per agent + operator</div></div><span class="badge ok">enforced</span></div>
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div style="font-weight:600">Network policy</div><div class="muted" style="font-size:11px">Per-container & per-UID allowlists</div></div><span class="badge ok">enforced</span></div>
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div style="font-weight:600">Tetragon eBPF</div><div class="muted" style="font-size:11px">Kernel-level syscall enforcement</div></div><span class="badge ok">active</span></div>
+              <div class="row"><span class="dot ok"></span><div class="flex1"><div style="font-weight:600">Credential isolation</div><div class="muted" style="font-size:11px">Virtual keys only — no real API keys</div></div><span class="badge ok">on</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- ================= STEER MODAL ================= -->
+<div id="steerModal" style="display:none;position:fixed;inset:0;background:#04070cd0;backdrop-filter:blur(3px);z-index:50;align-items:center;justify-content:center">
+  <div class="panel" style="width:520px;max-width:92vw">
+    <div class="panel-h"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg><h3>Steer agent — inject message</h3><button class="btn ghost sm right icon" onclick="closeSteer()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+    <div class="panel-b">
+      <div class="muted" style="font-size:11.5px;margin-bottom:8px">Injected into <b class="mono">agent-claude@web-agent-01</b> before its next turn. The agent stays observable and interruptable.</div>
+      <textarea class="input" rows="4" style="resize:vertical;font-family:var(--sans)">Use the new v2 schema in handlers.py, not v1. Skip the redis cache for now and open the PR once tests pass.</textarea>
+      <div class="row" style="margin-top:8px">
+        <label class="row" style="gap:8px;font-size:12px"><span class="toggle on"></span> Pause after injecting</label>
+        <div class="right wrap"><button class="btn ghost" onclick="closeSteer()">Cancel</button><button class="btn primary" onclick="closeSteer()">Inject & continue</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
