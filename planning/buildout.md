@@ -44,7 +44,7 @@ core logic is unit-testable with fakes.
   (the proven spike steps become tests).
 - **Done-when:** `llmsctl up` yields a VM with Incus ready; `status` reports running.
 
-### M2 — Sandbox lifecycle (`llmsc`) — codifies spike phase 1
+### M2 — Sandbox lifecycle (`llmsc`) — codifies spike phase 1 ✅ DONE
 - **Deliverables:** `IncusClient` over the REST API (unix socket); `llmsc launch <name>
   --image` (unprivileged L2 + `security.nesting`), `ls`, `shell user@<name>` (exec), `rm`;
   two-user model (agent + operator, with the operator/system-group fix); declarative sandbox
