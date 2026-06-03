@@ -109,4 +109,8 @@ sandbox" demo.
 
 - Reconcile/drift model specifics ([tech-stack.md](tech-stack.md)).
 - CI runners for integration (Linux now; macOS/self-hosted for networking + nested e2e).
-- License + top-level README before first code lands (MIT/Apache-2.0 dual is the Rust norm).
+- ✅ **License: MIT OR Apache-2.0 dual** — `LICENSE-MIT` + `LICENSE-APACHE` added. At M0:
+  set Cargo `license = "MIT OR Apache-2.0"`, add a README "License" section, and adopt a
+  **DCO** (Developer Certificate of Origin; inbound = outbound). Copyright line currently
+  "Colin Harrington and llm-system-containers contributors" — adjust if you want an org name.
+- Top-level user-facing **README** still to write (separate from `planning/`).
