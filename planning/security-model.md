@@ -65,6 +65,15 @@ Host workspace directories mount into containers with tiered, delegated access:
 The pattern: the human **owns** the workspace; agents are **granted** portions of it; the
 kernel enforces the grants.
 
+## Agent profiles (reusable boundary bundles)
+
+The primitives above are low-level. **Agent profiles** are the human-legible layer on top:
+named, reusable bundles of filesystem / syscall / network boundaries (plus L3, LLM budget,
+resources, and control-plane capabilities) assigned per agent (per UID). Profiles compile
+*down* to these backstops — they make the posture reusable and reviewable, but cannot grant
+more than the primitives allow. Starter archetypes: researcher, tester, builder, validation,
+orchestrator. See [agent-profiles.md](agent-profiles.md).
+
 ## Credential isolation
 
 Agents never hold real API/token credentials. They use **virtual keys** issued by the

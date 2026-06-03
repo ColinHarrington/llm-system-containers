@@ -31,6 +31,7 @@ platform). Target platforms: **Linux and macOS**.
   - [system-containers.md](architecture/system-containers.md) — L2: the LLMSC — user model, GUI/X-forwarding, workspace mounts
   - [app-containers.md](architecture/app-containers.md) — L3: nested Docker/Podman (key differentiator)
 - [security-model.md](security-model.md) — Defense-in-depth, Tetragon, network + workspace controls
+- [agent-profiles.md](agent-profiles.md) — Reusable permission bundles (researcher/tester/builder/validation/orchestrator)
 - **services/** — shared infra; may run in L1 or in their own L2 container
   - [README.md](services/README.md) — Catalog, plugin model, L1-vs-L2 placement choice
   - [llm-proxy.md](services/llm-proxy.md) — LiteLLM, virtual keys

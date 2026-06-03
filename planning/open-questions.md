@@ -30,6 +30,8 @@ Loose ends to resolve in dedicated sessions. This is the umbrella project's "par
   Docker/Podman ([architecture/app-containers.md](architecture/app-containers.md)).
 - **Tetragon policy authoring** model and mapping to per-agent grants
   ([security-model.md](security-model.md)).
+- **Agent profile** format, inheritance, and how profiles compile to concrete
+  Tetragon/Incus/LiteLLM artifacts ([agent-profiles.md](agent-profiles.md)).
 - **Shared storage** choice — SeaweedFS vs RustFS
   ([services/shared-storage.md](services/shared-storage.md)).
 - **Custom image** build format + registry implementation
