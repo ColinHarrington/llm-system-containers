@@ -11,6 +11,7 @@
   import Toast from "./lib/Toast.svelte";
   import Terminal from "./lib/Terminal.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
+  import BuildImage from "./lib/BuildImage.svelte";
   import Icon from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
   import {
@@ -60,6 +61,7 @@
         ui.steerAgent = null;
         ui.terminalTarget = null;
         ui.paletteOpen = false;
+        ui.buildImageOpen = false;
         return;
       }
       const el = e.target as HTMLElement | null;
@@ -271,6 +273,10 @@
       </button>
     {/snippet}
   </Modal>
+{/if}
+
+{#if ui.buildImageOpen}
+  <BuildImage />
 {/if}
 
 {#if ui.steerAgent}

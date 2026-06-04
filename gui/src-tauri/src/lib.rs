@@ -297,6 +297,32 @@ fn to_image_dto(i: llmsc_core::incus::ImageRecord) -> ImageDto {
     }
 }
 
+/// Build a custom image from a base + packages/script, streaming progress to the GUI.
+/// Packages are installed cross-distro (apt, falling back to apk) ahead of the user's script.
+#[tauri::command]
+fn build_image(
+    app: AppHandle,
+    base: String,
+    name: String,
+    packages: Vec<String>,
+    script: String,
+    description: String,
+) -> Result<(), String> {
+    let reporter = EventReporter { app };
+    let mut setup = String::new();
+    let pkgs: Vec<&str> = packages.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+    if !pkgs.is_empty() {
+        let list = pkgs.join(" ");
+        setup.push_str(&format!(
+            "(apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y {list}) || apk add --no-cache {list}\n"
+        ));
+    }
+    setup.push_str(&script);
+    CliIncus::new(vm_name(), &SystemRunner)
+        .build_image(&base, &name, &setup, &description, &reporter)
+        .map_err(|e| e.to_string())
+}
+
 /// Container images only — sandboxes are system containers, so virtual-machine images are
 /// never launchable here and are excluded.
 fn container_images(imgs: Vec<llmsc_core::incus::ImageRecord>) -> Vec<ImageDto> {
@@ -443,6 +469,7 @@ pub fn run() {
             host_resources,
             images,
             images_available,
+            build_image,
             networking,
             service_list,
             service_enable,

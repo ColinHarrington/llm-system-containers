@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
+  import { ui } from "../lib/store.svelte";
   import { listImages, listAvailableImages } from "../lib/core";
   import type { ImageInfo } from "../lib/types";
 
@@ -90,7 +91,7 @@
         {#each arches as a}<option value={a}>{a}</option>{/each}
       </select>
     {/if}
-    <button class="btn primary right"><Icon name="plus" size={14} /><span>Build image</span></button>
+    <button class="btn primary right" onclick={() => (ui.buildImageOpen = true)}><Icon name="plus" size={14} /><span>Build image</span></button>
   </div>
 
   {#if tab === "installed"}

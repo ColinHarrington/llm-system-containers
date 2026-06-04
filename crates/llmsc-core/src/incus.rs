@@ -108,6 +108,19 @@ pub fn parse_topology(list_json: &str) -> Result<Vec<SandboxTopology>> {
         .collect())
 }
 
+/// Sanitize an image alias into a valid temporary builder *container* name (`build-<slug>`).
+/// Container names allow only letters, digits, and hyphens.
+pub fn builder_name(alias: &str) -> String {
+    let mut s: String = alias
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect();
+    s.truncate(48);
+    let s = s.trim_matches('-');
+    let s = if s.is_empty() { "img" } else { s };
+    format!("build-{s}")
+}
+
 /// A managed Incus network (bridge) in the VM.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetworkRecord {
@@ -511,6 +524,55 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         }
         parse_sandbox_networks(&o.stdout)
     }
+
+    /// Build a custom image via the publish-from-container flow: launch a throwaway builder from
+    /// `base`, run `setup` inside it, then `incus publish` it under `alias`. The builder is removed
+    /// on success or failure. Progress streams via `reporter`.
+    pub fn build_image(
+        &self,
+        base: &str,
+        alias: &str,
+        setup: &str,
+        description: &str,
+        reporter: &dyn Reporter,
+    ) -> Result<()> {
+        let tmp = builder_name(alias);
+        let _ = self.incus_run(&["delete", "--force", &tmp]); // clear any leftover builder
+
+        reporter.step(&format!("Launching builder from {base}"));
+        if self.incus_streamed(&["launch", base, &tmp])? != 0 {
+            return Err(Error::Incus(format!("launching builder from '{base}' failed")));
+        }
+
+        if !setup.trim().is_empty() {
+            reporter.step("Running setup inside builder");
+            let code = self.incus_streamed(&["exec", &tmp, "--", "sh", "-c", setup])?;
+            if code != 0 {
+                let _ = self.incus_run(&["delete", "--force", &tmp]);
+                return Err(Error::Incus(format!("setup script failed (exit {code})")));
+            }
+        }
+
+        reporter.step("Stopping builder");
+        let _ = self.incus_run(&["stop", &tmp]); // best effort — publish needs it stopped
+
+        reporter.step(&format!("Publishing image '{alias}'"));
+        let descopt = format!("description={description}");
+        let mut args: Vec<&str> = vec!["publish", &tmp, "--alias", alias, "--reuse"];
+        if !description.is_empty() {
+            args.push(&descopt);
+        }
+        let code = self.incus_streamed(&args)?;
+        if code != 0 {
+            let _ = self.incus_run(&["delete", "--force", &tmp]);
+            return Err(Error::Incus(format!("publishing image '{alias}' failed (exit {code})")));
+        }
+
+        reporter.step("Removing builder");
+        let _ = self.incus_run(&["delete", "--force", &tmp]);
+        reporter.step(&format!("Image '{alias}' built"));
+        Ok(())
+    }
 }
 
 impl<R: CommandRunner> IncusClient for CliIncus<'_, R> {
@@ -604,7 +666,38 @@ impl<R: CommandRunner> IncusClient for CliIncus<'_, R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::process::{out, FakeRunner};
     use crate::progress::SilentReporter;
+
+    #[test]
+    fn builder_name_sanitizes_alias() {
+        assert_eq!(builder_name("dev-ubuntu-24.04"), "build-dev-ubuntu-24-04");
+        assert_eq!(builder_name("My Image!"), "build-my-image");
+    }
+
+    #[test]
+    fn build_image_launches_sets_up_publishes_and_cleans_up() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.build_image("images:debian/12", "my-img", "apt-get install -y git", "desc", &SilentReporter)
+            .unwrap();
+        assert!(r.called_with("launch"));
+        assert!(r.called_with("images:debian/12"));
+        assert!(r.called_with("publish"));
+        assert!(r.called_with("my-img"));
+        assert!(r.called_with("--reuse"));
+        assert!(r.called_with("delete")); // builder removed
+    }
+
+    #[test]
+    fn build_image_errors_when_publish_fails() {
+        // launch/exec ok (exit 0); publish fails (exit 1).
+        let r = FakeRunner::new(|_, args| if args.contains(&"publish") { out(1, "") } else { out(0, "") });
+        let c = CliIncus::new("llmsc", &r);
+        assert!(c
+            .build_image("images:debian/12", "x", "", "", &SilentReporter)
+            .is_err());
+    }
 
     fn sb(name: &str) -> Sandbox {
         Sandbox {

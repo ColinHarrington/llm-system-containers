@@ -218,6 +218,31 @@ export async function listImages(): Promise<ImageInfo[]> {
   ];
 }
 
+export interface BuildImageOpts {
+  base: string;
+  name: string;
+  packages: string[];
+  script: string;
+  description: string;
+}
+
+// Build a custom image (publish-from-container). Streams steps via the progress event.
+export async function buildImage(o: BuildImageOpts): Promise<void> {
+  if (inTauri()) {
+    return invokeCmd<void>("build_image", {
+      base: o.base, name: o.name, packages: o.packages, script: o.script, description: o.description,
+    });
+  }
+  await mockSteps([
+    `Launching builder from ${o.base}`,
+    "Running setup inside builder",
+    "Stopping builder",
+    `Publishing image '${o.name}'`,
+    "Removing builder",
+    `Image '${o.name}' built`,
+  ]);
+}
+
 // The full remote catalog (`images:`). Large + network-bound → fetched on demand by the screen.
 export async function listAvailableImages(): Promise<ImageInfo[]> {
   if (inTauri()) return invokeCmd<ImageInfo[]>("images_available");

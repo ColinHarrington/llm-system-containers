@@ -20,6 +20,7 @@
     gotoCmd("images", "Images", "image", "7"),
     gotoCmd("wizard", "Setup wizard", "cog", ""),
     { id: "new-sandbox", label: "New sandbox", hint: "llmsc launch", icon: "plus", keywords: "create launch sandbox", run: () => (ui.newSandboxOpen = true) },
+    { id: "build-image", label: "Build image", hint: "incus publish", icon: "layers", keywords: "build custom image distro", run: () => (ui.buildImageOpen = true) },
     { id: "open-shell", label: "Open shell · operator@web-agent-01", hint: "llmsc shell", icon: "terminal", keywords: "shell terminal ssh", run: () => openTerminal("operator@web-agent-01") },
     { id: "toggle-theme", label: "Toggle light / dark theme", hint: "", icon: "moon", keywords: "theme dark light appearance", run: () => toggleTheme() },
   ];
