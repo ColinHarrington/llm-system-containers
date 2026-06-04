@@ -16,6 +16,18 @@ pub enum InstanceStatus {
     Stopped,
 }
 
+/// Deserialize a field that may be `null` (or absent) as `T::default()`. Incus `--format json`
+/// emits `null` rather than `[]`/`{}` for empty collections in places (notably remote image
+/// `aliases`/`used_by`), which plain `#[serde(default)]` does not tolerate.
+fn null_default<'de, D, T>(de: D) -> std::result::Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + serde::Deserialize<'de>,
+{
+    use serde::Deserialize;
+    Ok(Option::<T>::deserialize(de)?.unwrap_or_default())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Instance {
     pub name: String,
@@ -58,7 +70,7 @@ pub fn parse_topology(list_json: &str) -> Result<Vec<SandboxTopology>> {
     struct Raw {
         name: String,
         status: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         config: HashMap<String, String>,
         #[serde(default)]
         state: Option<RawState>,
@@ -123,13 +135,13 @@ pub fn parse_networks(list_json: &str) -> Result<Vec<NetworkRecord>> {
     #[derive(serde::Deserialize)]
     struct Raw {
         name: String,
-        #[serde(rename = "type", default)]
+        #[serde(rename = "type", default, deserialize_with = "null_default")]
         net_type: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         managed: bool,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         config: HashMap<String, String>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         used_by: Vec<String>,
     }
     let raw: Vec<Raw> = serde_json::from_str(list_json)
@@ -159,7 +171,7 @@ pub fn parse_sandbox_networks(list_json: &str) -> Result<Vec<SandboxNetwork>> {
     }
     #[derive(serde::Deserialize)]
     struct RawIface {
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         addresses: Vec<RawAddr>,
     }
     #[derive(serde::Deserialize)]
@@ -180,7 +192,7 @@ pub fn parse_sandbox_networks(list_json: &str) -> Result<Vec<SandboxNetwork>> {
     struct Raw {
         name: String,
         status: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         expanded_devices: HashMap<String, RawDev>,
         #[serde(default)]
         state: Option<RawState>,
@@ -256,19 +268,19 @@ pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
     }
     #[derive(serde::Deserialize)]
     struct RawImg {
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         fingerprint: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         aliases: Vec<RawAlias>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         properties: RawProps,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         architecture: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         size: u64,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         uploaded_at: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_default")]
         used_by: Vec<String>,
     }
     let raw: Vec<RawImg> = serde_json::from_str(list_json)
@@ -660,6 +672,21 @@ mod tests {
         // No alias → falls back to the (truncated) fingerprint.
         assert_eq!(imgs[1].name, "deadbeefcafe");
         assert_eq!(imgs[1].description, "—");
+    }
+
+    #[test]
+    fn parse_images_tolerates_null_collections() {
+        // Remote `incus image list images:` emits null (not []) for empty aliases/used_by.
+        let json = r#"[
+          {"fingerprint":"abc123def4567890","aliases":null,"used_by":null,
+           "properties":{"os":"Debian","release":"12","architecture":"amd64"},
+           "size":92000000,"uploaded_at":"2026-06-01T00:00:00Z"}
+        ]"#;
+        let imgs = parse_images(json).unwrap();
+        assert_eq!(imgs.len(), 1);
+        assert_eq!(imgs[0].name, "abc123def456"); // fingerprint fallback (null aliases)
+        assert_eq!(imgs[0].base, "Debian 12");
+        assert_eq!(imgs[0].used_by, 0);
     }
 
     #[test]
