@@ -148,12 +148,6 @@ export async function removeAgent(sandbox: string, name: string): Promise<void> 
   await mockSteps([`Removing agent '${name}' from ${sandbox}`, `Agent '${name}' removed`], 200);
 }
 
-// Reassign an agent's profile (config-only; not yet enforced).
-export async function setAgentProfile(sandbox: string, name: string, profile: string): Promise<void> {
-  if (inTauri()) return invokeCmd<void>("set_agent_profile", { sandbox, name, profile });
-  await delay(80);
-}
-
 // The shipped agent-profile archetypes (definition layer).
 export async function listProfiles(): Promise<ProfileInfo[]> {
   if (inTauri()) return invokeCmd<ProfileInfo[]>("profiles");

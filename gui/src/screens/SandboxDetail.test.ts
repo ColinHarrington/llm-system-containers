@@ -2,18 +2,10 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { removeAgent, setAgentProfile } = vi.hoisted(() => ({
-  removeAgent: vi.fn(async () => {}),
-  setAgentProfile: vi.fn(async () => {}),
-}));
+const { removeAgent } = vi.hoisted(() => ({ removeAgent: vi.fn(async () => {}) }));
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
   removeAgent,
-  setAgentProfile,
-  listProfiles: vi.fn(async () => [
-    { name: "builder", summary: "", filesystem: "", network: "", l3: true, llmBudget: "", controlPlane: "none" },
-    { name: "tester", summary: "", filesystem: "", network: "", l3: true, llmBudget: "", controlPlane: "none" },
-  ]),
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",
@@ -38,15 +30,14 @@ describe("SandboxDetail", () => {
     expect(screen.getByText("Users")).toBeInTheDocument();
   });
 
-  it("reassigns an agent's profile and removes the agent", async () => {
+  it("shows the seed profile as read-only provenance and removes an agent", async () => {
     ui.selectedSandbox = "web-agent-01";
     render(SandboxDetail);
     await screen.findByText("agent-claude");
 
-    // Profile dropdown change -> setAgentProfile.
-    const select = screen.getByRole("combobox");
-    await fireEvent.change(select, { target: { value: "tester" } });
-    expect(setAgentProfile).toHaveBeenCalledWith("web-agent-01", "agent-claude", "tester");
+    // Profile is shown as provenance ("from builder"), not an editable control.
+    expect(screen.getByText("from builder")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
 
     // Remove agent (the human has no remove button, so there's exactly one).
     await fireEvent.click(screen.getByTitle("Remove agent"));

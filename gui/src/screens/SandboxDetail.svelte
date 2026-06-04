@@ -1,11 +1,10 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import { ui, navigate, bump, openTerminal, showToast } from "../lib/store.svelte";
-  import { topology, removeSandbox, listProfiles, removeAgent, setAgentProfile } from "../lib/core";
-  import type { ProfileInfo, TopoSandbox } from "../lib/types";
+  import { topology, removeSandbox, removeAgent } from "../lib/core";
+  import type { TopoSandbox } from "../lib/types";
 
   let all = $state<TopoSandbox[]>([]);
-  let profiles = $state<ProfileInfo[]>([]);
   let busy = $state(false);
   let userBusy = $state<string | null>(null);
 
@@ -13,19 +12,6 @@
     ui.dataVersion;
     void (async () => { all = await topology(); })();
   });
-  $effect(() => {
-    void listProfiles().then((p) => (profiles = p));
-  });
-
-  async function changeProfile(agent: string, profile: string) {
-    if (!sb) return;
-    userBusy = agent;
-    try {
-      await setAgentProfile(sb.name, agent, profile);
-      showToast(`${agent}: profile → ${profile || "none"}`, "ok");
-      bump();
-    } finally { userBusy = null; }
-  }
 
   async function removeUser(agent: string) {
     if (!sb) return;
@@ -100,7 +86,7 @@
           <div class="empty"><div class="icon"><Icon name="user" size={22} /></div>No users provisioned.</div>
         {:else}
           <table class="tbl">
-            <thead><tr><th>User</th><th>Role</th><th>Profile</th><th></th></tr></thead>
+            <thead><tr><th>User</th><th>Role</th><th>Guardrails</th><th></th></tr></thead>
             <tbody>
               {#each sb.agents as u (u.name)}
                 <tr>
@@ -108,13 +94,11 @@
                   <td>{#if u.kind === "human"}<span class="pill">human</span>{:else}<span class="pill accent">agent</span>{/if}</td>
                   <td>
                     {#if u.kind === "human"}
-                      <span class="muted small">—</span>
+                      <span class="muted small">full (operator)</span>
+                    {:else if u.profile}
+                      <span class="tag mono" title="Guardrails seeded from the {u.profile} profile">from {u.profile}</span>
                     {:else}
-                      <select class="input prof" value={u.profile ?? ""} disabled={userBusy === u.name}
-                        onchange={(e) => changeProfile(u.name, (e.currentTarget as HTMLSelectElement).value)}>
-                        <option value="">none</option>
-                        {#each profiles as p}<option value={p.name}>{p.name}</option>{/each}
-                      </select>
+                      <span class="muted small">custom</span>
                     {/if}
                   </td>
                   <td style="text-align:right; white-space:nowrap">
@@ -138,6 +122,5 @@
 <style>
   .hico { width: 44px; height: 44px; border-radius: 11px; background: var(--accent-dim); color: var(--accent-text); display: grid; place-items: center; flex: none; }
   .hico.off { background: var(--card-2); color: var(--text-3); border: 1px solid var(--border); }
-  .prof { width: auto; padding: 4px 8px; font-size: 12px; }
   .btn.sm + .btn.sm { margin-left: 4px; }
 </style>
