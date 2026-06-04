@@ -82,6 +82,22 @@ pub fn lookup(name: &str) -> Option<&'static CatalogEntry> {
     catalog().iter().find(|e| e.name == name)
 }
 
+/// Prefix for service container names inside the VM (e.g. `svc-litellm`).
+///
+/// Services are shared infrastructure, **never sandboxes**. This convention is the single source
+/// of truth for telling the two apart, so sandbox listings can exclude service containers.
+pub const CONTAINER_PREFIX: &str = "svc-";
+
+/// The L2 container name for a service (e.g. `litellm` → `svc-litellm`).
+pub fn container_name(service: &str) -> String {
+    format!("{CONTAINER_PREFIX}{service}")
+}
+
+/// Whether an Incus instance name belongs to a service container (so: not a sandbox).
+pub fn is_service_container(instance: &str) -> bool {
+    instance.starts_with(CONTAINER_PREFIX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +117,18 @@ mod tests {
     #[test]
     fn default_placement_is_container() {
         assert_eq!(Placement::default(), Placement::Container);
+    }
+
+    #[test]
+    fn service_container_naming_roundtrips() {
+        assert_eq!(container_name("litellm"), "svc-litellm");
+        assert!(is_service_container("svc-litellm"));
+        assert!(is_service_container(&container_name("phoenix")));
+    }
+
+    #[test]
+    fn sandboxes_are_not_service_containers() {
+        assert!(!is_service_container("web-agent-01"));
+        assert!(!is_service_container("ci-runner"));
     }
 }

@@ -24,7 +24,17 @@ pub struct Instance {
 
 /// Manages L2 system containers. `&self` (real impls hit the REST API; fakes use interior mut).
 pub trait IncusClient {
+    /// All Incus instances in the VM — sandboxes **and** service containers.
     fn list(&self) -> Result<Vec<Instance>>;
+    /// Only sandboxes: [`list`](Self::list) minus service containers (`svc-*`). Services are
+    /// shared infrastructure, never sandboxes, so they must not appear in sandbox views.
+    fn sandboxes(&self) -> Result<Vec<Instance>> {
+        Ok(self
+            .list()?
+            .into_iter()
+            .filter(|i| !crate::service::is_service_container(&i.name))
+            .collect())
+    }
     fn exists(&self, name: &str) -> Result<bool>;
     /// Create the sandbox (image pull can be slow → reports progress), enabling nesting and
     /// creating its users per the spec.

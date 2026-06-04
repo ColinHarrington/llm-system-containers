@@ -25,7 +25,8 @@ pub fn reconcile(
     incus: &dyn IncusClient,
     reporter: &dyn Reporter,
 ) -> Result<ReconcileReport> {
-    let actual: Vec<String> = incus.list()?.into_iter().map(|i| i.name).collect();
+    // Sandboxes only — service containers (svc-*) are infrastructure, not drift.
+    let actual: Vec<String> = incus.sandboxes()?.into_iter().map(|i| i.name).collect();
     let mut report = ReconcileReport::default();
 
     for sandbox in &config.sandboxes {
@@ -97,5 +98,15 @@ mod tests {
         let report = reconcile(&config_with(&["a"]), &incus, &SilentReporter).unwrap();
         assert_eq!(report.created, vec!["a"]);
         assert_eq!(report.extra, vec!["rogue"]);
+    }
+
+    #[test]
+    fn service_containers_are_not_drift() {
+        // A provisioned service container (svc-*) must not be reported as an undeclared sandbox.
+        let incus = FakeIncus::new();
+        incus.launch(&sandbox("svc-litellm"), &SilentReporter).unwrap();
+        let report = reconcile(&config_with(&["a"]), &incus, &SilentReporter).unwrap();
+        assert_eq!(report.created, vec!["a"]);
+        assert!(report.extra.is_empty(), "service container leaked into drift");
     }
 }

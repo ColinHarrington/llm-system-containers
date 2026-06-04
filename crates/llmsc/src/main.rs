@@ -75,7 +75,7 @@ fn run() -> Result<(), String> {
             println!("sandbox '{name}' launched");
         }
         Command::Ls => {
-            let items = incus.list().map_err(|e| e.to_string())?;
+            let items = incus.sandboxes().map_err(|e| e.to_string())?;
             if items.is_empty() {
                 println!("(no sandboxes)");
             } else {

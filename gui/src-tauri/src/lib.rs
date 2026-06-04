@@ -84,7 +84,8 @@ struct SandboxDto {
 fn sandbox_list() -> Result<Vec<SandboxDto>, String> {
     let runner = SystemRunner;
     let incus = CliIncus::new(vm_name(), &runner);
-    let items = incus.list().map_err(|e| e.to_string())?;
+    // Sandboxes only — service containers (svc-*) are infrastructure, never sandboxes.
+    let items = incus.sandboxes().map_err(|e| e.to_string())?;
     Ok(items
         .into_iter()
         .map(|i| SandboxDto {

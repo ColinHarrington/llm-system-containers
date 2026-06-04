@@ -30,7 +30,7 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
     pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
         Self {
             vm: vm.into(),
-            container: "svc-litellm".into(),
+            container: crate::service::container_name("litellm"),
             // debian/13 (trixie) systemd hangs at boot under this Incus → no networking; bookworm works.
             image: "images:debian/12".into(),
             port: 4000,
