@@ -1,11 +1,11 @@
 // Bridge to llmsc-core. Inside the Tauri shell, calls the Rust commands; in a plain browser
 // (Vite dev / Vitest) returns mock data so the UI is developable without the native window.
 //
-// Operations that the backend implements (VM up/down, sandbox launch/rm, service enable/
-// provision, platform init, progress) are wired to real Tauri commands. Read-only views the
-// backend does not expose yet (agents, images, virtual keys, host resources, and the rich
-// per-sandbox metadata) return representative demo data in BOTH environments for now — they
-// are display-only and clearly marked here until the corresponding core APIs land.
+// Operations the backend implements (VM up/down, sandbox launch/rm, service enable/provision,
+// platform init, progress, topology, host resources) are wired to real Tauri commands and fall
+// back to mock data only in the browser. Views the backend does not expose yet (agents, images,
+// virtual keys, and the rich per-sandbox metadata on the Sandboxes cards) return representative
+// demo data in BOTH environments for now — clearly marked here until those core APIs land.
 import type {
   AgentInfo,
   HostResources,
@@ -176,7 +176,14 @@ export const SERVICE_META: Record<string, ServiceMeta> = {
 };
 
 // --- read-only demo views (no backend yet) ---
-export async function hostResources(): Promise<HostResources> {
+export async function hostResources(): Promise<HostResources | null> {
+  if (inTauri()) {
+    try {
+      return await invokeCmd<HostResources>("host_resources");
+    } catch {
+      return null; // VM not running / usage not readable
+    }
+  }
   await delay(80);
   return { cpuUsed: 5.2, cpuTotal: 8, memUsed: 9.4, memTotal: 16, diskUsed: 34, diskTotal: 120 };
 }
