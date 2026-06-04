@@ -68,3 +68,44 @@ export interface HostResources {
   diskUsed: number;
   diskTotal: number;
 }
+
+// --- Topology (nested VM -> sandboxes -> agents) ---
+export type AgentState = "active" | "thinking" | "waiting" | "idle";
+
+export interface TopoAgent {
+  name: string;
+  kind: "agent" | "human";
+  state: AgentState;
+  action: string;
+  tools: string[];
+  active: string | null; // currently-active tool id
+}
+
+export interface TopoSandbox {
+  name: string;
+  image: string;
+  status: "running" | "stopped";
+  l3: boolean;
+  cpu: string;
+  mem: string;
+  agents: TopoAgent[];
+}
+
+// --- Networking ---
+export type NetId = "svc-net" | "egress-net" | "isolated";
+
+export interface NetUid {
+  uid: string;
+  kind: "agent" | "human";
+  egress: string;
+}
+
+export interface NetSandbox {
+  name: string;
+  image: string;
+  profile: string;
+  nets: NetId[];
+  inspected: boolean;
+  llm: string;
+  uids: NetUid[];
+}

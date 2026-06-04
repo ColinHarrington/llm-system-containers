@@ -3,7 +3,9 @@
 // place (e.g. launching a sandbox from the topbar) refreshes the others.
 import type { AgentInfo } from "./types";
 
-export type Screen = "dashboard" | "sandboxes" | "agent" | "services" | "images" | "wizard";
+export type Screen =
+  | "dashboard" | "sandboxes" | "topology" | "agent"
+  | "networking" | "services" | "images" | "wizard";
 
 function initialTheme(): "light" | "dark" {
   if (typeof localStorage !== "undefined") {
@@ -37,7 +39,9 @@ export function toggleTheme(): void {
 export const SCREEN_TITLES: Record<Screen, [string, string]> = {
   dashboard: ["Home", "Overview of your VM, sandboxes and services"],
   sandboxes: ["Sandboxes", "Your LLMSC workspaces (L2 system containers)"],
+  topology: ["Topology", "Nested view · VM → sandboxes → agents"],
   agent: ["Agent control", "Observe, interrupt and steer running agents"],
+  networking: ["Networking", "VM networks · attachments · egress & inspection"],
   services: ["Services", "Shared infrastructure for your sandboxes"],
   images: ["Images", "Base and custom sandbox images"],
   wizard: ["Set up your environment", "First-run configuration"],

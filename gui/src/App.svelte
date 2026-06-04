@@ -1,6 +1,8 @@
 <script lang="ts">
   import Dashboard from "./screens/Dashboard.svelte";
   import Sandboxes from "./screens/Sandboxes.svelte";
+  import Topology from "./screens/Topology.svelte";
+  import Networking from "./screens/Networking.svelte";
   import Services from "./screens/Services.svelte";
   import Agent from "./screens/Agent.svelte";
   import Images from "./screens/Images.svelte";
@@ -19,10 +21,12 @@
   const workspaceNav: { id: Screen; label: string; icon: string }[] = [
     { id: "dashboard", label: "Home", icon: "home" },
     { id: "sandboxes", label: "Sandboxes", icon: "box" },
+    { id: "topology", label: "Topology", icon: "layers" },
     { id: "agent", label: "Agent control", icon: "agent" },
   ];
   const platformNav: { id: Screen; label: string; icon: string }[] = [
-    { id: "services", label: "Services", icon: "layers" },
+    { id: "networking", label: "Networking", icon: "net" },
+    { id: "services", label: "Services", icon: "store" },
     { id: "images", label: "Images", icon: "image" },
     { id: "wizard", label: "Setup wizard", icon: "cog" },
   ];
@@ -175,8 +179,12 @@
       <Dashboard />
     {:else if ui.screen === "sandboxes"}
       <Sandboxes />
+    {:else if ui.screen === "topology"}
+      <Topology />
     {:else if ui.screen === "agent"}
       <Agent />
+    {:else if ui.screen === "networking"}
+      <Networking />
     {:else if ui.screen === "services"}
       <Services />
     {:else if ui.screen === "images"}

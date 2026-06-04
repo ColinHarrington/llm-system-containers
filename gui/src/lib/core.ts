@@ -10,8 +10,10 @@ import type {
   AgentInfo,
   HostResources,
   ImageInfo,
+  NetSandbox,
   Sandbox,
   ServiceEntry,
+  TopoSandbox,
   VirtualKey,
   VmStatus,
 } from "./types";
@@ -217,6 +219,86 @@ export async function listVirtualKeys(): Promise<VirtualKey[]> {
     { key: "sk-vk-…77c2", assignedTo: "agent-aux @ ci-runner", models: "sonnet, haiku", budget: "$20 / day", used: "$3.40", status: "active" },
     { key: "sk-vk-…1d08", assignedTo: "agent-claude @ data-pipeline", models: "sonnet", budget: "$20 / day", used: "$0.00", status: "idle" },
     { key: "sk-vk-…be40", assignedTo: "browser-bot (stopped)", models: "haiku", budget: "$10 / day", used: "—", status: "revoked" },
+  ];
+}
+
+// Tool id -> human label (topology agent activity chips).
+export const TOOL_LABELS: Record<string, string> = {
+  shell: "Terminal", code: "Editor", git: "Git", web: "Browser", run: "Run / tests",
+  pkg: "Containers (L3)", db: "Database", search: "Web search", llm: "LLM call", files: "Files",
+};
+
+export async function topology(): Promise<TopoSandbox[]> {
+  await delay(80);
+  return [
+    {
+      name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "2.1", mem: "3.4 GB",
+      agents: [
+        { name: "agent-claude", kind: "agent", state: "active", action: "Editing src/api/router.ts", tools: ["code", "shell", "git", "llm"], active: "code" },
+        { name: "agent-aux", kind: "agent", state: "thinking", action: "Planning test changes", tools: ["shell", "run", "llm"], active: "llm" },
+        { name: "operator", kind: "human", state: "idle", action: "Attached · read-only watch", tools: ["shell"], active: null },
+      ],
+    },
+    {
+      name: "ci-runner", image: "ci-base", status: "running", l3: true, cpu: "3.6", mem: "5.1 GB",
+      agents: [
+        { name: "agent-ci", kind: "agent", state: "active", action: "Building image · docker build", tools: ["pkg", "shell", "git", "run"], active: "pkg" },
+      ],
+    },
+    {
+      name: "data-pipeline", image: "dev-ubuntu-24.04", status: "running", l3: false, cpu: "1.4", mem: "2.2 GB",
+      agents: [
+        { name: "agent-etl", kind: "agent", state: "active", action: "Querying warehouse", tools: ["db", "run", "files", "llm"], active: "db" },
+        { name: "agent-report", kind: "agent", state: "waiting", action: "Awaiting upstream data", tools: ["files", "llm"], active: null },
+      ],
+    },
+    {
+      name: "research-01", image: "browser-tools", status: "running", l3: true, cpu: "1.8", mem: "2.9 GB",
+      agents: [
+        { name: "agent-browse", kind: "agent", state: "active", action: "Reading docs · 4 tabs", tools: ["web", "search", "files", "llm"], active: "web" },
+      ],
+    },
+    { name: "scratch-01", image: "dev-ubuntu-24.04", status: "stopped", l3: true, cpu: "0", mem: "0", agents: [] },
+  ];
+}
+
+export async function networking(): Promise<NetSandbox[]> {
+  await delay(80);
+  return [
+    {
+      name: "web-agent-01", image: "dev-ubuntu-24.04", profile: "standard",
+      nets: ["svc-net", "egress-net"], inspected: true, llm: "LiteLLM",
+      uids: [
+        { uid: "agent-claude", kind: "agent", egress: "allowlist (github, npm, pypi)" },
+        { uid: "agent-aux", kind: "agent", egress: "allowlist (github, npm, pypi)" },
+        { uid: "operator", kind: "human", egress: "broad allowlist + interactive" },
+      ],
+    },
+    {
+      name: "ci-runner", image: "ci-base", profile: "build",
+      nets: ["svc-net", "egress-net"], inspected: true, llm: "LiteLLM",
+      uids: [
+        { uid: "agent-ci", kind: "agent", egress: "allowlist (ghcr, npm, pypi)" },
+        { uid: "operator", kind: "human", egress: "broad allowlist + interactive" },
+      ],
+    },
+    {
+      name: "data-pipeline", image: "dev-ubuntu-24.04", profile: "locked-down",
+      nets: ["svc-net"], inspected: false, llm: "LiteLLM",
+      uids: [
+        { uid: "agent-etl", kind: "agent", egress: "deny-all (svc-net only)" },
+        { uid: "agent-report", kind: "agent", egress: "deny-all (svc-net only)" },
+        { uid: "operator", kind: "human", egress: "deny-all (svc-net only)" },
+      ],
+    },
+    {
+      name: "research-01", image: "browser-tools", profile: "air-gapped",
+      nets: ["isolated", "svc-net"], inspected: true, llm: "LiteLLM",
+      uids: [
+        { uid: "agent-browse", kind: "agent", egress: "no-egress (isolated)" },
+        { uid: "operator", kind: "human", egress: "no-egress (isolated)" },
+      ],
+    },
   ];
 }
 
