@@ -8,8 +8,12 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Top-level llmsc configuration.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
+    /// The human operator's Linux username — the default user created in every sandbox. Set once
+    /// (defaults to the host username), overridable per sandbox. One human per sandbox.
+    #[serde(default = "default_operator_username")]
+    pub operator: String,
     /// The L1 VM that hosts everything.
     pub vm: VmConfig,
     /// Declared L2 sandboxes (desired state).
@@ -18,6 +22,26 @@ pub struct Config {
     /// Enabled services.
     #[serde(default, rename = "service", skip_serializing_if = "Vec::is_empty")]
     pub services: Vec<Service>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            operator: default_operator_username(),
+            vm: VmConfig::default(),
+            sandboxes: Vec::new(),
+            services: Vec::new(),
+        }
+    }
+}
+
+/// The host username — used as the default operator name. Falls back to "operator".
+pub fn default_operator_username() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "operator".to_string())
 }
 
 /// The L1 VM (`llmsc-vm`).
@@ -173,6 +197,7 @@ mod tests {
 
     fn sample() -> Config {
         Config {
+            operator: "operator".into(),
             vm: VmConfig {
                 name: "llmsc".into(),
                 cpus: 4,
@@ -340,11 +365,14 @@ mod tests {
                 disk_gib,
                 driver,
             });
-        (vm, proptest::collection::vec(arb_sandbox(), 0..3)).prop_map(|(vm, sandboxes)| Config {
-            vm,
-            sandboxes,
-            services: vec![],
-        })
+        (arb_name(), vm, proptest::collection::vec(arb_sandbox(), 0..3)).prop_map(
+            |(operator, vm, sandboxes)| Config {
+                operator,
+                vm,
+                sandboxes,
+                services: vec![],
+            },
+        )
     }
 
     proptest! {

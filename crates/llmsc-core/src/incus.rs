@@ -4,7 +4,7 @@
 //! [`CommandRunner`] boundary; tests use [`FakeIncus`]. (A native Incus REST client over the
 //! socket is a future refinement — see `planning/tech-stack.md`.)
 
-use crate::config::Sandbox;
+use crate::config::{Sandbox, UserRole};
 use crate::error::{Error, Result};
 use crate::process::{CommandRunner, RunOutput};
 use crate::progress::Reporter;
@@ -106,6 +106,23 @@ pub fn parse_topology(list_json: &str) -> Result<Vec<SandboxTopology>> {
             }
         })
         .collect())
+}
+
+/// Shell snippet that creates Linux user `name` if absent. Tries `useradd` (debian/fedora/…)
+/// then `adduser -D` (alpine/busybox); `-g users` covers names that collide with a system group
+/// (e.g. "operator"). POSIX `sh`-safe.
+fn role_word(role: UserRole) -> &'static str {
+    match role {
+        UserRole::Human => "human",
+        UserRole::Agent => "agent",
+    }
+}
+
+pub fn useradd_script(name: &str) -> String {
+    format!(
+        "id {n} 2>/dev/null || useradd -m -s /bin/bash {n} || useradd -m -s /bin/bash -g users {n} || adduser -D {n}",
+        n = name
+    )
 }
 
 /// Sanitize an image alias into a valid temporary builder *container* name (`build-<slug>`).
@@ -525,6 +542,20 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         parse_sandbox_networks(&o.stdout)
     }
 
+    /// Create a Linux user inside a sandbox — one per agent, or the human operator. An agent is
+    /// 1:1 with its Linux user. `human` users are best-effort added to the sudo/wheel group.
+    pub fn add_user(&self, sandbox: &str, name: &str, human: bool) -> Result<()> {
+        let o = self.incus_run(&["exec", sandbox, "--", "sh", "-c", &useradd_script(name)])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("creating user {name}: {}", o.stderr.trim())));
+        }
+        if human {
+            let sudo = format!("(usermod -aG sudo {name} || addgroup {name} wheel) 2>/dev/null || true");
+            let _ = self.incus_run(&["exec", sandbox, "--", "sh", "-c", &sudo]);
+        }
+        Ok(())
+    }
+
     /// Build a custom image via the publish-from-container flow: launch a throwaway builder from
     /// `base`, run `setup` inside it, then `incus publish` it under `alias`. The builder is removed
     /// on success or failure. Progress streams via `reporter`.
@@ -631,20 +662,8 @@ impl<R: CommandRunner> IncusClient for CliIncus<'_, R> {
             }
         }
         for u in &spec.users {
-            reporter.step(&format!("Creating user '{}'", u.name));
-            // "operator" collides with the system group of the same name → fall back to `-g users`.
-            let useradd = format!(
-                "id {u} 2>/dev/null || useradd -m -s /bin/bash {u} || useradd -m -s /bin/bash -g users {u}",
-                u = u.name
-            );
-            let o = self.incus_run(&["exec", &spec.name, "--", "bash", "-lc", &useradd])?;
-            if !o.ok() {
-                return Err(Error::Incus(format!(
-                    "creating user {}: {}",
-                    u.name,
-                    o.stderr.trim()
-                )));
-            }
+            reporter.step(&format!("Creating {} user '{}'", role_word(u.role), u.name));
+            self.add_user(&spec.name, &u.name, matches!(u.role, UserRole::Human))?;
         }
         Ok(())
     }
@@ -687,6 +706,24 @@ mod tests {
         assert!(r.called_with("my-img"));
         assert!(r.called_with("--reuse"));
         assert!(r.called_with("delete")); // builder removed
+    }
+
+    #[test]
+    fn add_user_creates_linux_user() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.add_user("web-agent-01", "agent-claude", false).unwrap();
+        assert!(r.called_with("exec"));
+        assert!(r.called_with("agent-claude"));
+        assert!(r.called_with("useradd"));
+    }
+
+    #[test]
+    fn add_user_human_attempts_sudo() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.add_user("web-agent-01", "colin", true).unwrap();
+        assert!(r.called_with("usermod")); // best-effort sudo/wheel for the human
     }
 
     #[test]

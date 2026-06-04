@@ -2,6 +2,8 @@
 source: crates/llmsc-core/src/config.rs
 expression: sample().to_toml().unwrap()
 ---
+operator = "operator"
+
 [vm]
 name = "llmsc"
 cpus = 4

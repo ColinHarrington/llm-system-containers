@@ -8,6 +8,7 @@ vi.mock("../lib/core", () => ({
     { name: "litellm", description: "LLM proxy", priority: "MVP", enabled: true },
   ]),
   createPlatform,
+  operatorDefault: vi.fn(async () => "operator"),
   SERVICE_META: { litellm: { initials: "Li", color: "#000", placement: "own L2 container" } },
 }));
 

@@ -18,7 +18,7 @@
     ui, navigate, bump, toggleTheme, showToast, SCREEN_TITLES, type Screen,
   } from "./lib/store.svelte";
   import {
-    vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, launchSandbox,
+    vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, launchSandbox, operatorDefault,
   } from "./lib/core";
   import type { VmStatus } from "./lib/types";
 
@@ -62,6 +62,7 @@
         ui.terminalTarget = null;
         ui.paletteOpen = false;
         ui.buildImageOpen = false;
+        ui.addAgentSandbox = null;
         return;
       }
       const el = e.target as HTMLElement | null;
@@ -112,15 +113,23 @@
   let sbName = $state("");
   let sbImage = $state("dev-ubuntu-24.04");
   let sbNesting = $state(true);
+  let sbOperator = $state("");
   let sbBusy = $state(false);
 
+  // Prefill the human username with the operator default when the modal opens.
+  $effect(() => {
+    if (ui.newSandboxOpen && !sbOperator) {
+      void operatorDefault().then((o) => (sbOperator = o));
+    }
+  });
+
   async function createSandbox() {
-    if (!sbName.trim()) return;
+    if (!sbName.trim() || !sbOperator.trim()) return;
     const name = sbName.trim();
     sbBusy = true;
     showToast(`$ llmsc launch ${name} --image ${sbImage}`);
     try {
-      await launchSandbox(name, sbImage.trim(), sbNesting);
+      await launchSandbox(name, sbImage.trim(), sbNesting, sbOperator.trim());
       ui.newSandboxOpen = false;
       sbName = "";
       navigate("sandboxes");
@@ -128,6 +137,27 @@
       showToast(`Launched ${name}`, "ok");
     } finally {
       sbBusy = false;
+    }
+  }
+
+  // Add-agent modal
+  let agentName = $state("");
+  let agentBusy = $state(false);
+  async function addAgentToSandbox() {
+    const sandbox = ui.addAgentSandbox;
+    if (!sandbox || !agentName.trim()) return;
+    const name = agentName.trim();
+    agentBusy = true;
+    showToast(`$ llmsc agent add ${name}@${sandbox}`);
+    try {
+      const { addAgent } = await import("./lib/core");
+      await addAgent(sandbox, name);
+      ui.addAgentSandbox = null;
+      agentName = "";
+      bump();
+      showToast(`Agent '${name}' added`, "ok");
+    } finally {
+      agentBusy = false;
     }
   }
 
@@ -251,6 +281,8 @@
     {#snippet body()}
       <div class="field mb16"><label for="sb-name">Name</label>
         <input id="sb-name" class="input mono" bind:value={sbName} placeholder="web-agent-02" /></div>
+      <div class="field mb16"><label for="sb-operator">Your username <span class="hint">(the human operator — the default Linux user)</span></label>
+        <input id="sb-operator" class="input mono" bind:value={sbOperator} placeholder="operator" /></div>
       <div class="field mb16"><label for="sb-image">Image</label>
         <select id="sb-image" class="input" bind:value={sbImage}>
           <option value="dev-ubuntu-24.04">dev-ubuntu-24.04 — general dev workspace</option>
@@ -268,7 +300,7 @@
     {#snippet foot()}
       <span class="code-chip mono" style="margin-right:auto">llmsc launch {sbName || "name"} --image {sbImage}</span>
       <button class="btn" onclick={() => (ui.newSandboxOpen = false)}>Cancel</button>
-      <button class="btn primary" onclick={createSandbox} disabled={sbBusy || !sbName.trim()}>
+      <button class="btn primary" onclick={createSandbox} disabled={sbBusy || !sbName.trim() || !sbOperator.trim()}>
         <Icon name="play" size={15} /><span>{sbBusy ? "Launching…" : "Launch sandbox"}</span>
       </button>
     {/snippet}
@@ -277,6 +309,22 @@
 
 {#if ui.buildImageOpen}
   <BuildImage />
+{/if}
+
+{#if ui.addAgentSandbox}
+  <Modal title={`Add agent to ${ui.addAgentSandbox}`} maxWidth={460} onclose={() => (ui.addAgentSandbox = null)}>
+    {#snippet body()}
+      <p class="hint mb12">An agent is one Linux user in the sandbox (scoped, its own virtual key later). Add a username.</p>
+      <div class="field"><label for="ag-name">Agent username</label>
+        <input id="ag-name" class="input mono" bind:value={agentName} placeholder="agent-claude" /></div>
+    {/snippet}
+    {#snippet foot()}
+      <button class="btn" onclick={() => (ui.addAgentSandbox = null)}>Cancel</button>
+      <button class="btn primary" onclick={addAgentToSandbox} disabled={agentBusy || !agentName.trim()}>
+        <Icon name="plus" size={15} /><span>{agentBusy ? "Adding…" : "Add agent"}</span>
+      </button>
+    {/snippet}
+  </Modal>
 {/if}
 
 {#if ui.steerAgent}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import { navigate } from "../lib/store.svelte";
-  import { listServices, createPlatform, SERVICE_META } from "../lib/core";
+  import { listServices, createPlatform, operatorDefault, SERVICE_META } from "../lib/core";
   import type { ServiceEntry } from "../lib/types";
 
   const steps = [
@@ -12,6 +12,7 @@
   ];
   let step = $state(0);
 
+  let operator = $state("");
   let cpus = $state(8);
   let memoryGib = $state(16);
   let diskGib = $state(120);
@@ -25,7 +26,10 @@
   let done = $state(false);
 
   $effect(() => {
-    void (async () => { services = await listServices(); })();
+    void (async () => {
+      services = await listServices();
+      if (!operator) operator = await operatorDefault();
+    })();
   });
 
   const enabled = $derived(services.filter((s) => s.enabled).map((s) => s.name));
@@ -39,7 +43,7 @@
   async function create() {
     creating = true;
     try {
-      await createPlatform({ cpus, memoryGib, diskGib, services: enabled, defaultDenyEgress });
+      await createPlatform({ operator: operator.trim(), cpus, memoryGib, diskGib, services: enabled, defaultDenyEgress });
       done = true;
     } finally { creating = false; }
   }
@@ -77,6 +81,10 @@
           <div class="card pad">
             <h3 style="margin:0 0 4px">How much power should the VM get?</h3>
             <p class="hint mb16">These are reserved from your host for <span class="mono">llmsc-vm</span>. You can change them later.</p>
+            <div class="field mb20">
+              <label for="w-operator">Your username <span class="hint">(the human operator — default Linux user in every sandbox)</span></label>
+              <input id="w-operator" class="input mono" bind:value={operator} placeholder="operator" />
+            </div>
             <div class="field mb20">
               <div class="flex"><label for="w-cpu">CPU cores</label><span class="right strong mono">{cpus} cores</span></div>
               <input id="w-cpu" type="range" min="1" max="12" bind:value={cpus} />

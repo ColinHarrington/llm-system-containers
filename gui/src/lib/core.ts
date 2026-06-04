@@ -114,18 +114,30 @@ export async function listSandboxes(): Promise<Sandbox[]> {
   await delay(120);
   return [...mockSandboxes];
 }
-export async function launchSandbox(name: string, image: string, nesting: boolean): Promise<void> {
-  if (inTauri()) return invokeCmd<void>("sandbox_launch", { name, image, nesting });
-  await mockSteps([`Launching ${name}`, `Pulling ${image}`, "Configuring users", "Sandbox ready"]);
+export async function launchSandbox(name: string, image: string, nesting: boolean, operator: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("sandbox_launch", { name, image, nesting, operator });
+  await mockSteps([`Launching ${name}`, `Pulling ${image}`, `Creating human user '${operator}'`, "Sandbox ready"]);
   mockSandboxes = [
     ...mockSandboxes,
     {
       name, status: "Running", image, role: "workspace",
       tags: nesting ? ["unprivileged", "nesting on"] : ["unprivileged"],
       nested: nesting ? 0 : null, cpuCores: 2, memUsed: 0.4, memTotal: 4,
-      users: [{ initials: "aC", kind: "agent" }, { initials: "op", kind: "human" }],
+      users: [{ initials: operator.slice(0, 2), kind: "human" }],
     },
   ];
+}
+
+// The default operator (human) username — config value, falling back to the host username.
+export async function operatorDefault(): Promise<string> {
+  if (inTauri()) return invokeCmd<string>("operator_default");
+  return "operator";
+}
+
+// Add an agent (one Linux user) to a running sandbox.
+export async function addAgent(sandbox: string, name: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("add_agent", { sandbox, name });
+  await mockSteps([`Adding agent '${name}' to ${sandbox}`, `Agent '${name}' added`], 200);
 }
 export async function removeSandbox(name: string): Promise<void> {
   if (inTauri()) return invokeCmd<void>("sandbox_rm", { name });
@@ -329,6 +341,7 @@ export async function networking(): Promise<NetworkingData> {
 
 // --- first-run setup ---
 export interface SetupConfig {
+  operator: string;
   cpus: number;
   memoryGib: number;
   diskGib: number;

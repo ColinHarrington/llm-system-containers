@@ -66,6 +66,7 @@ mod tests {
 
     fn config_with(names: &[&str]) -> Config {
         Config {
+            operator: "operator".into(),
             vm: VmConfig::default(),
             sandboxes: names.iter().map(|n| sandbox(n)).collect(),
             services: vec![],

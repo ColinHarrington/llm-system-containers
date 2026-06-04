@@ -83,6 +83,9 @@
         <div class="divider"></div>
         <div class="flex gap8">
           <button class="btn sm" onclick={() => openTerminal(`operator@${s.name}`)}><Icon name="terminal" size={14} /><span>Open shell</span></button>
+          {#if s.status === "Running"}
+            <button class="btn sm" onclick={() => (ui.addAgentSandbox = s.name)}><Icon name="agent" size={14} /><span>Add agent</span></button>
+          {/if}
           <button class="btn sm danger right" onclick={() => remove(s.name)} disabled={busy === s.name}>
             {busy === s.name ? "Removing…" : "Remove"}
           </button>

@@ -5,7 +5,7 @@
 //! for now (streaming progress to the GUI is a follow-up).
 
 use llmsc_core::bootstrap::IncusBootstrap;
-use llmsc_core::config::{self, Config, Sandbox};
+use llmsc_core::config::{self, Config, Sandbox, User, UserRole};
 use llmsc_core::deploy::LiteLlmDeployer;
 use llmsc_core::incus::{CliIncus, IncusClient, InstanceStatus};
 use llmsc_core::process::SystemRunner;
@@ -133,12 +133,39 @@ fn sandbox_list() -> Result<Vec<SandboxDto>, String> {
 }
 
 #[tauri::command]
-fn sandbox_launch(app: AppHandle, name: String, image: String, nesting: bool) -> Result<(), String> {
+fn sandbox_launch(
+    app: AppHandle,
+    name: String,
+    image: String,
+    nesting: bool,
+    operator: String,
+) -> Result<(), String> {
     let reporter = EventReporter { app };
     let runner = SystemRunner;
     let incus = CliIncus::new(vm_name(), &runner);
-    let spec = Sandbox { name, image, nesting, users: vec![] };
+    // Every sandbox gets exactly one human user (the operator) by default; agents are added later.
+    let users = vec![User { name: operator, role: UserRole::Human }];
+    let spec = Sandbox { name, image, nesting, users };
     incus.launch(&spec, &reporter).map_err(|e| e.to_string())
+}
+
+/// The default operator (human) username — from config, falling back to the host username.
+#[tauri::command]
+fn operator_default() -> String {
+    Config::load_effective()
+        .map(|c| c.operator)
+        .unwrap_or_else(|_| config::default_operator_username())
+}
+
+/// Add an agent (one Linux user) to a running sandbox.
+#[tauri::command]
+fn add_agent(app: AppHandle, sandbox: String, name: String) -> Result<(), String> {
+    let reporter = EventReporter { app };
+    reporter.step(&format!("Adding agent '{name}' to {sandbox}"));
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    incus.add_user(&sandbox, &name, false).map_err(|e| e.to_string())?;
+    reporter.step(&format!("Agent '{name}' added"));
+    Ok(())
 }
 
 #[tauri::command]
@@ -188,6 +215,7 @@ fn fmt_mem(bytes: u64) -> String {
 fn topology() -> Result<Vec<TopoSandboxDto>, String> {
     let runner = SystemRunner;
     let incus = CliIncus::new(vm_name(), &runner);
+    let operator = Config::load_effective().map(|c| c.operator).unwrap_or_default();
     let sandboxes = incus.topology().map_err(|e| e.to_string())?;
     Ok(sandboxes
         .into_iter()
@@ -203,7 +231,7 @@ fn topology() -> Result<Vec<TopoSandboxDto>, String> {
                     .users
                     .into_iter()
                     .map(|u| TopoAgentDto {
-                        kind: if u.human { "human" } else { "agent" }.to_string(),
+                        kind: if u.human || u.name == operator { "human" } else { "agent" }.to_string(),
                         name: u.name,
                         state: "idle".to_string(),
                         action: String::new(),
@@ -411,6 +439,8 @@ fn service_up(app: AppHandle, name: String) -> Result<(), String> {
 
 #[derive(Deserialize)]
 struct SetupCfg {
+    #[serde(default)]
+    operator: String,
     cpus: u32,
     #[serde(rename = "memoryGib")]
     memory_gib: u32,
@@ -426,6 +456,9 @@ fn platform_init(app: AppHandle, cfg: SetupCfg) -> Result<(), String> {
     let reporter = EventReporter { app };
     let _ = cfg.default_deny_egress; // networking policy is M4 (deferred); accepted for now.
     let mut c = Config::default();
+    if !cfg.operator.trim().is_empty() {
+        c.operator = cfg.operator.trim().to_string();
+    }
     c.vm.cpus = cfg.cpus;
     c.vm.memory_gib = cfg.memory_gib;
     c.vm.disk_gib = cfg.disk_gib;
@@ -465,6 +498,8 @@ pub fn run() {
             sandbox_list,
             sandbox_launch,
             sandbox_rm,
+            operator_default,
+            add_agent,
             topology,
             host_resources,
             images,

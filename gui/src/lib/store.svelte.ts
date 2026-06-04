@@ -22,6 +22,7 @@ export const ui = $state({
   theme: initialTheme(),
   newSandboxOpen: false,
   buildImageOpen: false,
+  addAgentSandbox: null as string | null,
   paletteOpen: false,
   steerAgent: null as AgentInfo | null,
   terminalTarget: null as string | null,
