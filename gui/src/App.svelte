@@ -1,5 +1,7 @@
 <script lang="ts">
   import Dashboard from "./screens/Dashboard.svelte";
+  import Sandboxes from "./screens/Sandboxes.svelte";
+  import Services from "./screens/Services.svelte";
 
   type Screen = "dashboard" | "sandboxes" | "services";
   const nav: { id: Screen; label: string }[] = [
@@ -28,11 +30,10 @@
   <main class="content">
     {#if screen === "dashboard"}
       <Dashboard />
-    {:else}
-      <div class="card">
-        <h2>{nav.find((n) => n.id === screen)?.label}</h2>
-        <p class="muted">Coming soon.</p>
-      </div>
+    {:else if screen === "sandboxes"}
+      <Sandboxes />
+    {:else if screen === "services"}
+      <Services />
     {/if}
   </main>
 </div>
