@@ -144,7 +144,7 @@ fn sandbox_launch(
     let runner = SystemRunner;
     let incus = CliIncus::new(vm_name(), &runner);
     // Every sandbox gets exactly one human user (the operator) by default; agents are added later.
-    let users = vec![User { name: operator, role: UserRole::Human }];
+    let users = vec![User { name: operator, role: UserRole::Human, profile: None }];
     let spec = Sandbox { name, image, nesting, users };
     incus.launch(&spec, &reporter).map_err(|e| e.to_string())
 }
@@ -157,15 +157,45 @@ fn operator_default() -> String {
         .unwrap_or_else(|_| config::default_operator_username())
 }
 
-/// Add an agent (one Linux user) to a running sandbox.
+/// Add an agent (one Linux user) to a running sandbox, with an optional profile.
 #[tauri::command]
-fn add_agent(app: AppHandle, sandbox: String, name: String) -> Result<(), String> {
+fn add_agent(app: AppHandle, sandbox: String, name: String, profile: String) -> Result<(), String> {
     let reporter = EventReporter { app };
-    reporter.step(&format!("Adding agent '{name}' to {sandbox}"));
+    let suffix = if profile.is_empty() { String::new() } else { format!(" ({profile})") };
+    reporter.step(&format!("Adding agent '{name}' to {sandbox}{suffix}"));
     let incus = CliIncus::new(vm_name(), &SystemRunner);
     incus.add_user(&sandbox, &name, false).map_err(|e| e.to_string())?;
-    reporter.step(&format!("Agent '{name}' added"));
+    reporter.step(&format!("Agent '{name}' added{suffix}"));
     Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileDto {
+    name: String,
+    summary: String,
+    filesystem: String,
+    network: String,
+    l3: bool,
+    llm_budget: String,
+    control_plane: String,
+}
+
+/// The shipped agent-profile archetypes (the definition layer; enforcement is later).
+#[tauri::command]
+fn profiles() -> Vec<ProfileDto> {
+    llmsc_core::profile::catalog()
+        .iter()
+        .map(|p| ProfileDto {
+            name: p.name.to_string(),
+            summary: p.summary.to_string(),
+            filesystem: p.filesystem.to_string(),
+            network: p.network.to_string(),
+            l3: p.l3,
+            llm_budget: p.llm_budget.to_string(),
+            control_plane: p.control_plane.to_string(),
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -500,6 +530,7 @@ pub fn run() {
             sandbox_rm,
             operator_default,
             add_agent,
+            profiles,
             topology,
             host_resources,
             images,

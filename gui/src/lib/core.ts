@@ -11,6 +11,7 @@ import type {
   HostResources,
   ImageInfo,
   NetworkingData,
+  ProfileInfo,
   Sandbox,
   ServiceEntry,
   TopoSandbox,
@@ -134,10 +135,23 @@ export async function operatorDefault(): Promise<string> {
   return "operator";
 }
 
-// Add an agent (one Linux user) to a running sandbox.
-export async function addAgent(sandbox: string, name: string): Promise<void> {
-  if (inTauri()) return invokeCmd<void>("add_agent", { sandbox, name });
-  await mockSteps([`Adding agent '${name}' to ${sandbox}`, `Agent '${name}' added`], 200);
+// Add an agent (one Linux user) to a running sandbox, with an optional profile.
+export async function addAgent(sandbox: string, name: string, profile: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("add_agent", { sandbox, name, profile });
+  const suffix = profile ? ` (${profile})` : "";
+  await mockSteps([`Adding agent '${name}' to ${sandbox}${suffix}`, `Agent '${name}' added${suffix}`], 200);
+}
+
+// The shipped agent-profile archetypes (definition layer).
+export async function listProfiles(): Promise<ProfileInfo[]> {
+  if (inTauri()) return invokeCmd<ProfileInfo[]>("profiles");
+  return [
+    { name: "researcher", summary: "Read, research, gather context", filesystem: "RO repo + docs, RW scratch", network: "Web/docs allowlist via mitmproxy", l3: false, llmBudget: "generous", controlPlane: "none" },
+    { name: "tester", summary: "Run and write tests", filesystem: "RW repo", network: "Limited (package registries)", l3: true, llmBudget: "medium", controlPlane: "none" },
+    { name: "builder", summary: "Compile, build images", filesystem: "RW repo + artifacts", network: "Registry/package allowlist", l3: true, llmBudget: "medium", controlPlane: "none" },
+    { name: "validation", summary: "Run checks; never writes — strictest", filesystem: "Read-only everything", network: "None except LLM", l3: false, llmBudget: "small", controlPlane: "none" },
+    { name: "orchestrator", summary: "Drive other agents (software-factory)", filesystem: "Minimal (own scratch)", network: "None raw (internal coordination only)", l3: false, llmBudget: "broad", controlPlane: "launch/stop sandboxes, coordinate agents" },
+  ];
 }
 export async function removeSandbox(name: string): Promise<void> {
   if (inTauri()) return invokeCmd<void>("sandbox_rm", { name });

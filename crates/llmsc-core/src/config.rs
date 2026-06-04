@@ -83,6 +83,9 @@ pub struct Sandbox {
 pub struct User {
     pub name: String,
     pub role: UserRole,
+    /// The agent profile assigned to this user (archetype name). None for the human operator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,10 +216,12 @@ mod tests {
                     User {
                         name: "agent-claude".into(),
                         role: UserRole::Agent,
+                        profile: None,
                     },
                     User {
                         name: "operator".into(),
                         role: UserRole::Human,
+                        profile: None,
                     },
                 ],
             }],
@@ -331,8 +336,9 @@ mod tests {
         (
             arb_name(),
             prop_oneof![Just(UserRole::Agent), Just(UserRole::Human)],
+            prop_oneof![Just(None), arb_name().prop_map(Some)],
         )
-            .prop_map(|(name, role)| User { name, role })
+            .prop_map(|(name, role, profile)| User { name, role, profile })
     }
 
     fn arb_sandbox() -> impl Strategy<Value = Sandbox> {

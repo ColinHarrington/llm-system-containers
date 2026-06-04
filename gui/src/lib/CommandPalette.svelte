@@ -17,6 +17,7 @@
     gotoCmd("agent", "Agent control", "agent", "4"),
     gotoCmd("networking", "Networking", "net", "5"),
     gotoCmd("services", "Services", "store", "6"),
+    gotoCmd("profiles", "Agent profiles", "shield", ""),
     gotoCmd("images", "Images", "image", "7"),
     gotoCmd("wizard", "Setup wizard", "cog", ""),
     { id: "new-sandbox", label: "New sandbox", hint: "llmsc launch", icon: "plus", keywords: "create launch sandbox", run: () => (ui.newSandboxOpen = true) },

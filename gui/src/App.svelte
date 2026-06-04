@@ -5,6 +5,7 @@
   import Networking from "./screens/Networking.svelte";
   import Services from "./screens/Services.svelte";
   import Agent from "./screens/Agent.svelte";
+  import Profiles from "./screens/Profiles.svelte";
   import Images from "./screens/Images.svelte";
   import Wizard from "./screens/Wizard.svelte";
   import Progress from "./lib/Progress.svelte";
@@ -19,8 +20,9 @@
   } from "./lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, launchSandbox, operatorDefault,
+    addAgent, listProfiles,
   } from "./lib/core";
-  import type { VmStatus } from "./lib/types";
+  import type { ProfileInfo, VmStatus } from "./lib/types";
 
   const workspaceNav: { id: Screen; label: string; icon: string }[] = [
     { id: "dashboard", label: "Home", icon: "home" },
@@ -31,6 +33,7 @@
   const platformNav: { id: Screen; label: string; icon: string }[] = [
     { id: "networking", label: "Networking", icon: "net" },
     { id: "services", label: "Services", icon: "store" },
+    { id: "profiles", label: "Agent profiles", icon: "shield" },
     { id: "images", label: "Images", icon: "image" },
     { id: "wizard", label: "Setup wizard", icon: "cog" },
   ];
@@ -142,16 +145,20 @@
 
   // Add-agent modal
   let agentName = $state("");
+  let agentProfile = $state("");
   let agentBusy = $state(false);
+  let profileList = $state<ProfileInfo[]>([]);
+  $effect(() => {
+    void listProfiles().then((p) => (profileList = p));
+  });
   async function addAgentToSandbox() {
     const sandbox = ui.addAgentSandbox;
     if (!sandbox || !agentName.trim()) return;
     const name = agentName.trim();
     agentBusy = true;
-    showToast(`$ llmsc agent add ${name}@${sandbox}`);
+    showToast(`$ llmsc agent add ${name}@${sandbox}${agentProfile ? ` --profile ${agentProfile}` : ""}`);
     try {
-      const { addAgent } = await import("./lib/core");
-      await addAgent(sandbox, name);
+      await addAgent(sandbox, name, agentProfile);
       ui.addAgentSandbox = null;
       agentName = "";
       bump();
@@ -263,6 +270,8 @@
       <Networking />
     {:else if ui.screen === "services"}
       <Services />
+    {:else if ui.screen === "profiles"}
+      <Profiles />
     {:else if ui.screen === "images"}
       <Images />
     {:else if ui.screen === "wizard"}
@@ -315,8 +324,13 @@
   <Modal title={`Add agent to ${ui.addAgentSandbox}`} maxWidth={460} onclose={() => (ui.addAgentSandbox = null)}>
     {#snippet body()}
       <p class="hint mb12">An agent is one Linux user in the sandbox (scoped, its own virtual key later). Add a username.</p>
-      <div class="field"><label for="ag-name">Agent username</label>
+      <div class="field mb16"><label for="ag-name">Agent username</label>
         <input id="ag-name" class="input mono" bind:value={agentName} placeholder="agent-claude" /></div>
+      <div class="field"><label for="ag-profile">Profile <span class="hint">(permission preset)</span></label>
+        <select id="ag-profile" class="input" bind:value={agentProfile}>
+          <option value="">none</option>
+          {#each profileList as p}<option value={p.name}>{p.name} — {p.summary}</option>{/each}
+        </select></div>
     {/snippet}
     {#snippet foot()}
       <button class="btn" onclick={() => (ui.addAgentSandbox = null)}>Cancel</button>

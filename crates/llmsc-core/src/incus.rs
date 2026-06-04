@@ -898,10 +898,12 @@ mod cli_tests {
                 User {
                     name: "agent-claude".into(),
                     role: UserRole::Agent,
+                    profile: Some("researcher".into()),
                 },
                 User {
                     name: "operator".into(),
                     role: UserRole::Human,
+                    profile: None,
                 },
             ],
         }

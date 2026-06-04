@@ -29,6 +29,16 @@ export interface ServiceEntry {
   enabled: boolean;
 }
 
+export interface ProfileInfo {
+  name: string;
+  summary: string;
+  filesystem: string;
+  network: string;
+  l3: boolean;
+  llmBudget: string;
+  controlPlane: string;
+}
+
 export interface AgentInfo {
   id: string;
   name: string;
