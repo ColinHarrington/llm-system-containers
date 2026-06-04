@@ -4,7 +4,7 @@
 import type { AgentInfo } from "./types";
 
 export type Screen =
-  | "dashboard" | "sandboxes" | "topology" | "agent"
+  | "dashboard" | "sandboxes" | "sandbox-detail" | "topology" | "agent"
   | "networking" | "services" | "profiles" | "images" | "wizard";
 
 function initialTheme(): "light" | "dark" {
@@ -23,6 +23,7 @@ export const ui = $state({
   newSandboxOpen: false,
   buildImageOpen: false,
   addAgentSandbox: null as string | null,
+  selectedSandbox: null as string | null,
   paletteOpen: false,
   steerAgent: null as AgentInfo | null,
   terminalTarget: null as string | null,
@@ -44,6 +45,11 @@ export function navigate(screen: Screen): void {
   ui.screen = screen;
 }
 
+export function openSandbox(name: string): void {
+  ui.selectedSandbox = name;
+  ui.screen = "sandbox-detail";
+}
+
 export function bump(): void {
   ui.dataVersion++;
 }
@@ -55,7 +61,8 @@ export function toggleTheme(): void {
 
 export const SCREEN_TITLES: Record<Screen, [string, string]> = {
   dashboard: ["Home", "Overview of your VM, sandboxes and services"],
-  sandboxes: ["Sandboxes", "Your LLMSC workspaces (L2 system containers)"],
+  sandboxes: ["Sandbox containers", "Your LLMSC workspaces (L2 system containers)"],
+  "sandbox-detail": ["Sandbox", "Sandbox container detail"],
   topology: ["Topology", "Nested view · VM → sandboxes → agents"],
   agent: ["Agent control", "Observe, interrupt and steer running agents"],
   networking: ["Networking", "VM networks · attachments · egress & inspection"],

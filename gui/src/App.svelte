@@ -1,6 +1,7 @@
 <script lang="ts">
   import Dashboard from "./screens/Dashboard.svelte";
   import Sandboxes from "./screens/Sandboxes.svelte";
+  import SandboxDetail from "./screens/SandboxDetail.svelte";
   import Topology from "./screens/Topology.svelte";
   import Networking from "./screens/Networking.svelte";
   import Services from "./screens/Services.svelte";
@@ -16,20 +17,21 @@
   import Icon from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
   import {
-    ui, navigate, bump, toggleTheme, showToast, SCREEN_TITLES, type Screen,
+    ui, navigate, openSandbox, bump, toggleTheme, showToast, SCREEN_TITLES, type Screen,
   } from "./lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, launchSandbox, operatorDefault,
     addAgent, listProfiles,
   } from "./lib/core";
-  import type { ProfileInfo, VmStatus } from "./lib/types";
+  import type { ProfileInfo, Sandbox, VmStatus } from "./lib/types";
 
   const workspaceNav: { id: Screen; label: string; icon: string }[] = [
     { id: "dashboard", label: "Home", icon: "home" },
-    { id: "sandboxes", label: "Sandboxes", icon: "box" },
+    { id: "sandboxes", label: "Sandbox Containers", icon: "box" },
     { id: "topology", label: "Topology", icon: "layers" },
     { id: "agent", label: "Agent control", icon: "agent" },
   ];
+  const onSandboxes = $derived(ui.screen === "sandboxes" || ui.screen === "sandbox-detail");
   const platformNav: { id: Screen; label: string; icon: string }[] = [
     { id: "networking", label: "Networking", icon: "net" },
     { id: "services", label: "Services", icon: "store" },
@@ -41,6 +43,7 @@
   let vm = $state<VmStatus | null>(null);
   let vmBusy = $state(false);
   let counts = $state({ sandboxes: 0, agents: 0, services: 0 });
+  let sbList = $state<Sandbox[]>([]);
 
   // Apply theme to <html> whenever it changes.
   $effect(() => {
@@ -85,6 +88,7 @@
   async function refreshChrome() {
     vm = await vmStatus();
     const [sb, svc, ag] = await Promise.all([listSandboxes(), listServices(), listAgents()]);
+    sbList = sb;
     counts = {
       sandboxes: sb.length,
       agents: ag.filter((a) => a.status !== "idle").length,
@@ -176,7 +180,11 @@
     showToast("Steering message injected into agent context");
   }
 
-  const title = $derived(SCREEN_TITLES[ui.screen]);
+  const title = $derived(
+    ui.screen === "sandbox-detail"
+      ? [ui.selectedSandbox ?? "Sandbox", `Sandbox containers › ${ui.selectedSandbox ?? ""}`]
+      : SCREEN_TITLES[ui.screen],
+  );
 </script>
 
 <div class="app">
@@ -191,12 +199,30 @@
 
     <div class="nav-label">Workspace</div>
     {#each workspaceNav as n (n.id)}
-      <button class="nav-item" class:active={ui.screen === n.id} onclick={() => navigate(n.id)}>
-        <Icon name={n.icon} />
-        <span>{n.label}</span>
-        {#if n.id === "sandboxes" && counts.sandboxes}<span class="badge">{counts.sandboxes}</span>{/if}
-        {#if n.id === "agent" && counts.agents}<span class="badge">{counts.agents}</span>{/if}
-      </button>
+      {#if n.id === "sandboxes"}
+        <button class="nav-item" class:active={onSandboxes} onclick={() => navigate("sandboxes")}>
+          <Icon name={n.icon} />
+          <span class="twoline">Sandbox<br />Containers</span>
+          {#if counts.sandboxes}<span class="badge">{counts.sandboxes}</span>{/if}
+        </button>
+        {#if onSandboxes}
+          <div class="submenu">
+            {#each sbList as s (s.name)}
+              <button class="subitem" class:active={ui.screen === "sandbox-detail" && ui.selectedSandbox === s.name} onclick={() => openSandbox(s.name)}>
+                <span class="dot {s.status === 'Running' ? 'ok' : 'muted'}" style="width:6px;height:6px"></span>
+                <span class="sname mono">{s.name}</span>
+              </button>
+            {/each}
+            {#if sbList.length === 0}<div class="subempty">no sandboxes</div>{/if}
+          </div>
+        {/if}
+      {:else}
+        <button class="nav-item" class:active={ui.screen === n.id} onclick={() => navigate(n.id)}>
+          <Icon name={n.icon} />
+          <span>{n.label}</span>
+          {#if n.id === "agent" && counts.agents}<span class="badge">{counts.agents}</span>{/if}
+        </button>
+      {/if}
     {/each}
 
     <div class="nav-label">Platform</div>
@@ -262,6 +288,8 @@
       <Dashboard />
     {:else if ui.screen === "sandboxes"}
       <Sandboxes />
+    {:else if ui.screen === "sandbox-detail"}
+      <SandboxDetail />
     {:else if ui.screen === "topology"}
       <Topology />
     {:else if ui.screen === "agent"}
@@ -369,5 +397,19 @@
   }
   .searchbox:hover { border-color: var(--border-strong); }
   .searchbox span { flex: 1; }
+
+  .twoline { line-height: 1.15; }
+  .submenu { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 4px 0; padding-left: 12px; }
+  .submenu::before { content: ""; }
+  .subitem {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    border: none; background: transparent; cursor: pointer; font-family: inherit;
+    color: var(--text-3); font-size: 12px; padding: 5px 9px; border-radius: var(--radius-sm);
+    border-left: 1px solid var(--border); padding-left: 12px; margin-left: 6px;
+  }
+  .subitem:hover { background: rgba(255, 255, 255, 0.03); color: var(--text); }
+  .subitem.active { background: var(--accent-soft-bg); color: var(--accent-text); }
+  .subitem .sname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .subempty { color: var(--text-3); font-size: 11px; padding: 4px 9px 4px 18px; }
   @media (max-width: 820px) { .searchbox { display: none; } }
 </style>

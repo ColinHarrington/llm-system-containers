@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui, bump, openTerminal } from "../lib/store.svelte";
+  import { ui, bump, openTerminal, openSandbox } from "../lib/store.svelte";
   import { listSandboxes, removeSandbox } from "../lib/core";
   import type { Sandbox } from "../lib/types";
 
@@ -59,7 +59,7 @@
       <div class="card pad sb">
         <div class="flex gap10 mb12">
           <div class="sb-ico" class:off={s.status !== "Running"}><Icon name="box" size={18} /></div>
-          <div><div class="strong">{s.name}</div><div class="muted xsmall mono">{s.image ?? "—"}</div></div>
+          <div><button class="namebtn strong" onclick={() => openSandbox(s.name)}>{s.name}</button><div class="muted xsmall mono">{s.image ?? "—"}</div></div>
           {#if s.status === "Running"}
             <span class="pill ok right"><span class="dot ok pulse"></span> Running</span>
           {:else}
@@ -104,6 +104,8 @@
 
 <style>
   .bare { border: none; background: transparent; outline: none; color: var(--text); font-family: inherit; font-size: 12.5px; width: 100%; }
+  .namebtn { border: none; background: transparent; padding: 0; color: var(--text); font-family: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+  .namebtn:hover { color: var(--accent-text); }
   .sb-ico { width: 36px; height: 36px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex: none; }
   .sb-ico.off { background: var(--card-2); color: var(--text-3); border: 1px solid var(--border); }
   .newtile {
