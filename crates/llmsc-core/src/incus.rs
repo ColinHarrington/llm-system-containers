@@ -111,6 +111,44 @@ pub fn parse_topology(list_json: &str) -> Result<Vec<SandboxTopology>> {
 /// Shell snippet that creates Linux user `name` if absent. Tries `useradd` (debian/fedora/…)
 /// then `adduser -D` (alpine/busybox); `-g users` covers names that collide with a system group
 /// (e.g. "operator"). POSIX `sh`-safe.
+/// Render the `incus launch` argv for a sandbox spec: image + name, then the Incus surface as
+/// flags (`--ephemeral`, `--description`, `-p` profiles, `-c` effective config incl. the
+/// `security.privileged=false` invariant + nesting, `-d` devices). CLI flags are the documented
+/// thin convenience subset of the same `InstancesPost` struct (see the research note).
+pub fn launch_args(spec: &Sandbox) -> Vec<String> {
+    let mut a: Vec<String> = vec!["launch".into(), spec.image.clone(), spec.name.clone()];
+    if spec.ephemeral {
+        a.push("--ephemeral".into());
+    }
+    if let Some(d) = spec.description.as_deref().filter(|d| !d.is_empty()) {
+        a.push("--description".into());
+        a.push(d.to_string());
+    }
+    for p in &spec.profiles {
+        a.push("-p".into());
+        a.push(p.clone());
+    }
+    for (k, v) in spec.effective_config() {
+        a.push("-c".into());
+        a.push(format!("{k}={v}"));
+    }
+    for (name, keys) in &spec.devices {
+        // -d name,type=<t>,key=value,…  (device type first if present)
+        let mut parts = vec![name.clone()];
+        if let Some(t) = keys.get("type") {
+            parts.push(format!("type={t}"));
+        }
+        for (k, v) in keys {
+            if k != "type" {
+                parts.push(format!("{k}={v}"));
+            }
+        }
+        a.push("-d".into());
+        a.push(parts.join(","));
+    }
+    a
+}
+
 fn role_word(role: UserRole) -> &'static str {
     match role {
         UserRole::Human => "human",
@@ -372,7 +410,7 @@ pub fn parse_users(passwd: &str) -> Vec<TopoUser> {
             }
             let (name, shell) = (f[0], f[6]);
             let uid: u32 = f[2].parse().ok()?;
-            if uid < 1000 || uid >= 65000 {
+            if !(1000..65000).contains(&uid) {
                 return None;
             }
             if shell.ends_with("nologin") || shell.ends_with("false") {
@@ -660,19 +698,11 @@ impl<R: CommandRunner> IncusClient for CliIncus<'_, R> {
             "Creating sandbox '{}' from {}",
             spec.name, spec.image
         ));
-        let code = self.incus_streamed(&["launch", &spec.image, &spec.name])?;
+        let args = launch_args(spec);
+        let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+        let code = self.incus_streamed(&argv)?;
         if code != 0 {
             return Err(Error::Incus(format!("`incus launch` exited with {code}")));
-        }
-        if spec.nesting {
-            reporter.step("Enabling nested containers (L3)");
-            let o = self.incus_run(&["config", "set", &spec.name, "security.nesting", "true"])?;
-            if !o.ok() {
-                return Err(Error::Incus(format!(
-                    "setting security.nesting: {}",
-                    o.stderr.trim()
-                )));
-            }
         }
         for u in &spec.users {
             reporter.step(&format!("Creating {} user '{}'", role_word(u.role), u.name));
@@ -765,6 +795,7 @@ mod tests {
             image: "images:debian/13".into(),
             nesting: true,
             users: vec![],
+            ..Default::default()
         }
     }
 
@@ -777,6 +808,45 @@ mod tests {
         assert_eq!(c.list().unwrap().len(), 1);
         c.delete("web-agent-01").unwrap();
         assert!(c.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn launch_args_render_the_incus_surface() {
+        let mut spec = sb("web-agent-01"); // nesting: true
+        spec.ephemeral = true;
+        spec.description = Some("dev box".into());
+        spec.profiles = vec!["sandbox".into(), "net-egress-filtered".into()];
+        spec.config.insert("cloud-init.user-data".into(), "#cloud-config".into());
+        let mut work = std::collections::BTreeMap::new();
+        work.insert("type".into(), "disk".into());
+        work.insert("source".into(), "/home/colin/proj".into());
+        work.insert("path".into(), "/work".into());
+        spec.devices.insert("work".into(), work);
+
+        let a = launch_args(&spec);
+        let joined = a.join(" ");
+        assert_eq!(a[0], "launch");
+        assert_eq!(a[1], "images:debian/13");
+        assert_eq!(a[2], "web-agent-01");
+        assert!(joined.contains("--ephemeral"));
+        assert!(joined.contains("--description dev box"));
+        assert!(joined.contains("-p sandbox"));
+        assert!(joined.contains("-p net-egress-filtered"));
+        assert!(joined.contains("-c security.privileged=false")); // invariant always present
+        assert!(joined.contains("-c security.nesting=true")); // from nesting
+        assert!(joined.contains("-c cloud-init.user-data=#cloud-config"));
+        assert!(joined.contains("-d work,type=disk,path=/work,source=/home/colin/proj"));
+    }
+
+    #[test]
+    fn launch_via_cli_uses_rendered_args() {
+        // `info` (the exists check) non-zero so launch proceeds; everything else ok.
+        let r = FakeRunner::new(|_, args| if args.contains(&"info") { out(1, "") } else { out(0, "") });
+        let c = CliIncus::new("llmsc", &r);
+        c.launch(&sb("web-agent-01"), &SilentReporter).unwrap();
+        assert!(r.called_with("launch"));
+        assert!(r.called_with("security.privileged=false"));
+        assert!(r.called_with("security.nesting=true"));
     }
 
     #[test]
@@ -929,6 +999,7 @@ mod cli_tests {
                     profile: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

@@ -139,20 +139,30 @@ fn sandbox_launch(
     image: String,
     nesting: bool,
     operator: String,
+    description: String,
+    ephemeral: bool,
 ) -> Result<(), String> {
     let reporter = EventReporter { app };
     let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let desc = if description.trim().is_empty() { None } else { Some(description.trim().to_string()) };
     // Every sandbox gets exactly one human user (the operator) by default; agents are added later.
     let spec = Sandbox {
         name: name.clone(),
         image: image.clone(),
         nesting,
+        ephemeral,
+        description: desc.clone(),
         users: vec![User { name: operator.clone(), role: UserRole::Human, profile: None }],
+        ..Default::default()
     };
     incus.launch(&spec, &reporter).map_err(|e| e.to_string())?;
-    // Persist into config so the sandbox + its operator are durable (best-effort; already created).
+    // Persist the full intent into config (best-effort; the sandbox is already created).
     let mut cfg = load_user_config().unwrap_or_default();
-    cfg.upsert_sandbox(&name, &image, nesting);
+    {
+        let sb = cfg.upsert_sandbox(&name, &image, nesting);
+        sb.ephemeral = ephemeral;
+        sb.description = desc;
+    }
     cfg.set_sandbox_user(&name, User { name: operator, role: UserRole::Human, profile: None });
     let _ = cfg.save(&config::user_config_path());
     Ok(())

@@ -68,6 +68,7 @@ fn run() -> Result<(), String> {
                 image,
                 nesting: false,
                 users: Vec::new(),
+                ..Default::default()
             };
             incus
                 .launch(&spec, &ConsoleReporter)

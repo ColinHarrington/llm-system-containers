@@ -61,6 +61,7 @@ mod tests {
             image: "images:debian/13".into(),
             nesting: false,
             users: vec![],
+            ..Default::default()
         }
     }
 

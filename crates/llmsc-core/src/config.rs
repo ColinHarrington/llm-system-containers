@@ -5,7 +5,12 @@
 use crate::error::Error;
 use crate::service::{Placement, Service};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
 
 /// Top-level llmsc configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,14 +71,32 @@ pub enum VmDriverKind {
     Proxmox,
 }
 
-/// An L2 system container (LLMSC).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// An L2 system container (LLMSC). Modeled on the Incus instance (`InstancesPost`): the
+/// declarative intent that renders to an Incus instance. We only ever create **unprivileged
+/// containers** — `type: container` and `security.privileged: false` are tool-fixed invariants
+/// (see `planning/research/incus-instance-inputs.md`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sandbox {
     pub name: String,
+    /// Image alias / source ref (e.g. `images:alpine/3.21`).
     pub image: String,
-    /// Allow nested rootless app containers (L3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Allow nested rootless app containers (L3) — sugar for `config["security.nesting"]=true`.
     #[serde(default)]
     pub nesting: bool,
+    /// Delete the instance when it stops.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ephemeral: bool,
+    /// Incus profiles to apply (ordered; later overrides earlier). Empty → Incus default.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<String>,
+    /// Instance-local Incus `config` keys (e.g. `limits.cpu`, `raw.idmap`, `cloud-init.*`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub config: BTreeMap<String, String>,
+    /// Instance-local Incus `devices` (name → {type, …keys}): workspace mounts, nics, …
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub devices: BTreeMap<String, BTreeMap<String, String>>,
     #[serde(default, rename = "user", skip_serializing_if = "Vec::is_empty")]
     pub users: Vec<User>,
 }
@@ -85,6 +108,21 @@ impl Sandbox {
             Some(u) => *u = user,
             None => self.users.push(user),
         }
+    }
+
+    /// The effective Incus `config` map for this sandbox: the invariants
+    /// (`security.privileged=false`), `security.nesting` from [`nesting`](Self::nesting), then the
+    /// instance-local [`config`](Self::config) overrides on top.
+    pub fn effective_config(&self) -> BTreeMap<String, String> {
+        let mut c = BTreeMap::new();
+        c.insert("security.privileged".to_string(), "false".to_string());
+        if self.nesting {
+            c.insert("security.nesting".to_string(), "true".to_string());
+        }
+        for (k, v) in &self.config {
+            c.insert(k.clone(), v.clone());
+        }
+        c
     }
 }
 
@@ -156,6 +194,7 @@ impl Config {
             image: image.to_string(),
             nesting,
             users: Vec::new(),
+            ..Default::default()
         });
         self.sandboxes.last_mut().unwrap()
     }
@@ -285,6 +324,7 @@ mod tests {
                         profile: None,
                     },
                 ],
+                ..Default::default()
             }],
             services: vec![],
         }
@@ -447,6 +487,7 @@ mod tests {
                 image,
                 nesting,
                 users,
+                ..Default::default()
             })
     }
 

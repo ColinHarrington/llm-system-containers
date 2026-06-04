@@ -115,8 +115,11 @@ export async function listSandboxes(): Promise<Sandbox[]> {
   await delay(120);
   return [...mockSandboxes];
 }
-export async function launchSandbox(name: string, image: string, nesting: boolean, operator: string): Promise<void> {
-  if (inTauri()) return invokeCmd<void>("sandbox_launch", { name, image, nesting, operator });
+export async function launchSandbox(
+  name: string, image: string, nesting: boolean, operator: string,
+  description = "", ephemeral = false,
+): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("sandbox_launch", { name, image, nesting, operator, description, ephemeral });
   await mockSteps([`Launching ${name}`, `Pulling ${image}`, `Creating human user '${operator}'`, "Sandbox ready"]);
   mockSandboxes = [
     ...mockSandboxes,

@@ -121,6 +121,8 @@
   let sbImage = $state("dev-ubuntu-24.04");
   let sbNesting = $state(true);
   let sbOperator = $state("");
+  let sbDescription = $state("");
+  let sbEphemeral = $state(false);
   let sbBusy = $state(false);
 
   // Prefill the human username with the operator default when the modal opens.
@@ -136,7 +138,7 @@
     sbBusy = true;
     showToast(`$ llmsc launch ${name} --image ${sbImage}`);
     try {
-      await launchSandbox(name, sbImage.trim(), sbNesting, sbOperator.trim());
+      await launchSandbox(name, sbImage.trim(), sbNesting, sbOperator.trim(), sbDescription.trim(), sbEphemeral);
       ui.newSandboxOpen = false;
       sbName = "";
       navigate("sandboxes");
@@ -328,10 +330,17 @@
           <option value="images:alpine/3.21">images:alpine/3.21 — minimal sandbox</option>
           <option value="base-debian-12">base-debian-12 — minimal</option>
         </select></div>
-      <div class="flex gap12" style="align-items:flex-start">
+      <div class="field mb16"><label for="sb-desc">Description <span class="hint">(optional)</span></label>
+        <input id="sb-desc" class="input" bind:value={sbDescription} placeholder="what this sandbox is for" /></div>
+      <div class="flex gap12 mb16" style="align-items:flex-start">
         <label class="switch"><input type="checkbox" bind:checked={sbNesting} /><span class="track"></span></label>
         <div><div class="strong small">Enable nested containers (L3)</div>
           <div class="hint">Rootless Docker/Podman inside the sandbox — no privileged DinD.</div></div>
+      </div>
+      <div class="flex gap12" style="align-items:flex-start">
+        <label class="switch"><input type="checkbox" bind:checked={sbEphemeral} /><span class="track"></span></label>
+        <div><div class="strong small">Ephemeral</div>
+          <div class="hint">Delete the sandbox automatically when it stops.</div></div>
       </div>
     {/snippet}
     {#snippet foot()}
