@@ -21,6 +21,7 @@ export const ui = $state({
   screen: "dashboard" as Screen,
   theme: initialTheme(),
   newSandboxOpen: false,
+  paletteOpen: false,
   steerAgent: null as AgentInfo | null,
   terminalTarget: null as string | null,
   toast: null as { msg: string; color: ToastColor; id: number } | null,

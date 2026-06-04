@@ -10,6 +10,7 @@
   import Progress from "./lib/Progress.svelte";
   import Toast from "./lib/Toast.svelte";
   import Terminal from "./lib/Terminal.svelte";
+  import CommandPalette from "./lib/CommandPalette.svelte";
   import Icon from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
   import {
@@ -49,14 +50,21 @@
   };
   $effect(() => {
     function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        ui.paletteOpen = !ui.paletteOpen;
+        return;
+      }
       if (e.key === "Escape") {
         ui.newSandboxOpen = false;
         ui.steerAgent = null;
         ui.terminalTarget = null;
+        ui.paletteOpen = false;
         return;
       }
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      if (e.key === "/") { e.preventDefault(); ui.paletteOpen = true; return; }
       if (NUM_NAV[e.key]) navigate(NUM_NAV[e.key]);
     }
     window.addEventListener("keydown", onKey);
@@ -197,11 +205,11 @@
         <div class="crumb">{title[1]}</div>
       </div>
       <div class="spacer"></div>
-      <div class="searchbox">
+      <button class="searchbox" onclick={() => (ui.paletteOpen = true)}>
         <Icon name="search" size={14} />
         <span>Search sandboxes, users, traces…</span>
-        <kbd>/</kbd>
-      </div>
+        <kbd>⌘K</kbd>
+      </button>
       <button class="iconbtn" title="Notifications" aria-label="Notifications"><Icon name="bell" /></button>
       <button class="iconbtn" title="Toggle theme" aria-label="Toggle theme" onclick={toggleTheme}>
         <Icon name={ui.theme === "dark" ? "sun" : "moon"} />
@@ -233,6 +241,7 @@
   <Progress />
   <Toast />
   <Terminal />
+  <CommandPalette />
 </div>
 
 {#if ui.newSandboxOpen}
@@ -287,8 +296,10 @@
     display: flex; align-items: center; gap: 8px;
     width: 280px; padding: 7px 10px; border-radius: var(--radius-sm);
     background: var(--card-2); border: 1px solid var(--border);
-    color: var(--text-3); font-size: 12px;
+    color: var(--text-3); font-size: 12px; font-family: inherit;
+    cursor: pointer; text-align: left;
   }
+  .searchbox:hover { border-color: var(--border-strong); }
   .searchbox span { flex: 1; }
   @media (max-width: 820px) { .searchbox { display: none; } }
 </style>
