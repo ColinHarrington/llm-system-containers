@@ -1,6 +1,20 @@
 // Bridge to llmsc-core. Inside the Tauri shell, calls the Rust commands; in a plain browser
 // (Vite dev / Vitest) returns mock data so the UI is developable without the native window.
-import type { Sandbox, ServiceEntry, VmStatus } from "./types";
+//
+// Operations that the backend implements (VM up/down, sandbox launch/rm, service enable/
+// provision, platform init, progress) are wired to real Tauri commands. Read-only views the
+// backend does not expose yet (agents, images, virtual keys, host resources, and the rich
+// per-sandbox metadata) return representative demo data in BOTH environments for now — they
+// are display-only and clearly marked here until the corresponding core APIs land.
+import type {
+  AgentInfo,
+  HostResources,
+  ImageInfo,
+  Sandbox,
+  ServiceEntry,
+  VirtualKey,
+  VmStatus,
+} from "./types";
 
 function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -48,15 +62,33 @@ async function mockSteps(steps: string[], each = 220): Promise<void> {
 
 // --- in-browser mock state (so the UI is interactive without the native shell) ---
 let mockSandboxes: Sandbox[] = [
-  { name: "web-agent-01", status: "Running", image: "images:alpine/3.21" },
-  { name: "ci-runner", status: "Running", image: "images:debian/12" },
-  { name: "scratch-01", status: "Stopped", image: "images:alpine/3.21" },
+  {
+    name: "web-agent-01", status: "Running", image: "dev-ubuntu-24.04", role: "workspace",
+    tags: ["unprivileged", "nesting on"], nested: 3, cpuCores: 2, memUsed: 3.1, memTotal: 4,
+    users: [{ initials: "aC", kind: "agent" }, { initials: "aX", kind: "aux" }, { initials: "op", kind: "human" }],
+  },
+  {
+    name: "ci-runner", status: "Running", image: "dev-ubuntu-24.04", role: "workspace",
+    tags: ["unprivileged", "nesting on"], nested: 4, cpuCores: 2, memUsed: 2.4, memTotal: 4,
+    users: [{ initials: "aC", kind: "agent" }, { initials: "op", kind: "human" }],
+  },
+  {
+    name: "data-pipeline", status: "Running", image: "data-tools", role: "workspace",
+    tags: ["unprivileged"], nested: 0, cpuCores: 1, memUsed: 1.8, memTotal: 2,
+    users: [{ initials: "aC", kind: "agent" }, { initials: "op", kind: "human" }],
+  },
+  {
+    name: "browser-bot", status: "Stopped", image: "browser-tools", role: "workspace",
+    tags: ["ephemeral"], nested: null, cpuCores: 1, memUsed: 0, memTotal: 2,
+    users: [{ initials: "aC", kind: "agent" }, { initials: "op", kind: "human" }],
+  },
 ];
 let mockServices: ServiceEntry[] = [
   { name: "litellm", description: "LLM proxy — agents use virtual keys", priority: "MVP", enabled: true },
-  { name: "phoenix", description: "LLM/agent observability — traces", priority: "MVP", enabled: false },
-  { name: "grafana", description: "Dashboards over metrics + logs", priority: "MVP", enabled: false },
+  { name: "phoenix", description: "LLM/agent observability — traces", priority: "MVP", enabled: true },
+  { name: "grafana", description: "Dashboards over metrics + logs", priority: "MVP", enabled: true },
   { name: "seaweedfs", description: "Durable shared storage", priority: "Core", enabled: false },
+  { name: "mitmproxy", description: "Network inspection / traffic capture", priority: "Core", enabled: false },
 ];
 
 // --- VM ---
@@ -71,7 +103,7 @@ export async function vmUp(): Promise<void> {
 }
 export async function vmDown(): Promise<void> {
   if (inTauri()) return invokeCmd<void>("vm_down");
-  await delay(200);
+  await mockSteps(["Stopping VM", "VM stopped"], 180);
 }
 
 // --- sandboxes ---
@@ -83,7 +115,15 @@ export async function listSandboxes(): Promise<Sandbox[]> {
 export async function launchSandbox(name: string, image: string, nesting: boolean): Promise<void> {
   if (inTauri()) return invokeCmd<void>("sandbox_launch", { name, image, nesting });
   await mockSteps([`Launching ${name}`, `Pulling ${image}`, "Configuring users", "Sandbox ready"]);
-  mockSandboxes = [...mockSandboxes, { name, status: "Running", image }];
+  mockSandboxes = [
+    ...mockSandboxes,
+    {
+      name, status: "Running", image, role: "workspace",
+      tags: nesting ? ["unprivileged", "nesting on"] : ["unprivileged"],
+      nested: nesting ? 0 : null, cpuCores: 2, memUsed: 0.4, memTotal: 4,
+      users: [{ initials: "aC", kind: "agent" }, { initials: "op", kind: "human" }],
+    },
+  ];
 }
 export async function removeSandbox(name: string): Promise<void> {
   if (inTauri()) return invokeCmd<void>("sandbox_rm", { name });
@@ -117,6 +157,67 @@ export async function provisionService(name: string): Promise<void> {
     "Starting LiteLLM",
     "LiteLLM deployed",
   ]);
+}
+
+// Display metadata for the Services screen cards (icon initials + brand color + placement).
+export interface ServiceMeta {
+  initials: string;
+  color: string;
+  placement: string;
+}
+export const SERVICE_META: Record<string, ServiceMeta> = {
+  litellm: { initials: "Li", color: "#6b5bd2", placement: "own L2 container" },
+  phoenix: { initials: "Ph", color: "#e06f3a", placement: "in L1 VM" },
+  grafana: { initials: "Gr", color: "#2a9d8f", placement: "in L1 VM" },
+  seaweedfs: { initials: "Sw", color: "#3a7de0", placement: "own L2 container" },
+  mitmproxy: { initials: "Mi", color: "#c0455a", placement: "own L2 container" },
+};
+
+// --- read-only demo views (no backend yet) ---
+export async function hostResources(): Promise<HostResources> {
+  await delay(80);
+  return { cpuUsed: 5.2, cpuTotal: 8, memUsed: 9.4, memTotal: 16, diskUsed: 34, diskTotal: 120 };
+}
+
+export async function listAgents(): Promise<AgentInfo[]> {
+  await delay(80);
+  return [
+    {
+      id: "agent-claude", name: "agent-claude", initials: "aC", kind: "agent",
+      sandbox: "web-agent-01", uid: 1001, model: "claude-opus-4-8", status: "working",
+      task: "Fix failing auth tests & open PR",
+    },
+    {
+      id: "agent-aux", name: "agent-aux", initials: "aX", kind: "aux",
+      sandbox: "ci-runner", uid: 1002, model: "claude-sonnet-4-6", status: "working",
+      task: "Review the open PR diff",
+    },
+    {
+      id: "agent-claude-dp", name: "agent-claude", initials: "aC", kind: "agent",
+      sandbox: "data-pipeline", uid: 1001, model: "claude-sonnet-4-6", status: "idle",
+      task: "Awaiting work",
+    },
+  ];
+}
+
+export async function listImages(): Promise<ImageInfo[]> {
+  await delay(80);
+  return [
+    { name: "dev-ubuntu-24.04", desc: "general dev workspace", base: "ubuntu 24.04", size: "1.4 GB", tooling: "node, python, podman, git", usedBy: "2 sandboxes", updated: "3d ago" },
+    { name: "browser-tools", desc: "headed browser automation", base: "dev-ubuntu-24.04", size: "2.1 GB", tooling: "+ chromium, playwright, Wayland", usedBy: "1 sandbox", updated: "5d ago" },
+    { name: "data-tools", desc: "data pipelines", base: "dev-ubuntu-24.04", size: "1.9 GB", tooling: "+ duckdb, pandas, polars", usedBy: "1 sandbox", updated: "1w ago" },
+    { name: "base-debian-12", desc: "minimal base", base: "debian 12", size: "320 MB", tooling: "core only", usedBy: "—", updated: "2w ago" },
+  ];
+}
+
+export async function listVirtualKeys(): Promise<VirtualKey[]> {
+  await delay(80);
+  return [
+    { key: "sk-vk-…a91f", assignedTo: "agent-claude @ web-agent-01", models: "opus, sonnet", budget: "$50 / day", used: "$0.86", status: "active" },
+    { key: "sk-vk-…77c2", assignedTo: "agent-aux @ ci-runner", models: "sonnet, haiku", budget: "$20 / day", used: "$3.40", status: "active" },
+    { key: "sk-vk-…1d08", assignedTo: "agent-claude @ data-pipeline", models: "sonnet", budget: "$20 / day", used: "$0.00", status: "idle" },
+    { key: "sk-vk-…be40", assignedTo: "browser-bot (stopped)", models: "haiku", budget: "$10 / day", used: "—", status: "revoked" },
+  ];
 }
 
 // --- first-run setup ---

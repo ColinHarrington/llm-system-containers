@@ -10,7 +10,11 @@ vi.mock("../lib/core", () => ({
   ]),
   setService: vi.fn(async () => {}),
   provisionService,
+  listVirtualKeys: vi.fn(async () => [
+    { key: "sk-vk-…a91f", assignedTo: "agent-claude", models: "opus", budget: "$50", used: "$0.86", status: "active" },
+  ]),
   DEPLOYABLE_SERVICES: new Set(["litellm"]),
+  SERVICE_META: { litellm: { initials: "Li", color: "#000", placement: "own L2 container" } },
 }));
 
 import Services from "./Services.svelte";

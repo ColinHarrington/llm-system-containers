@@ -1,0 +1,44 @@
+// Shared UI state (Svelte 5 runes module). Routing, theme, global modals, and a
+// `dataVersion` counter that screens read in their refresh effect so an action in one
+// place (e.g. launching a sandbox from the topbar) refreshes the others.
+import type { AgentInfo } from "./types";
+
+export type Screen = "dashboard" | "sandboxes" | "agent" | "services" | "images" | "wizard";
+
+function initialTheme(): "light" | "dark" {
+  if (typeof localStorage !== "undefined") {
+    const saved = localStorage.getItem("llmsc-theme");
+    if (saved === "light" || saved === "dark") return saved;
+  }
+  return "light";
+}
+
+export const ui = $state({
+  screen: "dashboard" as Screen,
+  theme: initialTheme(),
+  newSandboxOpen: false,
+  steerAgent: null as AgentInfo | null,
+  dataVersion: 0,
+});
+
+export function navigate(screen: Screen): void {
+  ui.screen = screen;
+}
+
+export function bump(): void {
+  ui.dataVersion++;
+}
+
+export function toggleTheme(): void {
+  ui.theme = ui.theme === "dark" ? "light" : "dark";
+  if (typeof localStorage !== "undefined") localStorage.setItem("llmsc-theme", ui.theme);
+}
+
+export const SCREEN_TITLES: Record<Screen, [string, string]> = {
+  dashboard: ["Home", "Overview of your VM, sandboxes and services"],
+  sandboxes: ["Sandboxes", "Your LLMSC workspaces (L2 system containers)"],
+  agent: ["Agent control", "Observe, interrupt and steer running agents"],
+  services: ["Services", "Shared infrastructure for your sandboxes"],
+  images: ["Images", "Base and custom sandbox images"],
+  wizard: ["Set up your environment", "First-run configuration"],
+};

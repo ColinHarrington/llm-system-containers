@@ -41,7 +41,7 @@
     right: 1rem;
     bottom: 1rem;
     width: 280px;
-    background: var(--surface);
+    background: var(--card);
     border: 1px solid var(--border);
     border-radius: 10px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -60,7 +60,7 @@
     margin-left: auto;
     border: none;
     background: transparent;
-    color: var(--muted, #888);
+    color: var(--text-3, #888);
     font-size: 1.1rem;
     line-height: 1;
     cursor: pointer;
@@ -74,7 +74,7 @@
     gap: 2px;
   }
   li {
-    color: var(--muted, #888);
+    color: var(--text-3, #888);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
