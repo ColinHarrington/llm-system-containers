@@ -242,8 +242,12 @@ pub fn parse_sandbox_networks(list_json: &str) -> Result<Vec<SandboxNetwork>> {
 pub struct ImageRecord {
     pub name: String,
     pub description: String,
+    /// Distro family (os) — e.g. "Debian", "Ubuntu" — used to group/sort the catalog.
+    pub flavor: String,
     pub base: String,
     pub arch: String,
+    /// "container" or "virtual-machine".
+    pub kind: String,
     pub size_bytes: u64,
     pub used_by: usize,
     pub uploaded: String,
@@ -253,6 +257,7 @@ pub struct ImageRecord {
 pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
     #[derive(serde::Deserialize)]
     struct RawAlias {
+        #[serde(default, deserialize_with = "null_default")]
         name: String,
     }
     #[derive(serde::Deserialize, Default)]
@@ -276,6 +281,8 @@ pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
         properties: RawProps,
         #[serde(default, deserialize_with = "null_default")]
         architecture: String,
+        #[serde(rename = "type", default, deserialize_with = "null_default")]
+        kind: String,
         #[serde(default, deserialize_with = "null_default")]
         size: u64,
         #[serde(default, deserialize_with = "null_default")]
@@ -294,9 +301,10 @@ pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
                 .map(|a| a.name.clone())
                 .filter(|n| !n.is_empty())
                 .unwrap_or_else(|| r.fingerprint.chars().take(12).collect());
-            let base = match (r.properties.os.as_str(), r.properties.release.as_str()) {
+            let os = r.properties.os.clone();
+            let base = match (os.as_str(), r.properties.release.as_str()) {
                 ("", "") => "—".to_string(),
-                (os, rel) => format!("{os} {rel}").trim().to_string(),
+                (o, rel) => format!("{o} {rel}").trim().to_string(),
             };
             let arch = if r.properties.architecture.is_empty() {
                 r.architecture
@@ -310,8 +318,10 @@ pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
                 } else {
                     r.properties.description
                 },
+                flavor: if os.is_empty() { "Other".to_string() } else { os },
                 base,
                 arch: if arch.is_empty() { "—".to_string() } else { arch },
+                kind: if r.kind.is_empty() { "container".to_string() } else { r.kind },
                 size_bytes: r.size,
                 used_by: r.used_by.len(),
                 uploaded: r.uploaded_at.chars().take(10).collect(), // YYYY-MM-DD

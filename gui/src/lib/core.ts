@@ -213,8 +213,8 @@ export async function listImages(): Promise<ImageInfo[]> {
   if (inTauri()) return invokeCmd<ImageInfo[]>("images");
   await delay(80);
   return [
-    { name: "dev-ubuntu-24.04", desc: "general dev workspace", base: "Ubuntu 24.04", arch: "amd64", size: "1.4 GB", usedBy: "2 sandboxes", updated: "2026-05-30" },
-    { name: "alpine/3.21", desc: "Alpinelinux 3.21 amd64", base: "Alpine 3.21", arch: "amd64", size: "3.5 MB", usedBy: "1 sandbox", updated: "2026-05-28" },
+    { name: "dev-ubuntu-24.04", desc: "general dev workspace", flavor: "Ubuntu", base: "Ubuntu 24.04", arch: "amd64", size: "1.4 GB", usedBy: "2 sandboxes", updated: "2026-05-30" },
+    { name: "alpine/3.21", desc: "Alpinelinux 3.21 amd64", flavor: "Alpine", base: "Alpine 3.21", arch: "amd64", size: "3.5 MB", usedBy: "1 sandbox", updated: "2026-05-28" },
   ];
 }
 
@@ -223,14 +223,16 @@ export async function listAvailableImages(): Promise<ImageInfo[]> {
   if (inTauri()) return invokeCmd<ImageInfo[]>("images_available");
   await delay(200);
   return [
-    { name: "alpine/3.21", desc: "Alpinelinux 3.21", base: "Alpine 3.21", arch: "amd64", size: "3.5 MB", usedBy: "—", updated: "2026-06-01" },
-    { name: "alpine/edge", desc: "Alpinelinux edge", base: "Alpine edge", arch: "amd64", size: "3.6 MB", usedBy: "—", updated: "2026-06-02" },
-    { name: "debian/12", desc: "Debian bookworm", base: "Debian 12", arch: "amd64", size: "92 MB", usedBy: "—", updated: "2026-06-01" },
-    { name: "debian/13", desc: "Debian trixie", base: "Debian 13", arch: "amd64", size: "95 MB", usedBy: "—", updated: "2026-06-01" },
-    { name: "ubuntu/24.04", desc: "Ubuntu noble", base: "Ubuntu 24.04", arch: "amd64", size: "180 MB", usedBy: "—", updated: "2026-06-01" },
-    { name: "ubuntu/22.04", desc: "Ubuntu jammy", base: "Ubuntu 22.04", arch: "amd64", size: "175 MB", usedBy: "—", updated: "2026-06-01" },
-    { name: "fedora/41", desc: "Fedora 41", base: "Fedora 41", arch: "amd64", size: "210 MB", usedBy: "—", updated: "2026-06-01" },
-    { name: "archlinux/current", desc: "Arch Linux", base: "Archlinux current", arch: "amd64", size: "320 MB", usedBy: "—", updated: "2026-06-02" },
+    { name: "alpine/3.21", desc: "Alpinelinux 3.21", flavor: "Alpine", base: "Alpine 3.21", arch: "amd64", size: "3.5 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "alpine/edge", desc: "Alpinelinux edge", flavor: "Alpine", base: "Alpine edge", arch: "amd64", size: "3.6 MB", usedBy: "—", updated: "2026-06-02" },
+    { name: "alpine/3.21", desc: "Alpinelinux 3.21", flavor: "Alpine", base: "Alpine 3.21", arch: "arm64", size: "3.4 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "debian/12", desc: "Debian bookworm", flavor: "Debian", base: "Debian 12", arch: "amd64", size: "92 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "debian/13", desc: "Debian trixie", flavor: "Debian", base: "Debian 13", arch: "amd64", size: "95 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "debian/12", desc: "Debian bookworm", flavor: "Debian", base: "Debian 12", arch: "arm64", size: "90 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "ubuntu/24.04", desc: "Ubuntu noble", flavor: "Ubuntu", base: "Ubuntu 24.04", arch: "amd64", size: "180 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "ubuntu/22.04", desc: "Ubuntu jammy", flavor: "Ubuntu", base: "Ubuntu 22.04", arch: "amd64", size: "175 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "fedora/41", desc: "Fedora 41", flavor: "Fedora", base: "Fedora 41", arch: "amd64", size: "210 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "archlinux/current", desc: "Arch Linux", flavor: "Archlinux", base: "Archlinux current", arch: "amd64", size: "320 MB", usedBy: "—", updated: "2026-06-02" },
   ];
 }
 

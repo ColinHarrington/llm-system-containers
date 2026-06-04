@@ -272,6 +272,7 @@ fn networking() -> Result<NetworkingDto, String> {
 struct ImageDto {
     name: String,
     desc: String,
+    flavor: String,
     base: String,
     arch: String,
     size: String,
@@ -283,6 +284,7 @@ fn to_image_dto(i: llmsc_core::incus::ImageRecord) -> ImageDto {
     ImageDto {
         name: i.name,
         desc: i.description,
+        flavor: i.flavor,
         base: i.base,
         arch: i.arch,
         size: fmt_mem(i.size_bytes),
@@ -295,23 +297,30 @@ fn to_image_dto(i: llmsc_core::incus::ImageRecord) -> ImageDto {
     }
 }
 
+/// Container images only — sandboxes are system containers, so virtual-machine images are
+/// never launchable here and are excluded.
+fn container_images(imgs: Vec<llmsc_core::incus::ImageRecord>) -> Vec<ImageDto> {
+    imgs.into_iter()
+        .filter(|i| i.kind != "virtual-machine")
+        .map(to_image_dto)
+        .collect()
+}
+
 /// Images cached locally in the VM (base distros pulled on first use + custom builds).
 #[tauri::command]
 fn images() -> Result<Vec<ImageDto>, String> {
     let runner = SystemRunner;
     let incus = CliIncus::new(vm_name(), &runner);
-    let imgs = incus.images().map_err(|e| e.to_string())?;
-    Ok(imgs.into_iter().map(to_image_dto).collect())
+    Ok(container_images(incus.images().map_err(|e| e.to_string())?))
 }
 
-/// All images available from the `images:` remote catalog. Hits the network and can be large —
-/// the GUI fetches this on demand when the user switches to the "All available" filter.
+/// All container images available from the `images:` remote catalog. Hits the network and can be
+/// large — the GUI fetches this on demand when the user switches to the "All available" filter.
 #[tauri::command]
 fn images_available() -> Result<Vec<ImageDto>, String> {
     let runner = SystemRunner;
     let incus = CliIncus::new(vm_name(), &runner);
-    let imgs = incus.images_remote("images").map_err(|e| e.to_string())?;
-    Ok(imgs.into_iter().map(to_image_dto).collect())
+    Ok(container_images(incus.images_remote("images").map_err(|e| e.to_string())?))
 }
 
 #[derive(Serialize)]

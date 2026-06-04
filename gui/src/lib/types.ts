@@ -44,6 +44,7 @@ export interface AgentInfo {
 export interface ImageInfo {
   name: string;
   desc: string;
+  flavor: string;
   base: string;
   arch: string;
   size: string;
