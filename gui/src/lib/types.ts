@@ -45,8 +45,8 @@ export interface ImageInfo {
   name: string;
   desc: string;
   base: string;
+  arch: string;
   size: string;
-  tooling: string;
   usedBy: string;
   updated: string;
 }

@@ -213,10 +213,24 @@ export async function listImages(): Promise<ImageInfo[]> {
   if (inTauri()) return invokeCmd<ImageInfo[]>("images");
   await delay(80);
   return [
-    { name: "dev-ubuntu-24.04", desc: "general dev workspace", base: "ubuntu 24.04", size: "1.4 GB", tooling: "node, python, podman, git", usedBy: "2 sandboxes", updated: "3d ago" },
-    { name: "browser-tools", desc: "headed browser automation", base: "dev-ubuntu-24.04", size: "2.1 GB", tooling: "+ chromium, playwright, Wayland", usedBy: "1 sandbox", updated: "5d ago" },
-    { name: "data-tools", desc: "data pipelines", base: "dev-ubuntu-24.04", size: "1.9 GB", tooling: "+ duckdb, pandas, polars", usedBy: "1 sandbox", updated: "1w ago" },
-    { name: "base-debian-12", desc: "minimal base", base: "debian 12", size: "320 MB", tooling: "core only", usedBy: "—", updated: "2w ago" },
+    { name: "dev-ubuntu-24.04", desc: "general dev workspace", base: "Ubuntu 24.04", arch: "amd64", size: "1.4 GB", usedBy: "2 sandboxes", updated: "2026-05-30" },
+    { name: "alpine/3.21", desc: "Alpinelinux 3.21 amd64", base: "Alpine 3.21", arch: "amd64", size: "3.5 MB", usedBy: "1 sandbox", updated: "2026-05-28" },
+  ];
+}
+
+// The full remote catalog (`images:`). Large + network-bound → fetched on demand by the screen.
+export async function listAvailableImages(): Promise<ImageInfo[]> {
+  if (inTauri()) return invokeCmd<ImageInfo[]>("images_available");
+  await delay(200);
+  return [
+    { name: "alpine/3.21", desc: "Alpinelinux 3.21", base: "Alpine 3.21", arch: "amd64", size: "3.5 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "alpine/edge", desc: "Alpinelinux edge", base: "Alpine edge", arch: "amd64", size: "3.6 MB", usedBy: "—", updated: "2026-06-02" },
+    { name: "debian/12", desc: "Debian bookworm", base: "Debian 12", arch: "amd64", size: "92 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "debian/13", desc: "Debian trixie", base: "Debian 13", arch: "amd64", size: "95 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "ubuntu/24.04", desc: "Ubuntu noble", base: "Ubuntu 24.04", arch: "amd64", size: "180 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "ubuntu/22.04", desc: "Ubuntu jammy", base: "Ubuntu 22.04", arch: "amd64", size: "175 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "fedora/41", desc: "Fedora 41", base: "Fedora 41", arch: "amd64", size: "210 MB", usedBy: "—", updated: "2026-06-01" },
+    { name: "archlinux/current", desc: "Arch Linux", base: "Archlinux current", arch: "amd64", size: "320 MB", usedBy: "—", updated: "2026-06-02" },
   ];
 }
 

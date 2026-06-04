@@ -225,18 +225,19 @@ pub fn parse_sandbox_networks(list_json: &str) -> Result<Vec<SandboxNetwork>> {
         .collect())
 }
 
-/// A locally-available Incus image (base distro or custom build).
+/// An Incus image — either locally cached (base/custom) or from a remote catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageRecord {
     pub name: String,
     pub description: String,
     pub base: String,
+    pub arch: String,
     pub size_bytes: u64,
     pub used_by: usize,
     pub uploaded: String,
 }
 
-/// Parse `incus image list --format json` into image records.
+/// Parse `incus image list [remote:] --format json` into image records.
 pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
     #[derive(serde::Deserialize)]
     struct RawAlias {
@@ -250,6 +251,8 @@ pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
         os: String,
         #[serde(default)]
         release: String,
+        #[serde(default)]
+        architecture: String,
     }
     #[derive(serde::Deserialize)]
     struct RawImg {
@@ -259,6 +262,8 @@ pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
         aliases: Vec<RawAlias>,
         #[serde(default)]
         properties: RawProps,
+        #[serde(default)]
+        architecture: String,
         #[serde(default)]
         size: u64,
         #[serde(default)]
@@ -281,6 +286,11 @@ pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
                 ("", "") => "—".to_string(),
                 (os, rel) => format!("{os} {rel}").trim().to_string(),
             };
+            let arch = if r.properties.architecture.is_empty() {
+                r.architecture
+            } else {
+                r.properties.architecture
+            };
             ImageRecord {
                 name,
                 description: if r.properties.description.is_empty() {
@@ -289,6 +299,7 @@ pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
                     r.properties.description
                 },
                 base,
+                arch: if arch.is_empty() { "—".to_string() } else { arch },
                 size_bytes: r.size,
                 used_by: r.used_by.len(),
                 uploaded: r.uploaded_at.chars().take(10).collect(), // YYYY-MM-DD
@@ -441,11 +452,22 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         Ok(sandboxes)
     }
 
-    /// Locally-available Incus images (base distros + custom builds).
+    /// Images cached locally in the VM (base distros pulled on first use + custom builds).
     pub fn images(&self) -> Result<Vec<ImageRecord>> {
         let o = self.incus_run(&["image", "list", "--format", "json"])?;
         if !o.ok() {
             return Err(Error::Incus(format!("image list: {}", o.stderr.trim())));
+        }
+        parse_images(&o.stdout)
+    }
+
+    /// All images available from a remote catalog (e.g. `images:`). Hits the network and can
+    /// return a large list — callers should fetch this on demand, not on every refresh.
+    pub fn images_remote(&self, remote: &str) -> Result<Vec<ImageRecord>> {
+        let target = format!("{remote}:");
+        let o = self.incus_run(&["image", "list", &target, "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("image list {target}: {}", o.stderr.trim())));
         }
         parse_images(&o.stdout)
     }
@@ -622,7 +644,7 @@ mod tests {
     fn parse_images_extracts_alias_base_and_usage() {
         let json = r#"[
           {"fingerprint":"abc123def456789","aliases":[{"name":"dev-ubuntu-24.04"}],
-           "properties":{"description":"Ubuntu 24.04 LTS","os":"Ubuntu","release":"24.04"},
+           "properties":{"description":"Ubuntu 24.04 LTS","os":"Ubuntu","release":"24.04","architecture":"amd64"},
            "size":1503238553,"uploaded_at":"2026-05-30T10:00:00Z",
            "used_by":["/1.0/instances/web-agent-01","/1.0/instances/ci-runner"]},
           {"fingerprint":"deadbeefcafebabe1234","aliases":[],
@@ -632,6 +654,7 @@ mod tests {
         assert_eq!(imgs.len(), 2);
         assert_eq!(imgs[0].name, "dev-ubuntu-24.04");
         assert_eq!(imgs[0].base, "Ubuntu 24.04");
+        assert_eq!(imgs[0].arch, "amd64");
         assert_eq!(imgs[0].used_by, 2);
         assert_eq!(imgs[0].uploaded, "2026-05-30");
         // No alias → falls back to the (truncated) fingerprint.
