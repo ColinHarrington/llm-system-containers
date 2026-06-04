@@ -13,8 +13,11 @@
     "windows": [
       {
         "title": "Little Linux Managed System Containers",
-        "width": 800,
-        "height": 600,
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1040,
+        "minHeight": 680,
+        "center": true,
         "resizable": true,
         "fullscreen": false
       }
