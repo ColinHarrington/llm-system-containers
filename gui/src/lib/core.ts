@@ -13,6 +13,39 @@ async function invokeCmd<T>(cmd: string, args?: Record<string, unknown>): Promis
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// --- progress events ---
+// Long operations (vm bring-up, sandbox launch, platform init) stream step updates. In the Tauri
+// shell these arrive as `progress` events from the Rust EventReporter; in the browser the mock
+// paths feed the same handlers so the UI is developable without the native window.
+type ProgressHandler = (msg: string) => void;
+const progressHandlers = new Set<ProgressHandler>();
+let tauriListening = false;
+
+export function onProgress(cb: ProgressHandler): () => void {
+  progressHandlers.add(cb);
+  if (inTauri() && !tauriListening) {
+    tauriListening = true;
+    void (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      await listen<{ msg: string }>("progress", (e) => {
+        for (const h of progressHandlers) h(e.payload.msg);
+      });
+    })();
+  }
+  return () => progressHandlers.delete(cb);
+}
+
+function emitProgress(msg: string): void {
+  for (const h of progressHandlers) h(msg);
+}
+
+async function mockSteps(steps: string[], each = 220): Promise<void> {
+  for (const s of steps) {
+    emitProgress(s);
+    await delay(each);
+  }
+}
+
 // --- in-browser mock state (so the UI is interactive without the native shell) ---
 let mockSandboxes: Sandbox[] = [
   { name: "web-agent-01", status: "Running", image: "images:alpine/3.21" },
@@ -34,7 +67,7 @@ export async function vmStatus(): Promise<VmStatus> {
 }
 export async function vmUp(): Promise<void> {
   if (inTauri()) return invokeCmd<void>("vm_up");
-  await delay(300);
+  await mockSteps(["Creating VM", "Starting VM", "Installing Incus", "Initializing Incus", "VM ready"]);
 }
 export async function vmDown(): Promise<void> {
   if (inTauri()) return invokeCmd<void>("vm_down");
@@ -49,7 +82,7 @@ export async function listSandboxes(): Promise<Sandbox[]> {
 }
 export async function launchSandbox(name: string, image: string, nesting: boolean): Promise<void> {
   if (inTauri()) return invokeCmd<void>("sandbox_launch", { name, image, nesting });
-  await delay(250);
+  await mockSteps([`Launching ${name}`, `Pulling ${image}`, "Configuring users", "Sandbox ready"]);
   mockSandboxes = [...mockSandboxes, { name, status: "Running", image }];
 }
 export async function removeSandbox(name: string): Promise<void> {
@@ -81,5 +114,12 @@ export interface SetupConfig {
 
 export async function createPlatform(cfg: SetupConfig): Promise<void> {
   if (inTauri()) return invokeCmd<void>("platform_init", { cfg });
-  await delay(400);
+  await mockSteps([
+    "Wrote configuration",
+    "Creating VM",
+    "Starting VM",
+    "Installing Incus",
+    "Initializing Incus",
+    "Platform ready",
+  ]);
 }

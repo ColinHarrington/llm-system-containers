@@ -3,6 +3,7 @@
   import Sandboxes from "./screens/Sandboxes.svelte";
   import Services from "./screens/Services.svelte";
   import Wizard from "./screens/Wizard.svelte";
+  import Progress from "./lib/Progress.svelte";
 
   type Screen = "dashboard" | "sandboxes" | "services" | "setup";
   const nav: { id: Screen; label: string }[] = [
@@ -40,6 +41,8 @@
       <Wizard />
     {/if}
   </main>
+
+  <Progress />
 </div>
 
 <style>

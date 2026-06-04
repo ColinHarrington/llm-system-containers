@@ -8,10 +8,28 @@ use llmsc_core::bootstrap::IncusBootstrap;
 use llmsc_core::config::{self, Config, Sandbox};
 use llmsc_core::incus::{CliIncus, IncusClient, InstanceStatus};
 use llmsc_core::process::SystemRunner;
-use llmsc_core::progress::SilentReporter;
+use llmsc_core::progress::Reporter;
 use llmsc_core::service;
 use llmsc_core::vm::{LimaVmDriver, VmDriver, VmStatus};
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
+
+/// Payload for the `progress` event the GUI listens on.
+#[derive(Clone, Serialize)]
+struct ProgressPayload {
+    msg: String,
+}
+
+/// A [`Reporter`] that forwards each step to the frontend as a `progress` Tauri event.
+struct EventReporter {
+    app: AppHandle,
+}
+
+impl Reporter for EventReporter {
+    fn step(&self, msg: &str) {
+        let _ = self.app.emit("progress", ProgressPayload { msg: msg.to_string() });
+    }
+}
 
 fn vm_name() -> String {
     Config::default().vm.name
@@ -37,14 +55,15 @@ fn vm_status() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn vm_up() -> Result<(), String> {
+fn vm_up(app: AppHandle) -> Result<(), String> {
+    let reporter = EventReporter { app };
     let cfg = Config::default();
     let name = cfg.vm.name.clone();
     LimaVmDriver::new(cfg.vm, SystemRunner)
-        .up(&SilentReporter)
+        .up(&reporter)
         .map_err(|e| e.to_string())?;
     IncusBootstrap::new(name, &SystemRunner)
-        .run(&SilentReporter)
+        .run(&reporter)
         .map_err(|e| e.to_string())
 }
 
@@ -80,11 +99,12 @@ fn sandbox_list() -> Result<Vec<SandboxDto>, String> {
 }
 
 #[tauri::command]
-fn sandbox_launch(name: String, image: String, nesting: bool) -> Result<(), String> {
+fn sandbox_launch(app: AppHandle, name: String, image: String, nesting: bool) -> Result<(), String> {
+    let reporter = EventReporter { app };
     let runner = SystemRunner;
     let incus = CliIncus::new(vm_name(), &runner);
     let spec = Sandbox { name, image, nesting, users: vec![] };
-    incus.launch(&spec, &SilentReporter).map_err(|e| e.to_string())
+    incus.launch(&spec, &reporter).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -153,7 +173,8 @@ struct SetupCfg {
 }
 
 #[tauri::command]
-fn platform_init(cfg: SetupCfg) -> Result<(), String> {
+fn platform_init(app: AppHandle, cfg: SetupCfg) -> Result<(), String> {
+    let reporter = EventReporter { app };
     let _ = cfg.default_deny_egress; // networking policy is M4 (deferred); accepted for now.
     let mut c = Config::default();
     c.vm.cpus = cfg.cpus;
@@ -165,12 +186,13 @@ fn platform_init(cfg: SetupCfg) -> Result<(), String> {
         }
     }
     c.save(&config::user_config_path()).map_err(|e| e.to_string())?;
+    reporter.step("Wrote configuration");
     let name = c.vm.name.clone();
     LimaVmDriver::new(c.vm, SystemRunner)
-        .up(&SilentReporter)
+        .up(&reporter)
         .map_err(|e| e.to_string())?;
     IncusBootstrap::new(name, &SystemRunner)
-        .run(&SilentReporter)
+        .run(&reporter)
         .map_err(|e| e.to_string())
 }
 
