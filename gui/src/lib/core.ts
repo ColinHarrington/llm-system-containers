@@ -142,6 +142,18 @@ export async function addAgent(sandbox: string, name: string, profile: string): 
   await mockSteps([`Adding agent '${name}' to ${sandbox}${suffix}`, `Agent '${name}' added${suffix}`], 200);
 }
 
+// Remove an agent (its Linux user) from a sandbox.
+export async function removeAgent(sandbox: string, name: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("remove_agent", { sandbox, name });
+  await mockSteps([`Removing agent '${name}' from ${sandbox}`, `Agent '${name}' removed`], 200);
+}
+
+// Reassign an agent's profile (config-only; not yet enforced).
+export async function setAgentProfile(sandbox: string, name: string, profile: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("set_agent_profile", { sandbox, name, profile });
+  await delay(80);
+}
+
 // The shipped agent-profile archetypes (definition layer).
 export async function listProfiles(): Promise<ProfileInfo[]> {
   if (inTauri()) return invokeCmd<ProfileInfo[]>("profiles");

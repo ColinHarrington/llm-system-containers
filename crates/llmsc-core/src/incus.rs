@@ -556,6 +556,19 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         Ok(())
     }
 
+    /// Remove a Linux user (and its home) from a sandbox. Errors if the user still exists after.
+    pub fn remove_user(&self, sandbox: &str, name: &str) -> Result<()> {
+        let script = format!(
+            "userdel -r {n} 2>/dev/null || deluser --remove-home {n} 2>/dev/null || deluser {n} 2>/dev/null || true; ! id {n} >/dev/null 2>&1",
+            n = name
+        );
+        let o = self.incus_run(&["exec", sandbox, "--", "sh", "-c", &script])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("removing user {name} (still present?)")));
+        }
+        Ok(())
+    }
+
     /// Build a custom image via the publish-from-container flow: launch a throwaway builder from
     /// `base`, run `setup` inside it, then `incus publish` it under `alias`. The builder is removed
     /// on success or failure. Progress streams via `reporter`.
@@ -724,6 +737,16 @@ mod tests {
         let c = CliIncus::new("llmsc", &r);
         c.add_user("web-agent-01", "colin", true).unwrap();
         assert!(r.called_with("usermod")); // best-effort sudo/wheel for the human
+    }
+
+    #[test]
+    fn remove_user_deletes_linux_user() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.remove_user("web-agent-01", "agent-claude").unwrap();
+        assert!(r.called_with("exec"));
+        assert!(r.called_with("userdel"));
+        assert!(r.called_with("agent-claude"));
     }
 
     #[test]

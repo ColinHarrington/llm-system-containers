@@ -1,16 +1,42 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui, navigate, bump, openTerminal } from "../lib/store.svelte";
-  import { topology, removeSandbox } from "../lib/core";
-  import type { TopoSandbox } from "../lib/types";
+  import { ui, navigate, bump, openTerminal, showToast } from "../lib/store.svelte";
+  import { topology, removeSandbox, listProfiles, removeAgent, setAgentProfile } from "../lib/core";
+  import type { ProfileInfo, TopoSandbox } from "../lib/types";
 
   let all = $state<TopoSandbox[]>([]);
+  let profiles = $state<ProfileInfo[]>([]);
   let busy = $state(false);
+  let userBusy = $state<string | null>(null);
 
   $effect(() => {
     ui.dataVersion;
     void (async () => { all = await topology(); })();
   });
+  $effect(() => {
+    void listProfiles().then((p) => (profiles = p));
+  });
+
+  async function changeProfile(agent: string, profile: string) {
+    if (!sb) return;
+    userBusy = agent;
+    try {
+      await setAgentProfile(sb.name, agent, profile);
+      showToast(`${agent}: profile → ${profile || "none"}`, "ok");
+      bump();
+    } finally { userBusy = null; }
+  }
+
+  async function removeUser(agent: string) {
+    if (!sb) return;
+    userBusy = agent;
+    showToast(`$ llmsc agent rm ${agent}@${sb.name}`);
+    try {
+      await removeAgent(sb.name, agent);
+      showToast(`Agent '${agent}' removed`, "ok");
+      bump();
+    } finally { userBusy = null; }
+  }
 
   const sb = $derived(all.find((s) => s.name === ui.selectedSandbox) ?? null);
   const initials = (name: string) => name.replace(/^agent-/, "").slice(0, 2).toUpperCase();
@@ -80,8 +106,23 @@
                 <tr>
                   <td><div class="flex gap8"><div class="avatar {u.kind === 'human' ? 'human' : 'agent'} sm">{initials(u.name)}</div><span class="mono small strong" style="color:var(--text)">{u.name}</span></div></td>
                   <td>{#if u.kind === "human"}<span class="pill">human</span>{:else}<span class="pill accent">agent</span>{/if}</td>
-                  <td>{#if u.profile}<span class="tag mono">{u.profile}</span>{:else}<span class="muted small">—</span>{/if}</td>
-                  <td style="text-align:right"><button class="btn sm" onclick={() => openTerminal(`${u.name}@${sb.name}`)}><Icon name="terminal" size={13} /></button></td>
+                  <td>
+                    {#if u.kind === "human"}
+                      <span class="muted small">—</span>
+                    {:else}
+                      <select class="input prof" value={u.profile ?? ""} disabled={userBusy === u.name}
+                        onchange={(e) => changeProfile(u.name, (e.currentTarget as HTMLSelectElement).value)}>
+                        <option value="">none</option>
+                        {#each profiles as p}<option value={p.name}>{p.name}</option>{/each}
+                      </select>
+                    {/if}
+                  </td>
+                  <td style="text-align:right; white-space:nowrap">
+                    <button class="btn sm" title="Open shell" onclick={() => openTerminal(`${u.name}@${sb.name}`)}><Icon name="terminal" size={13} /></button>
+                    {#if u.kind !== "human"}
+                      <button class="btn sm danger" title="Remove agent" onclick={() => removeUser(u.name)} disabled={userBusy === u.name}><Icon name="x" size={13} /></button>
+                    {/if}
+                  </td>
                 </tr>
               {/each}
             </tbody>
@@ -97,4 +138,6 @@
 <style>
   .hico { width: 44px; height: 44px; border-radius: 11px; background: var(--accent-dim); color: var(--accent-text); display: grid; place-items: center; flex: none; }
   .hico.off { background: var(--card-2); color: var(--text-3); border: 1px solid var(--border); }
+  .prof { width: auto; padding: 4px 8px; font-size: 12px; }
+  .btn.sm + .btn.sm { margin-left: 4px; }
 </style>

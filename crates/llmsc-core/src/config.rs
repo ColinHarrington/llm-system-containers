@@ -171,6 +171,18 @@ impl Config {
         }
     }
 
+    /// Remove a user from a declared sandbox. Returns true if it was present.
+    pub fn remove_sandbox_user(&mut self, sandbox: &str, name: &str) -> bool {
+        match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
+            Some(s) => {
+                let before = s.users.len();
+                s.users.retain(|u| u.name != name);
+                s.users.len() != before
+            }
+            None => false,
+        }
+    }
+
     /// Remove a declared sandbox. Returns true if it was present.
     pub fn remove_sandbox(&mut self, name: &str) -> bool {
         let before = self.sandboxes.len();
@@ -358,6 +370,10 @@ mod tests {
         assert_eq!(sb.users[1].profile.as_deref(), Some("tester"));
         // Unknown sandbox -> no-op false.
         assert!(!c.set_sandbox_user("nope", User { name: "x".into(), role: UserRole::Agent, profile: None }));
+        // Remove an agent user.
+        assert!(c.remove_sandbox_user("web-agent-01", "agent-claude"));
+        assert_eq!(c.sandbox("web-agent-01").unwrap().users.len(), 1);
+        assert!(!c.remove_sandbox_user("web-agent-01", "agent-claude")); // already gone
         assert!(c.remove_sandbox("web-agent-01"));
         assert!(c.sandbox("web-agent-01").is_none());
     }

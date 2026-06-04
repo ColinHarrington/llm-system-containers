@@ -188,6 +188,34 @@ fn add_agent(app: AppHandle, sandbox: String, name: String, profile: String) -> 
     Ok(())
 }
 
+/// Remove an agent (its Linux user) from a sandbox, and drop it from config.
+#[tauri::command]
+fn remove_agent(app: AppHandle, sandbox: String, name: String) -> Result<(), String> {
+    let reporter = EventReporter { app };
+    reporter.step(&format!("Removing agent '{name}' from {sandbox}"));
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    incus.remove_user(&sandbox, &name).map_err(|e| e.to_string())?;
+    let mut cfg = load_user_config().unwrap_or_default();
+    if cfg.remove_sandbox_user(&sandbox, &name) {
+        let _ = cfg.save(&config::user_config_path());
+    }
+    reporter.step(&format!("Agent '{name}' removed"));
+    Ok(())
+}
+
+/// Reassign an agent's profile (config only — profiles are presets, not yet enforced).
+#[tauri::command]
+fn set_agent_profile(sandbox: String, name: String, profile: String) -> Result<(), String> {
+    let mut cfg = load_user_config().unwrap_or_default();
+    let prof = if profile.is_empty() { None } else { Some(profile) };
+    let user = User { name, role: UserRole::Agent, profile: prof };
+    if cfg.set_sandbox_user(&sandbox, user) {
+        cfg.save(&config::user_config_path()).map_err(|e| e.to_string())
+    } else {
+        Err(format!("sandbox '{sandbox}' is not config-managed"))
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProfileDto {
@@ -566,6 +594,8 @@ pub fn run() {
             sandbox_rm,
             operator_default,
             add_agent,
+            remove_agent,
+            set_agent_profile,
             profiles,
             topology,
             host_resources,
