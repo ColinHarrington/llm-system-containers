@@ -69,3 +69,17 @@ export async function setService(name: string, enabled: boolean): Promise<void> 
   await delay(120);
   mockServices = mockServices.map((s) => (s.name === name ? { ...s, enabled } : s));
 }
+
+// --- first-run setup ---
+export interface SetupConfig {
+  cpus: number;
+  memoryGib: number;
+  diskGib: number;
+  services: string[];
+  defaultDenyEgress: boolean;
+}
+
+export async function createPlatform(cfg: SetupConfig): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("platform_init", { cfg });
+  await delay(400);
+}

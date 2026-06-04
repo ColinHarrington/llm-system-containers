@@ -2,12 +2,14 @@
   import Dashboard from "./screens/Dashboard.svelte";
   import Sandboxes from "./screens/Sandboxes.svelte";
   import Services from "./screens/Services.svelte";
+  import Wizard from "./screens/Wizard.svelte";
 
-  type Screen = "dashboard" | "sandboxes" | "services";
+  type Screen = "dashboard" | "sandboxes" | "services" | "setup";
   const nav: { id: Screen; label: string }[] = [
     { id: "dashboard", label: "Dashboard" },
     { id: "sandboxes", label: "Sandboxes" },
     { id: "services", label: "Services" },
+    { id: "setup", label: "Setup" },
   ];
   let screen = $state<Screen>("dashboard");
 </script>
@@ -34,6 +36,8 @@
       <Sandboxes />
     {:else if screen === "services"}
       <Services />
+    {:else if screen === "setup"}
+      <Wizard />
     {/if}
   </main>
 </div>
