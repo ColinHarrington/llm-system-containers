@@ -6,6 +6,7 @@
 
 use llmsc_core::bootstrap::IncusBootstrap;
 use llmsc_core::config::{self, Config, Sandbox};
+use llmsc_core::deploy::LiteLlmDeployer;
 use llmsc_core::incus::{CliIncus, IncusClient, InstanceStatus};
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
@@ -160,6 +161,20 @@ fn service_disable(name: String) -> Result<(), String> {
     cfg.save(&config::user_config_path()).map_err(|e| e.to_string())
 }
 
+/// Provision (stand up) a single enabled service in the VM. Only services with a deployer are
+/// supported; others return an error. Progress streams to the GUI via the `progress` event.
+#[tauri::command]
+fn service_up(app: AppHandle, name: String) -> Result<(), String> {
+    let reporter = EventReporter { app };
+    let vm = vm_name();
+    match name.as_str() {
+        "litellm" => LiteLlmDeployer::new(vm, &SystemRunner)
+            .deploy(&reporter)
+            .map_err(|e| e.to_string()),
+        other => Err(format!("no deployer yet for '{other}'")),
+    }
+}
+
 #[derive(Deserialize)]
 struct SetupCfg {
     cpus: u32,
@@ -219,6 +234,7 @@ pub fn run() {
             service_list,
             service_enable,
             service_disable,
+            service_up,
             platform_init
         ])
         .run(tauri::generate_context!())

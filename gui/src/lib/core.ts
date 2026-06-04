@@ -103,6 +103,22 @@ export async function setService(name: string, enabled: boolean): Promise<void> 
   mockServices = mockServices.map((s) => (s.name === name ? { ...s, enabled } : s));
 }
 
+// Services that have a deployer in src-tauri (can be provisioned, not just toggled in config).
+export const DEPLOYABLE_SERVICES = new Set(["litellm"]);
+
+export async function provisionService(name: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("service_up", { name });
+  await mockSteps([
+    "Creating LiteLLM service container",
+    "Installing Python (apt)",
+    "Creating virtualenv",
+    "Installing LiteLLM 1.87.0 (pip, pinned)",
+    "Writing config + systemd unit",
+    "Starting LiteLLM",
+    "LiteLLM deployed",
+  ]);
+}
+
 // --- first-run setup ---
 export interface SetupConfig {
   cpus: number;
