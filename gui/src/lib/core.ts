@@ -229,6 +229,7 @@ export const TOOL_LABELS: Record<string, string> = {
 };
 
 export async function topology(): Promise<TopoSandbox[]> {
+  if (inTauri()) return invokeCmd<TopoSandbox[]>("topology");
   await delay(80);
   return [
     {

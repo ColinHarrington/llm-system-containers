@@ -117,6 +117,75 @@ fn sandbox_rm(name: String) -> Result<(), String> {
 }
 
 #[derive(Serialize)]
+struct TopoAgentDto {
+    name: String,
+    kind: String,
+    state: String,
+    action: String,
+    tools: Vec<String>,
+    active: Option<String>,
+}
+
+#[derive(Serialize)]
+struct TopoSandboxDto {
+    name: String,
+    image: String,
+    status: String,
+    l3: bool,
+    cpu: String,
+    mem: String,
+    agents: Vec<TopoAgentDto>,
+}
+
+fn fmt_mem(bytes: u64) -> String {
+    if bytes == 0 {
+        return "—".to_string();
+    }
+    let mb = bytes as f64 / 1024.0 / 1024.0;
+    if mb >= 1024.0 {
+        format!("{:.1} GB", mb / 1024.0)
+    } else {
+        format!("{mb:.0} MB")
+    }
+}
+
+/// Real topology: sandboxes (services excluded) with their Incus status/image/nesting/memory and
+/// their Linux users (one per agent + the human operator). Live per-agent activity (tool use,
+/// task) is not instrumented yet, so users report as idle with no activity — honest, not faked.
+#[tauri::command]
+fn topology() -> Result<Vec<TopoSandboxDto>, String> {
+    let runner = SystemRunner;
+    let incus = CliIncus::new(vm_name(), &runner);
+    let sandboxes = incus.topology().map_err(|e| e.to_string())?;
+    Ok(sandboxes
+        .into_iter()
+        .map(|s| {
+            let running = s.status == InstanceStatus::Running;
+            TopoSandboxDto {
+                status: if running { "running" } else { "stopped" }.to_string(),
+                l3: s.nesting,
+                cpu: "—".to_string(),
+                mem: if running { fmt_mem(s.mem_bytes) } else { "—".to_string() },
+                image: s.image,
+                agents: s
+                    .users
+                    .into_iter()
+                    .map(|u| TopoAgentDto {
+                        kind: if u.human { "human" } else { "agent" }.to_string(),
+                        name: u.name,
+                        state: "idle".to_string(),
+                        action: String::new(),
+                        tools: Vec::new(),
+                        active: None,
+                    })
+                    .collect(),
+                name: s.name,
+            }
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
 struct ServiceDto {
     name: String,
     description: String,
@@ -232,6 +301,7 @@ pub fn run() {
             sandbox_list,
             sandbox_launch,
             sandbox_rm,
+            topology,
             service_list,
             service_enable,
             service_disable,

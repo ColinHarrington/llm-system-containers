@@ -4,6 +4,8 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../lib/core", () => ({
   TOOL_LABELS: { code: "Editor", llm: "LLM call", shell: "Terminal" },
+  vmStatus: vi.fn(async () => "Running"),
+  listServices: vi.fn(async () => [{ name: "litellm", description: "p", priority: "MVP", enabled: true }]),
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "2.1", mem: "3.4 GB",

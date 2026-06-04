@@ -22,6 +22,106 @@ pub struct Instance {
     pub status: InstanceStatus,
 }
 
+/// A Linux user inside a sandbox — one per agent, plus the human operator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopoUser {
+    pub name: String,
+    pub human: bool,
+}
+
+/// A sandbox enriched for the topology view, from real Incus state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxTopology {
+    pub name: String,
+    pub status: InstanceStatus,
+    pub image: String,
+    pub nesting: bool,
+    pub mem_bytes: u64,
+    pub users: Vec<TopoUser>,
+}
+
+/// Parse `incus list --format json` into sandbox topology rows (services excluded). Users are
+/// left empty here — they require a per-container call, filled in by [`CliIncus::topology`].
+pub fn parse_topology(list_json: &str) -> Result<Vec<SandboxTopology>> {
+    use std::collections::HashMap;
+    #[derive(serde::Deserialize)]
+    struct RawMem {
+        #[serde(default)]
+        usage: u64,
+    }
+    #[derive(serde::Deserialize)]
+    struct RawState {
+        #[serde(default)]
+        memory: Option<RawMem>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        status: String,
+        #[serde(default)]
+        config: HashMap<String, String>,
+        #[serde(default)]
+        state: Option<RawState>,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus list` output: {e}")))?;
+    Ok(raw
+        .into_iter()
+        .filter(|r| !crate::service::is_service_container(&r.name))
+        .map(|r| {
+            let image = r
+                .config
+                .get("image.description")
+                .cloned()
+                .or_else(|| {
+                    match (r.config.get("image.os"), r.config.get("image.release")) {
+                        (Some(os), Some(rel)) => Some(format!("{os} {rel}")),
+                        _ => None,
+                    }
+                })
+                .unwrap_or_else(|| "—".to_string());
+            SandboxTopology {
+                status: if r.status == "Running" {
+                    InstanceStatus::Running
+                } else {
+                    InstanceStatus::Stopped
+                },
+                nesting: r.config.get("security.nesting").map(|v| v == "true").unwrap_or(false),
+                mem_bytes: r.state.and_then(|s| s.memory).map(|m| m.usage).unwrap_or(0),
+                image,
+                name: r.name,
+                users: Vec::new(),
+            }
+        })
+        .collect())
+}
+
+/// Parse `getent passwd` output into sandbox users: real login users with uid ≥ 1000 (an agent
+/// per user, plus the human `operator`). System/service accounts and nologin shells are skipped.
+pub fn parse_users(passwd: &str) -> Vec<TopoUser> {
+    passwd
+        .lines()
+        .filter_map(|line| {
+            let f: Vec<&str> = line.split(':').collect();
+            if f.len() < 7 {
+                return None;
+            }
+            let (name, shell) = (f[0], f[6]);
+            let uid: u32 = f[2].parse().ok()?;
+            if uid < 1000 || uid >= 65000 {
+                return None;
+            }
+            if shell.ends_with("nologin") || shell.ends_with("false") {
+                return None;
+            }
+            Some(TopoUser {
+                name: name.to_string(),
+                human: name == "operator",
+            })
+        })
+        .collect()
+}
+
 /// Manages L2 system containers. `&self` (real impls hit the REST API; fakes use interior mut).
 pub trait IncusClient {
     /// All Incus instances in the VM — sandboxes **and** service containers.
@@ -116,6 +216,28 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
         full.extend_from_slice(args);
         self.runner.run_streamed("limactl", &full)
+    }
+
+    /// Real topology: every sandbox (services excluded) with its status, image, nesting flag,
+    /// memory use, and Linux users (one per agent + the human operator). Users come from
+    /// `getent passwd` inside each running sandbox; stopped sandboxes report none.
+    pub fn topology(&self) -> Result<Vec<SandboxTopology>> {
+        let o = self.incus_run(&["list", "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("list: {}", o.stderr.trim())));
+        }
+        let mut sandboxes = parse_topology(&o.stdout)?;
+        for sb in sandboxes.iter_mut() {
+            if sb.status != InstanceStatus::Running {
+                continue;
+            }
+            if let Ok(u) = self.incus_run(&["exec", &sb.name, "--", "getent", "passwd"]) {
+                if u.ok() {
+                    sb.users = parse_users(&u.stdout);
+                }
+            }
+        }
+        Ok(sandboxes)
     }
 }
 
@@ -243,6 +365,45 @@ mod tests {
     fn delete_missing_is_not_found() {
         let c = FakeIncus::new();
         assert!(matches!(c.delete("nope"), Err(Error::NotFound(_))));
+    }
+
+    #[test]
+    fn parse_topology_extracts_real_fields_and_excludes_services() {
+        let json = r#"[
+          {"name":"web-agent-01","status":"Running",
+           "config":{"image.description":"Ubuntu 24.04 LTS","security.nesting":"true"},
+           "state":{"memory":{"usage":2147483648}}},
+          {"name":"scratch-01","status":"Stopped",
+           "config":{"image.os":"Alpine","image.release":"3.21"}},
+          {"name":"svc-litellm","status":"Running","config":{},"state":{"memory":{"usage":1}}}
+        ]"#;
+        let t = parse_topology(json).unwrap();
+        assert_eq!(t.len(), 2, "service container must be excluded");
+        let web = &t[0];
+        assert_eq!(web.name, "web-agent-01");
+        assert_eq!(web.status, InstanceStatus::Running);
+        assert_eq!(web.image, "Ubuntu 24.04 LTS");
+        assert!(web.nesting);
+        assert_eq!(web.mem_bytes, 2147483648);
+        let scratch = &t[1];
+        assert_eq!(scratch.image, "Alpine 3.21");
+        assert!(!scratch.nesting);
+    }
+
+    #[test]
+    fn parse_users_keeps_agents_and_operator_only() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\n\
+                      daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n\
+                      operator:x:1000:1000::/home/operator:/bin/bash\n\
+                      agent-claude:x:1001:1001::/home/agent-claude:/bin/bash\n\
+                      svc:x:999:999::/:/usr/sbin/nologin\n\
+                      nobody:x:65534:65534::/:/usr/sbin/nologin";
+        let users = parse_users(passwd);
+        assert_eq!(users.len(), 2);
+        assert_eq!(users[0].name, "operator");
+        assert!(users[0].human);
+        assert_eq!(users[1].name, "agent-claude");
+        assert!(!users[1].human);
     }
 }
 
