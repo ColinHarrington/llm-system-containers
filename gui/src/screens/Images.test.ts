@@ -18,17 +18,34 @@ vi.mock("../lib/core", () => ({
 import Images from "./Images.svelte";
 
 describe("Images", () => {
-  it("shows installed images, then loads + filters the available catalog", async () => {
+  it("shows installed images, then a distro picker that drills into a distro's images", async () => {
     render(Images);
     expect(await screen.findByText("alpine/3.21")).toBeInTheDocument();
 
+    // Switch to the catalog -> distro picker (flavors, not image rows yet).
     await fireEvent.click(screen.getByRole("button", { name: "All available" }));
-    expect(await screen.findByText("debian/12")).toBeInTheDocument();
+    expect(await screen.findByText("Debian")).toBeInTheDocument();
     expect(listAvailableImages).toHaveBeenCalledOnce();
-    expect(screen.getByText("ubuntu/24.04")).toBeInTheDocument();
+    expect(screen.getByText("Ubuntu")).toBeInTheDocument();
+    expect(screen.queryByText("debian/12")).not.toBeInTheDocument(); // not until drilled in
 
-    await fireEvent.input(screen.getByPlaceholderText("Search images…"), { target: { value: "debian" } });
-    expect(screen.getByText("debian/12")).toBeInTheDocument();
+    // Drill into Debian -> its images appear, Ubuntu's do not.
+    await fireEvent.click(screen.getByText("Debian"));
+    expect(await screen.findByText("debian/12")).toBeInTheDocument();
     expect(screen.queryByText("ubuntu/24.04")).not.toBeInTheDocument();
+
+    // Back to the picker.
+    await fireEvent.click(screen.getByRole("button", { name: "‹ All distros" }));
+    expect(await screen.findByText("Ubuntu")).toBeInTheDocument();
+  });
+
+  it("search jumps straight to flat results across distros", async () => {
+    render(Images);
+    await fireEvent.click(screen.getByRole("button", { name: "All available" }));
+    await screen.findByText("Debian");
+
+    await fireEvent.input(screen.getByPlaceholderText("Search all distros…"), { target: { value: "ubuntu" } });
+    expect(await screen.findByText("ubuntu/24.04")).toBeInTheDocument();
+    expect(screen.queryByText("debian/12")).not.toBeInTheDocument();
   });
 });
