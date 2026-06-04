@@ -2,10 +2,10 @@
 // (Vite dev / Vitest) returns mock data so the UI is developable without the native window.
 //
 // Operations the backend implements (VM up/down, sandbox launch/rm, service enable/provision,
-// platform init, progress, topology, host resources) are wired to real Tauri commands and fall
-// back to mock data only in the browser. Views the backend does not expose yet (agents, images,
-// virtual keys, and the rich per-sandbox metadata on the Sandboxes cards) return representative
-// demo data in BOTH environments for now — clearly marked here until those core APIs land.
+// platform init, progress, topology, host resources, images) are wired to real Tauri commands and
+// fall back to mock data only in the browser. Views the backend does not expose yet (agents,
+// virtual keys, networking attachments, and the rich per-sandbox metadata on the Sandboxes cards)
+// return representative demo data in BOTH environments for now — clearly marked until those land.
 import type {
   AgentInfo,
   HostResources,
@@ -210,6 +210,7 @@ export async function listAgents(): Promise<AgentInfo[]> {
 }
 
 export async function listImages(): Promise<ImageInfo[]> {
+  if (inTauri()) return invokeCmd<ImageInfo[]>("images");
   await delay(80);
   return [
     { name: "dev-ubuntu-24.04", desc: "general dev workspace", base: "ubuntu 24.04", size: "1.4 GB", tooling: "node, python, podman, git", usedBy: "2 sandboxes", updated: "3d ago" },

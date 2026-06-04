@@ -15,6 +15,9 @@
     <button class="btn primary right"><Icon name="plus" /><span>Build image</span></button>
   </div>
   <div class="card">
+    {#if images.length === 0}
+      <div class="empty"><div class="icon"><Icon name="image" size={24} /></div>No images cached yet — launch a sandbox to pull one.</div>
+    {:else}
     <table class="tbl">
       <thead><tr><th>Image</th><th>Base</th><th>Size</th><th>Tooling</th><th>Used by</th><th>Updated</th></tr></thead>
       <tbody>
@@ -30,5 +33,6 @@
         {/each}
       </tbody>
     </table>
+    {/if}
   </div>
 </div>

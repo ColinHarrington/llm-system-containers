@@ -96,6 +96,78 @@ pub fn parse_topology(list_json: &str) -> Result<Vec<SandboxTopology>> {
         .collect())
 }
 
+/// A locally-available Incus image (base distro or custom build).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageRecord {
+    pub name: String,
+    pub description: String,
+    pub base: String,
+    pub size_bytes: u64,
+    pub used_by: usize,
+    pub uploaded: String,
+}
+
+/// Parse `incus image list --format json` into image records.
+pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
+    #[derive(serde::Deserialize)]
+    struct RawAlias {
+        name: String,
+    }
+    #[derive(serde::Deserialize, Default)]
+    struct RawProps {
+        #[serde(default)]
+        description: String,
+        #[serde(default)]
+        os: String,
+        #[serde(default)]
+        release: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct RawImg {
+        #[serde(default)]
+        fingerprint: String,
+        #[serde(default)]
+        aliases: Vec<RawAlias>,
+        #[serde(default)]
+        properties: RawProps,
+        #[serde(default)]
+        size: u64,
+        #[serde(default)]
+        uploaded_at: String,
+        #[serde(default)]
+        used_by: Vec<String>,
+    }
+    let raw: Vec<RawImg> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus image list` output: {e}")))?;
+    Ok(raw
+        .into_iter()
+        .map(|r| {
+            let name = r
+                .aliases
+                .first()
+                .map(|a| a.name.clone())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| r.fingerprint.chars().take(12).collect());
+            let base = match (r.properties.os.as_str(), r.properties.release.as_str()) {
+                ("", "") => "—".to_string(),
+                (os, rel) => format!("{os} {rel}").trim().to_string(),
+            };
+            ImageRecord {
+                name,
+                description: if r.properties.description.is_empty() {
+                    "—".to_string()
+                } else {
+                    r.properties.description
+                },
+                base,
+                size_bytes: r.size,
+                used_by: r.used_by.len(),
+                uploaded: r.uploaded_at.chars().take(10).collect(), // YYYY-MM-DD
+            }
+        })
+        .collect())
+}
+
 /// Parse `getent passwd` output into sandbox users: real login users with uid ≥ 1000 (an agent
 /// per user, plus the human `operator`). System/service accounts and nologin shells are skipped.
 pub fn parse_users(passwd: &str) -> Vec<TopoUser> {
@@ -238,6 +310,15 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
             }
         }
         Ok(sandboxes)
+    }
+
+    /// Locally-available Incus images (base distros + custom builds).
+    pub fn images(&self) -> Result<Vec<ImageRecord>> {
+        let o = self.incus_run(&["image", "list", "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("image list: {}", o.stderr.trim())));
+        }
+        parse_images(&o.stdout)
     }
 }
 
@@ -388,6 +469,27 @@ mod tests {
         let scratch = &t[1];
         assert_eq!(scratch.image, "Alpine 3.21");
         assert!(!scratch.nesting);
+    }
+
+    #[test]
+    fn parse_images_extracts_alias_base_and_usage() {
+        let json = r#"[
+          {"fingerprint":"abc123def456789","aliases":[{"name":"dev-ubuntu-24.04"}],
+           "properties":{"description":"Ubuntu 24.04 LTS","os":"Ubuntu","release":"24.04"},
+           "size":1503238553,"uploaded_at":"2026-05-30T10:00:00Z",
+           "used_by":["/1.0/instances/web-agent-01","/1.0/instances/ci-runner"]},
+          {"fingerprint":"deadbeefcafebabe1234","aliases":[],
+           "properties":{"os":"Alpine","release":"3.21"},"size":3500000,"uploaded_at":"","used_by":[]}
+        ]"#;
+        let imgs = parse_images(json).unwrap();
+        assert_eq!(imgs.len(), 2);
+        assert_eq!(imgs[0].name, "dev-ubuntu-24.04");
+        assert_eq!(imgs[0].base, "Ubuntu 24.04");
+        assert_eq!(imgs[0].used_by, 2);
+        assert_eq!(imgs[0].uploaded, "2026-05-30");
+        // No alias → falls back to the (truncated) fingerprint.
+        assert_eq!(imgs[1].name, "deadbeefcafe");
+        assert_eq!(imgs[1].description, "—");
     }
 
     #[test]

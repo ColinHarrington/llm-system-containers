@@ -218,6 +218,42 @@ fn topology() -> Result<Vec<TopoSandboxDto>, String> {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImageDto {
+    name: String,
+    desc: String,
+    base: String,
+    size: String,
+    tooling: String,
+    used_by: String,
+    updated: String,
+}
+
+/// Locally-available Incus images in the VM (base distros + custom builds).
+#[tauri::command]
+fn images() -> Result<Vec<ImageDto>, String> {
+    let runner = SystemRunner;
+    let incus = CliIncus::new(vm_name(), &runner);
+    let imgs = incus.images().map_err(|e| e.to_string())?;
+    Ok(imgs
+        .into_iter()
+        .map(|i| ImageDto {
+            name: i.name,
+            desc: i.description,
+            base: i.base,
+            size: fmt_mem(i.size_bytes),
+            tooling: "—".to_string(), // not introspected
+            used_by: match i.used_by {
+                0 => "—".to_string(),
+                1 => "1 sandbox".to_string(),
+                n => format!("{n} sandboxes"),
+            },
+            updated: if i.uploaded.is_empty() { "—".to_string() } else { i.uploaded },
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
 struct ServiceDto {
     name: String,
     description: String,
@@ -335,6 +371,7 @@ pub fn run() {
             sandbox_rm,
             topology,
             host_resources,
+            images,
             service_list,
             service_enable,
             service_disable,
