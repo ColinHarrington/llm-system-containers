@@ -8,10 +8,12 @@
   import Images from "./screens/Images.svelte";
   import Wizard from "./screens/Wizard.svelte";
   import Progress from "./lib/Progress.svelte";
+  import Toast from "./lib/Toast.svelte";
+  import Terminal from "./lib/Terminal.svelte";
   import Icon from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
   import {
-    ui, navigate, bump, toggleTheme, SCREEN_TITLES, type Screen,
+    ui, navigate, bump, toggleTheme, showToast, SCREEN_TITLES, type Screen,
   } from "./lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, launchSandbox,
@@ -40,6 +42,27 @@
     document.documentElement.dataset.theme = ui.theme;
   });
 
+  // Keyboard nav: Escape closes overlays; number keys jump between screens (direction A).
+  const NUM_NAV: Record<string, Screen> = {
+    "1": "dashboard", "2": "sandboxes", "3": "topology", "4": "agent",
+    "5": "networking", "6": "services", "7": "images",
+  };
+  $effect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        ui.newSandboxOpen = false;
+        ui.steerAgent = null;
+        ui.terminalTarget = null;
+        return;
+      }
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      if (NUM_NAV[e.key]) navigate(NUM_NAV[e.key]);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   $effect(() => {
     ui.dataVersion; // re-run on data changes
     void refreshChrome();
@@ -62,11 +85,14 @@
   const vmRunning = $derived(vm === "Running");
 
   async function toggleVm() {
+    const wasRunning = vmRunning;
     vmBusy = true;
+    showToast(wasRunning ? "$ llmsctl down" : "$ llmsctl up");
     try {
-      if (vmRunning) await vmDown();
+      if (wasRunning) await vmDown();
       else await vmUp();
       bump();
+      showToast(wasRunning ? "VM stopped" : "VM is up", "ok");
     } finally {
       vmBusy = false;
     }
@@ -80,13 +106,16 @@
 
   async function createSandbox() {
     if (!sbName.trim()) return;
+    const name = sbName.trim();
     sbBusy = true;
+    showToast(`$ llmsc launch ${name} --image ${sbImage}`);
     try {
-      await launchSandbox(sbName.trim(), sbImage.trim(), sbNesting);
+      await launchSandbox(name, sbImage.trim(), sbNesting);
       ui.newSandboxOpen = false;
       sbName = "";
       navigate("sandboxes");
       bump();
+      showToast(`Launched ${name}`, "ok");
     } finally {
       sbBusy = false;
     }
@@ -97,6 +126,7 @@
   function sendSteer() {
     steerText = "";
     ui.steerAgent = null;
+    showToast("Steering message injected into agent context");
   }
 
   const title = $derived(SCREEN_TITLES[ui.screen]);
@@ -201,6 +231,8 @@
   </main>
 
   <Progress />
+  <Toast />
+  <Terminal />
 </div>
 
 {#if ui.newSandboxOpen}

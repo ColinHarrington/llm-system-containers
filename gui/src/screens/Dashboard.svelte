@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui, navigate, bump } from "../lib/store.svelte";
+  import { ui, navigate, bump, openTerminal } from "../lib/store.svelte";
   import { vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, hostResources } from "../lib/core";
   import type { AgentInfo, HostResources, Sandbox, ServiceEntry, VmStatus } from "../lib/types";
 
@@ -128,7 +128,7 @@
           <span class="qa-ico"><Icon name="plus" size={18} /></span>
           <span><span class="strong small">New sandbox</span><span class="muted xsmall">Spin up a fresh LLMSC workspace</span></span>
         </button>
-        <button class="qa" onclick={() => navigate("sandboxes")}>
+        <button class="qa" onclick={() => openTerminal("operator@web-agent-01")}>
           <span class="qa-ico"><Icon name="terminal" size={18} /></span>
           <span><span class="strong small">Open a shell</span><span class="muted xsmall mono">llmsc shell operator@web-agent-01</span></span>
         </button>

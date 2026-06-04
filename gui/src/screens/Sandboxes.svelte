@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui, bump } from "../lib/store.svelte";
+  import { ui, bump, openTerminal } from "../lib/store.svelte";
   import { listSandboxes, removeSandbox } from "../lib/core";
   import type { Sandbox } from "../lib/types";
 
@@ -82,7 +82,7 @@
         </div>
         <div class="divider"></div>
         <div class="flex gap8">
-          <button class="btn sm"><Icon name="terminal" size={14} /><span>Open shell</span></button>
+          <button class="btn sm" onclick={() => openTerminal(`operator@${s.name}`)}><Icon name="terminal" size={14} /><span>Open shell</span></button>
           <button class="btn sm danger right" onclick={() => remove(s.name)} disabled={busy === s.name}>
             {busy === s.name ? "Removing…" : "Remove"}
           </button>

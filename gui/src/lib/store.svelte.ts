@@ -15,13 +15,27 @@ function initialTheme(): "light" | "dark" {
   return "dark"; // direction A is dark-first
 }
 
+export type ToastColor = "accent" | "ok" | "warn" | "danger";
+
 export const ui = $state({
   screen: "dashboard" as Screen,
   theme: initialTheme(),
   newSandboxOpen: false,
   steerAgent: null as AgentInfo | null,
+  terminalTarget: null as string | null,
+  toast: null as { msg: string; color: ToastColor; id: number } | null,
   dataVersion: 0,
 });
+
+let toastId = 0;
+export function showToast(msg: string, color: ToastColor = "accent"): void {
+  toastId += 1;
+  ui.toast = { msg, color, id: toastId };
+}
+
+export function openTerminal(target: string): void {
+  ui.terminalTarget = target;
+}
 
 export function navigate(screen: Screen): void {
   ui.screen = screen;
