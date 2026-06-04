@@ -90,6 +90,7 @@ export interface TopoAgent {
   action: string;
   tools: string[];
   active: string | null; // currently-active tool id
+  profile?: string | null; // assigned agent profile (from config)
 }
 
 export interface TopoSandbox {

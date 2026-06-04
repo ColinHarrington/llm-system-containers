@@ -310,8 +310,8 @@ export async function topology(): Promise<TopoSandbox[]> {
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "2.1", mem: "3.4 GB",
       agents: [
-        { name: "agent-claude", kind: "agent", state: "active", action: "Editing src/api/router.ts", tools: ["code", "shell", "git", "llm"], active: "code" },
-        { name: "agent-aux", kind: "agent", state: "thinking", action: "Planning test changes", tools: ["shell", "run", "llm"], active: "llm" },
+        { name: "agent-claude", kind: "agent", state: "active", action: "Editing src/api/router.ts", tools: ["code", "shell", "git", "llm"], active: "code", profile: "builder" },
+        { name: "agent-aux", kind: "agent", state: "thinking", action: "Planning test changes", tools: ["shell", "run", "llm"], active: "llm", profile: "tester" },
         { name: "operator", kind: "human", state: "idle", action: "Attached · read-only watch", tools: ["shell"], active: null },
       ],
     },

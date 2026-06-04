@@ -141,12 +141,21 @@ fn sandbox_launch(
     operator: String,
 ) -> Result<(), String> {
     let reporter = EventReporter { app };
-    let runner = SystemRunner;
-    let incus = CliIncus::new(vm_name(), &runner);
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
     // Every sandbox gets exactly one human user (the operator) by default; agents are added later.
-    let users = vec![User { name: operator, role: UserRole::Human, profile: None }];
-    let spec = Sandbox { name, image, nesting, users };
-    incus.launch(&spec, &reporter).map_err(|e| e.to_string())
+    let spec = Sandbox {
+        name: name.clone(),
+        image: image.clone(),
+        nesting,
+        users: vec![User { name: operator.clone(), role: UserRole::Human, profile: None }],
+    };
+    incus.launch(&spec, &reporter).map_err(|e| e.to_string())?;
+    // Persist into config so the sandbox + its operator are durable (best-effort; already created).
+    let mut cfg = load_user_config().unwrap_or_default();
+    cfg.upsert_sandbox(&name, &image, nesting);
+    cfg.set_sandbox_user(&name, User { name: operator, role: UserRole::Human, profile: None });
+    let _ = cfg.save(&config::user_config_path());
+    Ok(())
 }
 
 /// The default operator (human) username — from config, falling back to the host username.
@@ -165,6 +174,16 @@ fn add_agent(app: AppHandle, sandbox: String, name: String, profile: String) -> 
     reporter.step(&format!("Adding agent '{name}' to {sandbox}{suffix}"));
     let incus = CliIncus::new(vm_name(), &SystemRunner);
     incus.add_user(&sandbox, &name, false).map_err(|e| e.to_string())?;
+    // Persist the agent + its profile into config when the sandbox is config-managed.
+    let mut cfg = load_user_config().unwrap_or_default();
+    let user = User {
+        name: name.clone(),
+        role: UserRole::Agent,
+        profile: if profile.is_empty() { None } else { Some(profile) },
+    };
+    if cfg.set_sandbox_user(&sandbox, user) {
+        let _ = cfg.save(&config::user_config_path());
+    }
     reporter.step(&format!("Agent '{name}' added{suffix}"));
     Ok(())
 }
@@ -202,7 +221,12 @@ fn profiles() -> Vec<ProfileDto> {
 fn sandbox_rm(name: String) -> Result<(), String> {
     let runner = SystemRunner;
     let incus = CliIncus::new(vm_name(), &runner);
-    incus.delete(&name).map_err(|e| e.to_string())
+    incus.delete(&name).map_err(|e| e.to_string())?;
+    let mut cfg = load_user_config().unwrap_or_default();
+    if cfg.remove_sandbox(&name) {
+        let _ = cfg.save(&config::user_config_path());
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -213,6 +237,7 @@ struct TopoAgentDto {
     action: String,
     tools: Vec<String>,
     active: Option<String>,
+    profile: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -245,12 +270,15 @@ fn fmt_mem(bytes: u64) -> String {
 fn topology() -> Result<Vec<TopoSandboxDto>, String> {
     let runner = SystemRunner;
     let incus = CliIncus::new(vm_name(), &runner);
-    let operator = Config::load_effective().map(|c| c.operator).unwrap_or_default();
+    // Config is authoritative for role + assigned profile; live Incus is authoritative for which
+    // users actually exist. Merge: live users, enriched with config role/profile where recorded.
+    let cfg = Config::load_effective().unwrap_or_default();
     let sandboxes = incus.topology().map_err(|e| e.to_string())?;
     Ok(sandboxes
         .into_iter()
         .map(|s| {
             let running = s.status == InstanceStatus::Running;
+            let cfg_sb = cfg.sandbox(&s.name);
             TopoSandboxDto {
                 status: if running { "running" } else { "stopped" }.to_string(),
                 l3: s.nesting,
@@ -260,13 +288,21 @@ fn topology() -> Result<Vec<TopoSandboxDto>, String> {
                 agents: s
                     .users
                     .into_iter()
-                    .map(|u| TopoAgentDto {
-                        kind: if u.human || u.name == operator { "human" } else { "agent" }.to_string(),
-                        name: u.name,
-                        state: "idle".to_string(),
-                        action: String::new(),
-                        tools: Vec::new(),
-                        active: None,
+                    .map(|u| {
+                        let cu = cfg_sb.and_then(|sb| sb.users.iter().find(|x| x.name == u.name));
+                        let human = match cu {
+                            Some(c) => matches!(c.role, UserRole::Human),
+                            None => u.human || u.name == cfg.operator,
+                        };
+                        TopoAgentDto {
+                            kind: if human { "human" } else { "agent" }.to_string(),
+                            profile: cu.and_then(|c| c.profile.clone()),
+                            name: u.name,
+                            state: "idle".to_string(),
+                            action: String::new(),
+                            tools: Vec::new(),
+                            active: None,
+                        }
                     })
                     .collect(),
                 name: s.name,

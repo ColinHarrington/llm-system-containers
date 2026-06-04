@@ -78,6 +78,16 @@ pub struct Sandbox {
     pub users: Vec<User>,
 }
 
+impl Sandbox {
+    /// Add a user, or replace the existing one with the same name.
+    pub fn set_user(&mut self, user: User) {
+        match self.users.iter_mut().find(|u| u.name == user.name) {
+            Some(u) => *u = user,
+            None => self.users.push(user),
+        }
+    }
+}
+
 /// A Linux user inside a sandbox (one per agent, plus a human operator).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
@@ -127,6 +137,45 @@ impl Config {
             .map_err(|e| Error::Config(format!("serializing: {e}")))?;
         std::fs::write(path, text)
             .map_err(|e| Error::Config(format!("writing {}: {e}", path.display())))
+    }
+
+    /// A declared sandbox by name.
+    pub fn sandbox(&self, name: &str) -> Option<&Sandbox> {
+        self.sandboxes.iter().find(|s| s.name == name)
+    }
+
+    /// Record a sandbox (insert if absent; update image/nesting if present). Returns a mut ref.
+    pub fn upsert_sandbox(&mut self, name: &str, image: &str, nesting: bool) -> &mut Sandbox {
+        if let Some(i) = self.sandboxes.iter().position(|s| s.name == name) {
+            self.sandboxes[i].image = image.to_string();
+            self.sandboxes[i].nesting = nesting;
+            return &mut self.sandboxes[i];
+        }
+        self.sandboxes.push(Sandbox {
+            name: name.to_string(),
+            image: image.to_string(),
+            nesting,
+            users: Vec::new(),
+        });
+        self.sandboxes.last_mut().unwrap()
+    }
+
+    /// Add or replace a user in a declared sandbox. Returns false if the sandbox isn't declared.
+    pub fn set_sandbox_user(&mut self, sandbox: &str, user: User) -> bool {
+        match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
+            Some(s) => {
+                s.set_user(user);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Remove a declared sandbox. Returns true if it was present.
+    pub fn remove_sandbox(&mut self, name: &str) -> bool {
+        let before = self.sandboxes.len();
+        self.sandboxes.retain(|s| s.name != name);
+        self.sandboxes.len() != before
     }
 
     /// Is the named service enabled?
@@ -282,6 +331,35 @@ mod tests {
     #[test]
     fn toml_snapshot() {
         insta::assert_snapshot!(sample().to_toml().unwrap());
+    }
+
+    #[test]
+    fn upsert_sandbox_and_users() {
+        let mut c = Config::default();
+        c.upsert_sandbox("web-agent-01", "images:debian/12", true);
+        assert!(c.set_sandbox_user(
+            "web-agent-01",
+            User { name: "colin".into(), role: UserRole::Human, profile: None },
+        ));
+        assert!(c.set_sandbox_user(
+            "web-agent-01",
+            User { name: "agent-claude".into(), role: UserRole::Agent, profile: Some("builder".into()) },
+        ));
+        let sb = c.sandbox("web-agent-01").unwrap();
+        assert_eq!(sb.image, "images:debian/12");
+        assert_eq!(sb.users.len(), 2);
+        // Re-assigning a user replaces (no dup), and updates the profile.
+        c.set_sandbox_user(
+            "web-agent-01",
+            User { name: "agent-claude".into(), role: UserRole::Agent, profile: Some("tester".into()) },
+        );
+        let sb = c.sandbox("web-agent-01").unwrap();
+        assert_eq!(sb.users.len(), 2);
+        assert_eq!(sb.users[1].profile.as_deref(), Some("tester"));
+        // Unknown sandbox -> no-op false.
+        assert!(!c.set_sandbox_user("nope", User { name: "x".into(), role: UserRole::Agent, profile: None }));
+        assert!(c.remove_sandbox("web-agent-01"));
+        assert!(c.sandbox("web-agent-01").is_none());
     }
 
     #[test]

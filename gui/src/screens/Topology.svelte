@@ -85,9 +85,10 @@
                         <span class="ava-dot" style="background:{STATE[a.state].dot}"></span>
                       </div>
                       <div style="min-width:0;flex:1">
-                        <div class="flex gap6">
+                        <div class="flex gap6 wrap">
                           <span class="mono small strong" style="color:var(--text)">{a.name}</span>
                           {#if a.kind === "human"}<span class="htag">human</span>{/if}
+                          {#if a.profile}<span class="ptag">{a.profile}</span>{/if}
                         </div>
                         {#if a.action}
                           <div class="action" style="color:{STATE[a.state].text}">{a.action}</div>
@@ -145,6 +146,7 @@
   @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 var(--ring); } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
   .ava-dot { position: absolute; bottom: -1px; right: -1px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--card); }
   .htag { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--accent-text); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+  .ptag { font-size: 9.5px; color: var(--accent-text); background: var(--accent-dim); border-radius: 4px; padding: 0 5px; font-family: var(--mono); }
   .action { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tools { display: flex; gap: 6px; margin-top: 8px; padding-left: 46px; flex-wrap: wrap; }
   .tool { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 7px; color: var(--text-3); }
