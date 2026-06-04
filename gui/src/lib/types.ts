@@ -91,21 +91,23 @@ export interface TopoSandbox {
   agents: TopoAgent[];
 }
 
-// --- Networking ---
-export type NetId = "svc-net" | "egress-net" | "isolated";
-
-export interface NetUid {
-  uid: string;
-  kind: "agent" | "human";
-  egress: string;
+// --- Networking (real Incus topology) ---
+export interface NetworkInfo {
+  name: string;
+  kind: string;
+  ipv4: string;
+  nat: boolean;
+  usedBy: number;
 }
 
-export interface NetSandbox {
+export interface SandboxNet {
   name: string;
-  image: string;
-  profile: string;
-  nets: NetId[];
-  inspected: boolean;
-  llm: string;
-  uids: NetUid[];
+  status: "running" | "stopped";
+  networks: string[];
+  ipv4: string;
+}
+
+export interface NetworkingData {
+  networks: NetworkInfo[];
+  sandboxes: SandboxNet[];
 }

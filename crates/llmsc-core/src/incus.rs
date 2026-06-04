@@ -96,6 +96,135 @@ pub fn parse_topology(list_json: &str) -> Result<Vec<SandboxTopology>> {
         .collect())
 }
 
+/// A managed Incus network (bridge) in the VM.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetworkRecord {
+    pub name: String,
+    pub kind: String,
+    pub ipv4: String,
+    /// Whether outbound NAT to the host/internet is enabled (`ipv4.nat`).
+    pub nat: bool,
+    /// Number of *sandboxes* attached (instances, not profiles).
+    pub used_by: usize,
+}
+
+/// A sandbox's real network attachment(s) and address.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxNetwork {
+    pub name: String,
+    pub status: InstanceStatus,
+    pub networks: Vec<String>,
+    pub ipv4: String,
+}
+
+/// Parse `incus network list --format json` into managed networks (host NICs excluded).
+pub fn parse_networks(list_json: &str) -> Result<Vec<NetworkRecord>> {
+    use std::collections::HashMap;
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        #[serde(rename = "type", default)]
+        net_type: String,
+        #[serde(default)]
+        managed: bool,
+        #[serde(default)]
+        config: HashMap<String, String>,
+        #[serde(default)]
+        used_by: Vec<String>,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus network list` output: {e}")))?;
+    Ok(raw
+        .into_iter()
+        .filter(|r| r.managed) // unmanaged = host physical NICs, not llmsc networks
+        .map(|r| NetworkRecord {
+            ipv4: r.config.get("ipv4.address").cloned().unwrap_or_else(|| "—".to_string()),
+            nat: r.config.get("ipv4.nat").map(|v| v == "true").unwrap_or(false),
+            used_by: r.used_by.iter().filter(|u| u.contains("/instances/")).count(),
+            kind: r.net_type,
+            name: r.name,
+        })
+        .collect())
+}
+
+/// Parse `incus list --format json` into per-sandbox network attachments (services excluded).
+pub fn parse_sandbox_networks(list_json: &str) -> Result<Vec<SandboxNetwork>> {
+    use std::collections::HashMap;
+    #[derive(serde::Deserialize)]
+    struct RawAddr {
+        family: String,
+        address: String,
+        #[serde(default)]
+        scope: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct RawIface {
+        #[serde(default)]
+        addresses: Vec<RawAddr>,
+    }
+    #[derive(serde::Deserialize)]
+    struct RawState {
+        #[serde(default)]
+        network: Option<HashMap<String, RawIface>>,
+    }
+    #[derive(serde::Deserialize)]
+    struct RawDev {
+        #[serde(rename = "type", default)]
+        dev_type: String,
+        #[serde(default)]
+        network: String,
+        #[serde(default)]
+        parent: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        status: String,
+        #[serde(default)]
+        expanded_devices: HashMap<String, RawDev>,
+        #[serde(default)]
+        state: Option<RawState>,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus list` output: {e}")))?;
+    Ok(raw
+        .into_iter()
+        .filter(|r| !crate::service::is_service_container(&r.name))
+        .map(|r| {
+            let mut networks: Vec<String> = r
+                .expanded_devices
+                .values()
+                .filter(|d| d.dev_type == "nic")
+                .map(|d| if d.network.is_empty() { d.parent.clone() } else { d.network.clone() })
+                .filter(|n| !n.is_empty())
+                .collect();
+            networks.sort();
+            networks.dedup();
+            let ipv4 = r
+                .state
+                .and_then(|s| s.network)
+                .and_then(|ifaces| {
+                    ifaces
+                        .into_values()
+                        .flat_map(|i| i.addresses)
+                        .find(|a| a.family == "inet" && a.scope == "global")
+                        .map(|a| a.address)
+                })
+                .unwrap_or_else(|| "—".to_string());
+            SandboxNetwork {
+                status: if r.status == "Running" {
+                    InstanceStatus::Running
+                } else {
+                    InstanceStatus::Stopped
+                },
+                networks,
+                ipv4,
+                name: r.name,
+            }
+        })
+        .collect())
+}
+
 /// A locally-available Incus image (base distro or custom build).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageRecord {
@@ -320,6 +449,24 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         }
         parse_images(&o.stdout)
     }
+
+    /// Managed Incus networks (bridges) in the VM.
+    pub fn networks(&self) -> Result<Vec<NetworkRecord>> {
+        let o = self.incus_run(&["network", "list", "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("network list: {}", o.stderr.trim())));
+        }
+        parse_networks(&o.stdout)
+    }
+
+    /// Per-sandbox network attachments and addresses (services excluded).
+    pub fn sandbox_networks(&self) -> Result<Vec<SandboxNetwork>> {
+        let o = self.incus_run(&["list", "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("list: {}", o.stderr.trim())));
+        }
+        parse_sandbox_networks(&o.stdout)
+    }
 }
 
 impl<R: CommandRunner> IncusClient for CliIncus<'_, R> {
@@ -490,6 +637,42 @@ mod tests {
         // No alias → falls back to the (truncated) fingerprint.
         assert_eq!(imgs[1].name, "deadbeefcafe");
         assert_eq!(imgs[1].description, "—");
+    }
+
+    #[test]
+    fn parse_networks_keeps_managed_only_with_nat_and_usage() {
+        let json = r#"[
+          {"name":"incusbr0","type":"bridge","managed":true,
+           "config":{"ipv4.address":"10.71.0.1/24","ipv4.nat":"true"},
+           "used_by":["/1.0/instances/web-agent-01","/1.0/profiles/default"]},
+          {"name":"eth0","type":"physical","managed":false,"config":{},"used_by":[]}
+        ]"#;
+        let nets = parse_networks(json).unwrap();
+        assert_eq!(nets.len(), 1, "unmanaged host NIC must be excluded");
+        assert_eq!(nets[0].name, "incusbr0");
+        assert_eq!(nets[0].ipv4, "10.71.0.1/24");
+        assert!(nets[0].nat);
+        assert_eq!(nets[0].used_by, 1, "profiles must not count as sandboxes");
+    }
+
+    #[test]
+    fn parse_sandbox_networks_extracts_attachment_and_ip() {
+        let json = r#"[
+          {"name":"web-agent-01","status":"Running",
+           "expanded_devices":{"eth0":{"type":"nic","network":"incusbr0","name":"eth0"},
+                               "root":{"type":"disk","network":""}},
+           "state":{"network":{"eth0":{"addresses":[
+             {"family":"inet","address":"127.0.0.1","scope":"local"},
+             {"family":"inet","address":"10.71.0.20","scope":"global"},
+             {"family":"inet6","address":"fe80::1","scope":"link"}]},
+             "lo":{"addresses":[]}}}},
+          {"name":"svc-litellm","status":"Running","expanded_devices":{},"state":null}
+        ]"#;
+        let sbs = parse_sandbox_networks(json).unwrap();
+        assert_eq!(sbs.len(), 1, "service container must be excluded");
+        assert_eq!(sbs[0].name, "web-agent-01");
+        assert_eq!(sbs[0].networks, vec!["incusbr0"]);
+        assert_eq!(sbs[0].ipv4, "10.71.0.20");
     }
 
     #[test]

@@ -10,7 +10,7 @@ import type {
   AgentInfo,
   HostResources,
   ImageInfo,
-  NetSandbox,
+  NetworkingData,
   Sandbox,
   ServiceEntry,
   TopoSandbox,
@@ -271,44 +271,19 @@ export async function topology(): Promise<TopoSandbox[]> {
   ];
 }
 
-export async function networking(): Promise<NetSandbox[]> {
+export async function networking(): Promise<NetworkingData> {
+  if (inTauri()) return invokeCmd<NetworkingData>("networking");
   await delay(80);
-  return [
-    {
-      name: "web-agent-01", image: "dev-ubuntu-24.04", profile: "standard",
-      nets: ["svc-net", "egress-net"], inspected: true, llm: "LiteLLM",
-      uids: [
-        { uid: "agent-claude", kind: "agent", egress: "allowlist (github, npm, pypi)" },
-        { uid: "agent-aux", kind: "agent", egress: "allowlist (github, npm, pypi)" },
-        { uid: "operator", kind: "human", egress: "broad allowlist + interactive" },
-      ],
-    },
-    {
-      name: "ci-runner", image: "ci-base", profile: "build",
-      nets: ["svc-net", "egress-net"], inspected: true, llm: "LiteLLM",
-      uids: [
-        { uid: "agent-ci", kind: "agent", egress: "allowlist (ghcr, npm, pypi)" },
-        { uid: "operator", kind: "human", egress: "broad allowlist + interactive" },
-      ],
-    },
-    {
-      name: "data-pipeline", image: "dev-ubuntu-24.04", profile: "locked-down",
-      nets: ["svc-net"], inspected: false, llm: "LiteLLM",
-      uids: [
-        { uid: "agent-etl", kind: "agent", egress: "deny-all (svc-net only)" },
-        { uid: "agent-report", kind: "agent", egress: "deny-all (svc-net only)" },
-        { uid: "operator", kind: "human", egress: "deny-all (svc-net only)" },
-      ],
-    },
-    {
-      name: "research-01", image: "browser-tools", profile: "air-gapped",
-      nets: ["isolated", "svc-net"], inspected: true, llm: "LiteLLM",
-      uids: [
-        { uid: "agent-browse", kind: "agent", egress: "no-egress (isolated)" },
-        { uid: "operator", kind: "human", egress: "no-egress (isolated)" },
-      ],
-    },
-  ];
+  return {
+    networks: [
+      { name: "incusbr0", kind: "bridge", ipv4: "10.71.0.1/24", nat: true, usedBy: 3 },
+    ],
+    sandboxes: [
+      { name: "web-agent-01", status: "running", networks: ["incusbr0"], ipv4: "10.71.0.20" },
+      { name: "ci-runner", status: "running", networks: ["incusbr0"], ipv4: "10.71.0.21" },
+      { name: "scratch-01", status: "stopped", networks: ["incusbr0"], ipv4: "—" },
+    ],
+  };
 }
 
 // --- first-run setup ---

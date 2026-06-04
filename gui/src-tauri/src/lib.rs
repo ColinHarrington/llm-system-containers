@@ -219,6 +219,56 @@ fn topology() -> Result<Vec<TopoSandboxDto>, String> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct NetworkDto {
+    name: String,
+    kind: String,
+    ipv4: String,
+    nat: bool,
+    used_by: usize,
+}
+
+#[derive(Serialize)]
+struct SandboxNetDto {
+    name: String,
+    status: String,
+    networks: Vec<String>,
+    ipv4: String,
+}
+
+#[derive(Serialize)]
+struct NetworkingDto {
+    networks: Vec<NetworkDto>,
+    sandboxes: Vec<SandboxNetDto>,
+}
+
+/// Real networking: the VM's managed Incus networks and which sandboxes attach to which (with
+/// addresses). Egress policy / inspection / Tetragon enforcement are not implemented yet (M4),
+/// so this reports topology only — it does not claim policy that nothing enforces.
+#[tauri::command]
+fn networking() -> Result<NetworkingDto, String> {
+    let runner = SystemRunner;
+    let incus = CliIncus::new(vm_name(), &runner);
+    let networks = incus.networks().map_err(|e| e.to_string())?;
+    let sandboxes = incus.sandbox_networks().map_err(|e| e.to_string())?;
+    Ok(NetworkingDto {
+        networks: networks
+            .into_iter()
+            .map(|n| NetworkDto { name: n.name, kind: n.kind, ipv4: n.ipv4, nat: n.nat, used_by: n.used_by })
+            .collect(),
+        sandboxes: sandboxes
+            .into_iter()
+            .map(|s| SandboxNetDto {
+                status: if s.status == InstanceStatus::Running { "running" } else { "stopped" }.to_string(),
+                networks: s.networks,
+                ipv4: s.ipv4,
+                name: s.name,
+            })
+            .collect(),
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ImageDto {
     name: String,
     desc: String,
@@ -372,6 +422,7 @@ pub fn run() {
             topology,
             host_resources,
             images,
+            networking,
             service_list,
             service_enable,
             service_disable,
