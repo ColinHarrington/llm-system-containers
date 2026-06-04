@@ -12,7 +12,7 @@ function initialTheme(): "light" | "dark" {
     const saved = localStorage.getItem("llmsc-theme");
     if (saved === "light" || saved === "dark") return saved;
   }
-  return "light";
+  return "dark"; // direction A is dark-first
 }
 
 export const ui = $state({

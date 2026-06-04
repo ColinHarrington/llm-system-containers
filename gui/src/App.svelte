@@ -152,9 +152,10 @@
       <div class="flex gap8" style="padding:0 2px">
         <div class="avatar human sm">CH</div>
         <div class="small">
-          <div class="strong" style="font-size:12.5px">operator</div>
+          <div class="strong" style="font-size:12px">operator</div>
           <div class="muted xsmall">colin · host</div>
         </div>
+        <kbd style="margin-left:auto">⌘K</kbd>
       </div>
     </div>
   </aside>
@@ -166,12 +167,17 @@
         <div class="crumb">{title[1]}</div>
       </div>
       <div class="spacer"></div>
-      <button class="btn" onclick={() => (ui.newSandboxOpen = true)}>
-        <Icon name="plus" /><span>New sandbox</span>
-      </button>
+      <div class="searchbox">
+        <Icon name="search" size={14} />
+        <span>Search sandboxes, users, traces…</span>
+        <kbd>/</kbd>
+      </div>
       <button class="iconbtn" title="Notifications" aria-label="Notifications"><Icon name="bell" /></button>
       <button class="iconbtn" title="Toggle theme" aria-label="Toggle theme" onclick={toggleTheme}>
         <Icon name={ui.theme === "dark" ? "sun" : "moon"} />
+      </button>
+      <button class="btn primary" onclick={() => (ui.newSandboxOpen = true)}>
+        <Icon name="plus" size={14} /><span>New sandbox</span>
       </button>
     </div>
 
@@ -243,3 +249,14 @@
     {/snippet}
   </Modal>
 {/if}
+
+<style>
+  .searchbox {
+    display: flex; align-items: center; gap: 8px;
+    width: 280px; padding: 7px 10px; border-radius: var(--radius-sm);
+    background: var(--card-2); border: 1px solid var(--border);
+    color: var(--text-3); font-size: 12px;
+  }
+  .searchbox span { flex: 1; }
+  @media (max-width: 820px) { .searchbox { display: none; } }
+</style>
