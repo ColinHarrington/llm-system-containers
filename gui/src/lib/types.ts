@@ -216,6 +216,8 @@ export interface TetragonPolicy {
   agent: string;
   deniedSyscalls: string[];
   egressNote: string;
+  fsNote: string;
+  readOnly: boolean;
 }
 
 export interface NetworkAclInfo {

@@ -8,7 +8,7 @@
     instanceAddProfile, instanceRemoveProfile, applySandbox, instanceYaml,
     listSnapshots, snapshotCreate, snapshotRestore, snapshotDelete, setAgentGuardrails,
     egressPolicy, setEgressPolicy, egressAclPreview, applyEgress, egressStatus,
-    tetragonPolicies, tetragonPolicyYaml, applyTetragonPolicies,
+    tetragonPolicies, tetragonPolicyYaml, applyTetragonPolicies, setWorkspaceReadonly,
   } from "../lib/core";
   import type {
     EgressPolicy, EgressPosture, EgressStatus, Guardrails, InstanceConfig, NetworkAclInfo,
@@ -203,6 +203,19 @@
     try {
       const n = await applyTetragonPolicies(sb.name);
       showToast(n === 0 ? "No agent policies to load" : `Loaded ${n} Tetragon policy(ies)`, "ok");
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { tetraBusy = false; }
+  }
+  // Whether any agent's filesystem posture is read-only (drives the workspace-RO suggestion).
+  const anyReadOnly = $derived(tetraPols.some((p) => p.readOnly));
+  async function setWorkspaceRo(ro: boolean) {
+    if (!sb) return;
+    tetraBusy = true;
+    try {
+      const n = await setWorkspaceReadonly(sb.name, ro);
+      showToast(n === 0 ? "No workspace mounts to change" : `Workspace set ${ro ? "read-only" : "read-write"} (${n} mount(s))`, "ok");
+      bump();
     } catch (e) {
       showToast(String(e), "danger");
     } finally { tetraBusy = false; }
@@ -534,14 +547,27 @@
               <div class="flex gap8 mb4">
                 <span class="mono small strong" style="color:var(--text)">{p.agent}</span>
                 <span class="tag">{p.deniedSyscalls.length} syscalls denied</span>
+                {#if p.readOnly}<span class="pill" title="Filesystem posture is read-only">RO fs</span>{/if}
                 <button class="btn sm right" onclick={() => viewTetraYaml(p.agent)}><Icon name="doc" size={12} /> {tetraYamlAgent === p.agent ? "Hide" : "YAML"}</button>
               </div>
               <div class="muted small mono">egress: {p.egressNote}</div>
+              <div class="muted small mono">fs: {p.fsNote}</div>
               {#if tetraYamlAgent === p.agent && tetraYaml}
                 <pre class="console yaml mt8">{tetraYaml}</pre>
               {/if}
             </div>
           {/each}
+        {/if}
+
+        <!-- Workspace filesystem (per-container mount RO — the real backstop today) -->
+        <div class="sub2 mt12">Workspace mounts</div>
+        <div class="flex gap8" style="align-items:center">
+          <span class="muted small">Set the sandbox's workspace mounts (per-container; affects all UIDs):</span>
+          <button class="btn sm" disabled={tetraBusy} onclick={() => setWorkspaceRo(true)}>Read-only</button>
+          <button class="btn sm" disabled={tetraBusy} onclick={() => setWorkspaceRo(false)}>Read-write</button>
+        </div>
+        {#if anyReadOnly}
+          <p class="xsmall muted mt4">An agent here has a read-only filesystem posture — set the workspace read-only to back it with a real mount-level grant. Per-UID path rules are Tetragon's job.</p>
         {/if}
       </div>
     </div>

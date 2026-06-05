@@ -2,13 +2,14 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies } = vi.hoisted(() => ({
+const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly } = vi.hoisted(() => ({
   removeAgent: vi.fn(async () => {}),
   instanceRemoveProfile: vi.fn(async () => {}),
   setAgentGuardrails: vi.fn(async () => {}),
   setEgressPolicy: vi.fn(async () => {}),
   applyEgress: vi.fn(async () => 2),
   applyTetragonPolicies: vi.fn(async () => 1),
+  setWorkspaceReadonly: vi.fn(async () => 1),
 }));
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
@@ -43,10 +44,11 @@ vi.mock("../lib/core", () => ({
     managed: true, posture: "allowlist", aclName: "llmsc-egress-web-agent-01", aclExists: false, bound: false, inSync: false,
   })),
   tetragonPolicies: vi.fn(async () => [
-    { name: "llmsc-web-agent-01-agent-claude", agent: "agent-claude", deniedSyscalls: ["ptrace", "mount"], egressNote: "None except LLM" },
+    { name: "llmsc-web-agent-01-agent-claude", agent: "agent-claude", deniedSyscalls: ["ptrace", "mount"], egressNote: "None except LLM", fsNote: "Read-only everything", readOnly: true },
   ]),
   tetragonPolicyYaml: vi.fn(async () => "kind: TracingPolicy\n"),
   applyTetragonPolicies,
+  setWorkspaceReadonly,
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",
@@ -129,6 +131,14 @@ describe("SandboxDetail", () => {
     expect(screen.getByText("2 syscalls denied")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: /Load policies/ }));
     expect(applyTetragonPolicies).toHaveBeenCalledWith("web-agent-01");
+  });
+
+  it("sets the workspace mounts read-only", async () => {
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    await screen.findByText("Workspace mounts");
+    await fireEvent.click(screen.getByRole("button", { name: "Read-only" }));
+    expect(setWorkspaceReadonly).toHaveBeenCalledWith("web-agent-01", true);
   });
 
   it("edits the live Incus surface (remove a profile)", async () => {

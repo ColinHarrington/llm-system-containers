@@ -1183,6 +1183,8 @@ struct TetragonPolicyDto {
     agent: String,
     denied_syscalls: Vec<String>,
     egress_note: String,
+    fs_note: String,
+    read_only: bool,
 }
 
 /// Per-agent Tetragon policies compiled from guardrails (the kernel enforcement ring).
@@ -1196,6 +1198,8 @@ fn tetragon_policies(sandbox: String) -> Result<Vec<TetragonPolicyDto>, String> 
             agent: p.agent,
             denied_syscalls: p.denied_syscalls,
             egress_note: p.egress_note,
+            fs_note: p.fs_note,
+            read_only: p.read_only,
         })
         .collect())
 }
@@ -1226,6 +1230,15 @@ fn apply_tetragon_policies(app: AppHandle, sandbox: String) -> Result<usize, Str
         .apply_policies(&pols, &reporter)
         .map_err(|e| e.to_string())?;
     Ok(applied.len())
+}
+
+/// Set/clear `readonly` on a sandbox's workspace mounts (the per-container filesystem backstop).
+/// Returns the number of mounts changed.
+#[tauri::command]
+fn set_workspace_readonly(sandbox: String, readonly: bool) -> Result<usize, String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .set_workspace_readonly(&sandbox, readonly)
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -1540,6 +1553,7 @@ pub fn run() {
             tetragon_policies,
             tetragon_policy_yaml,
             apply_tetragon_policies,
+            set_workspace_readonly,
             images,
             images_available,
             build_image,

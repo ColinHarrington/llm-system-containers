@@ -209,6 +209,19 @@ pub fn egress_acl_plan(desired: &NetworkAcl, live: Option<&NetworkAcl>) -> Vec<A
     plan
 }
 
+// --- Filesystem posture (the filesystem ring) ---
+
+/// Whether a `guardrails.filesystem` posture is fully **read-only** (no read-write grant). Used
+/// to drive the container workspace-mount RO toggle and the Tetragon FS note. Heuristic over the
+/// legible string: a read-only marker with no read-write marker (e.g. "Read-only everything" →
+/// true; "RO repo + docs, RW scratch" → false because it grants RW).
+pub fn is_read_only(filesystem: &str) -> bool {
+    let l = filesystem.to_lowercase();
+    let ro = l.contains("read-only") || l.contains("read only") || l.contains("readonly");
+    let rw = l.contains("rw") || l.contains("read-write") || l.contains("read/write");
+    ro && !rw
+}
+
 // --- mitmproxy L7 domain allowlist (the HTTP(S) egress ring) ---
 //
 // Incus ACLs are L3/L4 only. HTTP(S) domain allowlists ("github.com only") are enforced by the
@@ -388,6 +401,16 @@ mod tests {
         c.llm_dest = Some("10.21.32.7".to_string());
         let acl = egress_acl(&sb_with(Some(EgressPolicy::default_managed())), &c).unwrap();
         assert_eq!(acl.egress[0].destination, "10.21.32.7/32");
+    }
+
+    #[test]
+    fn is_read_only_detects_fully_ro_postures() {
+        assert!(is_read_only("Read-only everything"));
+        assert!(is_read_only("readonly"));
+        assert!(!is_read_only("RO repo + docs, RW scratch")); // grants RW
+        assert!(!is_read_only("RW repo"));
+        assert!(!is_read_only("Minimal (own scratch)"));
+        assert!(!is_read_only(""));
     }
 
     #[test]

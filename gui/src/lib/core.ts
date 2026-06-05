@@ -363,7 +363,13 @@ export async function egressStatus(sandbox: string): Promise<EgressStatus> {
 export async function tetragonPolicies(sandbox: string): Promise<TetragonPolicy[]> {
   if (inTauri()) return invokeCmd<TetragonPolicy[]>("tetragon_policies", { sandbox });
   await delay(60);
-  return [{ name: `llmsc-${sandbox}-agent-claude`, agent: "agent-claude", deniedSyscalls: ["ptrace", "mount", "bpf"], egressNote: "None except LLM" }];
+  return [{ name: `llmsc-${sandbox}-agent-claude`, agent: "agent-claude", deniedSyscalls: ["ptrace", "mount", "bpf"], egressNote: "None except LLM", fsNote: "Read-only everything", readOnly: true }];
+}
+// Set/clear readonly on a sandbox's workspace mounts (per-container filesystem backstop).
+export async function setWorkspaceReadonly(sandbox: string, readonly: boolean): Promise<number> {
+  if (inTauri()) return invokeCmd<number>("set_workspace_readonly", { sandbox, readonly });
+  await delay(80);
+  return 1;
 }
 export async function tetragonPolicyYaml(sandbox: string, agent: string): Promise<string> {
   if (inTauri()) return invokeCmd<string>("tetragon_policy_yaml", { sandbox, agent });

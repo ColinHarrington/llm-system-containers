@@ -1558,6 +1558,38 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         Ok(())
     }
 
+    /// Set/clear `readonly` on a sandbox's workspace mounts — instance-local **disk** devices with
+    /// a `path` other than `/` (the root disk is left alone). Returns the number of devices changed.
+    /// The real per-container filesystem backstop; per-UID path rules are Tetragon's job.
+    pub fn set_workspace_readonly(&self, sandbox: &str, readonly: bool) -> Result<usize> {
+        let inst = self.instance(sandbox)?;
+        let mut changed = 0;
+        for (dev, keys) in &inst.devices {
+            if !inst.local_devices.contains(dev) {
+                continue; // profile-inherited (e.g. root from default) — leave alone
+            }
+            let is_disk = keys.get("type").map(String::as_str) == Some("disk");
+            let path = keys.get("path").map(String::as_str).unwrap_or("");
+            if !is_disk || path.is_empty() || path == "/" {
+                continue;
+            }
+            if readonly {
+                let o =
+                    self.incus_run(&["config", "device", "set", sandbox, dev, "readonly", "true"])?;
+                if !o.ok() {
+                    return Err(Error::Incus(format!(
+                        "setting readonly on {dev}: {}",
+                        o.stderr.trim()
+                    )));
+                }
+            } else {
+                let _ = self.incus_run(&["config", "device", "unset", sandbox, dev, "readonly"]);
+            }
+            changed += 1;
+        }
+        Ok(changed)
+    }
+
     /// Reconcile a sandbox's egress policy into Incus: compile → diff the live ACL → apply + bind
     /// to the nic (default-drop), then route HTTP(S) through mitmproxy if an L7 domain allowlist is
     /// set. Open/unmanaged tears down (unbind + delete the managed ACL, clear proxy env). Returns
@@ -2215,6 +2247,26 @@ mod tests {
         let c = CliIncus::new("llmsc", &r);
         // "already exists" is swallowed; a real failure would propagate.
         c.network_acl_create("llmsc-egress-x").unwrap();
+    }
+
+    #[test]
+    fn set_workspace_readonly_targets_local_mounts_only() {
+        let json = r#"[{"name":"web-agent-01","status":"Running","config":{},
+          "expanded_devices":{"root":{"type":"disk","path":"/","pool":"default"},
+            "work":{"type":"disk","path":"/work","source":"/h/p"}},
+          "devices":{"work":{"type":"disk","path":"/work","source":"/h/p"}}}]"#;
+        let r = FakeRunner::new(move |_, args| {
+            if args.contains(&"list") {
+                out(0, json)
+            } else {
+                out(0, "")
+            }
+        });
+        let c = CliIncus::new("llmsc", &r);
+        // Only the local workspace mount (/work) is set RO — root (/) and profile devices skipped.
+        assert_eq!(c.set_workspace_readonly("web-agent-01", true).unwrap(), 1);
+        assert!(r.called_with("readonly"));
+        assert!(r.called_with("work"));
     }
 
     #[test]
