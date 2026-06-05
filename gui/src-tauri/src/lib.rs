@@ -1746,43 +1746,49 @@ fn service_disable(name: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Provision one service in the VM via its deployer. Shared by `service_up` (single service) and
+/// `platform_init` (the wizard). `vm` is the VM name; progress streams via `reporter`.
+fn deploy_one(vm: &str, name: &str, reporter: &EventReporter) -> Result<(), String> {
+    match name {
+        "litellm" => LiteLlmDeployer::new(vm.to_string(), &SystemRunner)
+            .deploy(reporter)
+            .map_err(|e| e.to_string()),
+        "mitmproxy" => {
+            let d = llmsc_core::deploy::MitmproxyDeployer::new(vm.to_string(), &SystemRunner);
+            d.deploy(reporter).map_err(|e| e.to_string())?;
+            // Load the compiled allowlist (union of sandbox domains).
+            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+            d.sync_allowlist(&llmsc_core::enforce::mitmproxy_allowlist(&cfg), reporter)
+                .map_err(|e| e.to_string())
+        }
+        "phoenix" => {
+            llmsc_core::deploy::PhoenixDeployer::new(vm.to_string(), &SystemRunner)
+                .deploy(reporter)
+                .map_err(|e| e.to_string())?;
+            // Best-effort: point an already-deployed LiteLLM at this Phoenix.
+            let incus = CliIncus::new(vm.to_string(), &SystemRunner);
+            if let Some(ip) = incus.instance_ipv4(&service::container_name("phoenix")) {
+                let _ = LiteLlmDeployer::new(vm.to_string(), &SystemRunner)
+                    .enable_phoenix(&ip, reporter);
+            }
+            Ok(())
+        }
+        "grafana" => llmsc_core::deploy::GrafanaStackDeployer::new(vm.to_string(), &SystemRunner)
+            .deploy(reporter)
+            .map_err(|e| e.to_string()),
+        "seaweedfs" => llmsc_core::deploy::SeaweedFsDeployer::new(vm.to_string(), &SystemRunner)
+            .deploy(reporter)
+            .map_err(|e| e.to_string()),
+        other => Err(format!("no deployer yet for '{other}'")),
+    }
+}
+
 /// Provision (stand up) a single enabled service in the VM. Only services with a deployer are
 /// supported; others return an error. Progress streams to the GUI via the `progress` event.
 #[tauri::command]
 fn service_up(app: AppHandle, name: String) -> Result<(), String> {
     let reporter = EventReporter { app };
-    let vm = vm_name();
-    match name.as_str() {
-        "litellm" => LiteLlmDeployer::new(vm, &SystemRunner)
-            .deploy(&reporter)
-            .map_err(|e| e.to_string()),
-        "mitmproxy" => {
-            let d = llmsc_core::deploy::MitmproxyDeployer::new(vm, &SystemRunner);
-            d.deploy(&reporter).map_err(|e| e.to_string())?;
-            // Load the compiled allowlist (union of sandbox domains).
-            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
-            d.sync_allowlist(&llmsc_core::enforce::mitmproxy_allowlist(&cfg), &reporter)
-                .map_err(|e| e.to_string())
-        }
-        "phoenix" => {
-            llmsc_core::deploy::PhoenixDeployer::new(vm.clone(), &SystemRunner)
-                .deploy(&reporter)
-                .map_err(|e| e.to_string())?;
-            // Best-effort: point an already-deployed LiteLLM at this Phoenix.
-            let incus = CliIncus::new(vm.clone(), &SystemRunner);
-            if let Some(ip) = incus.instance_ipv4(&service::container_name("phoenix")) {
-                let _ = LiteLlmDeployer::new(vm, &SystemRunner).enable_phoenix(&ip, &reporter);
-            }
-            Ok(())
-        }
-        "grafana" => llmsc_core::deploy::GrafanaStackDeployer::new(vm, &SystemRunner)
-            .deploy(&reporter)
-            .map_err(|e| e.to_string()),
-        "seaweedfs" => llmsc_core::deploy::SeaweedFsDeployer::new(vm, &SystemRunner)
-            .deploy(&reporter)
-            .map_err(|e| e.to_string()),
-        other => Err(format!("no deployer yet for '{other}'")),
-    }
+    deploy_one(&vm_name(), &name, &reporter)
 }
 
 #[derive(Deserialize)]
@@ -1802,7 +1808,9 @@ struct SetupCfg {
 #[tauri::command]
 fn platform_init(app: AppHandle, cfg: SetupCfg) -> Result<(), String> {
     let reporter = EventReporter { app };
-    let _ = cfg.default_deny_egress; // networking policy is M4 (deferred); accepted for now.
+    // Per-sandbox egress is set at sandbox creation (default allowlist[llm]); this wizard toggle
+    // is informational for now.
+    let _ = cfg.default_deny_egress;
     let mut c = Config::default();
     if !cfg.operator.trim().is_empty() {
         c.operator = cfg.operator.trim().to_string();
@@ -1822,9 +1830,21 @@ fn platform_init(app: AppHandle, cfg: SetupCfg) -> Result<(), String> {
     LimaVmDriver::new(c.vm, SystemRunner)
         .up(&reporter)
         .map_err(|e| e.to_string())?;
-    IncusBootstrap::new(name, &SystemRunner)
+    IncusBootstrap::new(name.clone(), &SystemRunner)
         .run(&reporter)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Provision the selected services (best-effort: a failing service does not undo VM bring-up).
+    for s in &cfg.services {
+        reporter.step(&format!("Provisioning {s}"));
+        if let Err(e) = deploy_one(&name, s, &reporter) {
+            reporter.step(&format!(
+                "  {s}: {e} (skipped — provision later from Services)"
+            ));
+        }
+    }
+    reporter.step("Platform ready");
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
