@@ -1741,6 +1741,9 @@ fn service_up(app: AppHandle, name: String) -> Result<(), String> {
             }
             Ok(())
         }
+        "grafana" => llmsc_core::deploy::GrafanaStackDeployer::new(vm, &SystemRunner)
+            .deploy(&reporter)
+            .map_err(|e| e.to_string()),
         other => Err(format!("no deployer yet for '{other}'")),
     }
 }

@@ -416,6 +416,153 @@ fn phoenix_unit_script(port: u16) -> String {
     )
 }
 
+/// Pinned VictoriaMetrics / Loki release versions (GitHub release tarballs). Bump deliberately.
+const VICTORIAMETRICS_VERSION: &str = "v1.111.0";
+const LOKI_VERSION: &str = "3.3.2";
+
+/// Provisions the **metrics + logs stack** in one L2 container (`svc-grafana`): VictoriaMetrics
+/// (metrics, :8428), Loki (logs, :3100), and Grafana (dashboards, :3000) with both wired in as
+/// datasources. Representative install — pinned versions / apt repo are validated on the VM later.
+pub struct GrafanaStackDeployer<'a, R: CommandRunner> {
+    vm: String,
+    container: String,
+    image: String,
+    runner: &'a R,
+}
+
+impl<'a, R: CommandRunner> GrafanaStackDeployer<'a, R> {
+    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+        Self {
+            vm: vm.into(),
+            container: crate::service::container_name("grafana"),
+            image: "images:debian/12".into(),
+            runner,
+        }
+    }
+
+    fn incus(&self, args: &[&str]) -> Result<RunOutput> {
+        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
+        full.extend_from_slice(args);
+        self.runner.run("limactl", &full)
+    }
+
+    fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
+        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
+        full.extend_from_slice(args);
+        self.runner.run_streamed("limactl", &full)
+    }
+
+    fn exec(&self, cmd: &str) -> Result<RunOutput> {
+        self.incus(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
+    }
+
+    fn check(&self, cmd: &str, what: &str) -> Result<()> {
+        let o = self.exec(cmd)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("{what}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Provision and start VictoriaMetrics + Loki + Grafana, with Grafana datasources wired.
+    pub fn deploy(&self, reporter: &dyn Reporter) -> Result<()> {
+        reporter.step("Creating metrics/logs service container");
+        if !self.incus(&["info", self.container.as_str()])?.ok() {
+            let code =
+                self.incus_streamed(&["launch", self.image.as_str(), self.container.as_str()])?;
+            if code != 0 {
+                return Err(Error::Incus(format!(
+                    "creating {} failed (exit {code})",
+                    self.container
+                )));
+            }
+        }
+
+        reporter.step("Installing Grafana (apt repo)");
+        self.check(
+            "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y wget ca-certificates gpg tar && \
+             wget -qO /usr/share/keyrings/grafana.key https://apt.grafana.com/gpg.key && \
+             echo 'deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main' > /etc/apt/sources.list.d/grafana.list && \
+             apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y grafana",
+            "apt install grafana",
+        )?;
+
+        reporter.step(&format!(
+            "Installing VictoriaMetrics {VICTORIAMETRICS_VERSION}"
+        ));
+        let arch = "$(dpkg --print-architecture)"; // amd64 / arm64 — matches the VM
+        let vm_v = VICTORIAMETRICS_VERSION;
+        self.check(
+            &format!(
+                "wget -qO /tmp/vm.tar.gz https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/{vm_v}/victoria-metrics-linux-{arch}-{vm_v}.tar.gz && \
+                 tar -xzf /tmp/vm.tar.gz -C /usr/local/bin && \
+                 mv -f /usr/local/bin/victoria-metrics-prod /usr/local/bin/victoria-metrics"
+            ),
+            "install victoria-metrics",
+        )?;
+
+        reporter.step(&format!("Installing Loki {LOKI_VERSION}"));
+        let loki_v = LOKI_VERSION;
+        self.check(
+            &format!(
+                "wget -qO /tmp/loki.zip https://github.com/grafana/loki/releases/download/v{loki_v}/loki-linux-{arch}.zip && \
+                 (command -v unzip >/dev/null || apt-get install -y unzip) && \
+                 unzip -o /tmp/loki.zip -d /usr/local/bin && mv -f /usr/local/bin/loki-linux-* /usr/local/bin/loki"
+            ),
+            "install loki",
+        )?;
+
+        reporter.step("Writing systemd units + Grafana datasources");
+        self.check(&metrics_units_script(), "write units")?;
+        self.check(&grafana_datasources_script(), "write datasources")?;
+
+        reporter.step("Starting VictoriaMetrics + Loki + Grafana");
+        self.check(
+            "systemctl daemon-reload && systemctl enable --now victoria-metrics loki grafana-server",
+            "start stack",
+        )?;
+        reporter
+            .step("Metrics/logs stack deployed — Grafana :3000, VictoriaMetrics :8428, Loki :3100");
+        Ok(())
+    }
+}
+
+fn metrics_units_script() -> String {
+    "mkdir -p /var/lib/victoria-metrics /var/lib/loki && \
+     cat > /etc/loki.yaml <<'EOF'\n\
+     auth_enabled: false\n\
+     server: {http_listen_port: 3100}\n\
+     common: {ring: {kvstore: {store: inmemory}}, replication_factor: 1, path_prefix: /var/lib/loki}\n\
+     schema_config: {configs: [{from: 2020-01-01, store: tsdb, object_store: filesystem, schema: v13, index: {prefix: index_, period: 24h}}]}\n\
+     EOF\n\
+     cat > /etc/systemd/system/victoria-metrics.service <<'EOF'\n\
+     [Unit]\nDescription=VictoriaMetrics\nAfter=network.target\n\
+     [Service]\nExecStart=/usr/local/bin/victoria-metrics --storageDataPath=/var/lib/victoria-metrics --httpListenAddr=:8428\nRestart=on-failure\n\
+     [Install]\nWantedBy=multi-user.target\nEOF\n\
+     cat > /etc/systemd/system/loki.service <<'EOF'\n\
+     [Unit]\nDescription=Loki\nAfter=network.target\n\
+     [Service]\nExecStart=/usr/local/bin/loki -config.file=/etc/loki.yaml\nRestart=on-failure\n\
+     [Install]\nWantedBy=multi-user.target\nEOF"
+        .to_string()
+}
+
+fn grafana_datasources_script() -> String {
+    "mkdir -p /etc/grafana/provisioning/datasources && \
+     cat > /etc/grafana/provisioning/datasources/llmsc.yaml <<'EOF'\n\
+     apiVersion: 1\n\
+     datasources:\n\
+     \x20 - name: VictoriaMetrics\n\
+     \x20   type: prometheus\n\
+     \x20   access: proxy\n\
+     \x20   url: http://127.0.0.1:8428\n\
+     \x20 - name: Loki\n\
+     \x20   type: loki\n\
+     \x20   access: proxy\n\
+     \x20   url: http://127.0.0.1:3100\n\
+     EOF"
+    .to_string()
+}
+
 /// The mitmproxy egress proxy port (HTTP(S) interception).
 pub const MITMPROXY_PORT: u16 = 8080;
 
@@ -682,6 +829,26 @@ mod tests {
         assert_eq!(u[0].spend, 1.25);
         let wrap = r#"{"keys":[{"key_alias":"llmsc-b-y","spend":0.5}]}"#;
         assert_eq!(parse_key_usage(wrap).unwrap()[0].spend, 0.5);
+    }
+
+    #[test]
+    fn grafana_stack_deploy_installs_all_three() {
+        let r = FakeRunner::new(|_, args| {
+            if args.contains(&"info") {
+                out(1, "")
+            } else {
+                out(0, "")
+            }
+        });
+        GrafanaStackDeployer::new("llmsc", &r)
+            .deploy(&SilentReporter)
+            .unwrap();
+        assert!(r.called_with("svc-grafana"));
+        assert!(r.called_with("grafana"));
+        assert!(r.called_with("VictoriaMetrics"));
+        assert!(r.called_with("loki"));
+        assert!(r.called_with("llmsc.yaml")); // datasource provisioning
+        assert!(r.called_with("victoria-metrics loki grafana-server"));
     }
 
     #[test]
