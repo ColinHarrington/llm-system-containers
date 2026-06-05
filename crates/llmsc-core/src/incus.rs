@@ -177,6 +177,17 @@ pub fn builder_name(alias: &str) -> String {
     format!("build-{s}")
 }
 
+/// One step in converging a live instance toward its declared intent (see `reconcile::converge_plan`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConvergeOp {
+    SetConfig { key: String, value: String },
+    UnsetConfig { key: String },
+    AddDevice { name: String, keys: BTreeMap<String, String> },
+    RemoveDevice { name: String },
+    AddProfile { name: String },
+    RemoveProfile { name: String },
+}
+
 /// A live instance's Incus surface, read back from the server (the round-trip view).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstanceConfig {
@@ -684,6 +695,39 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         let o = self.incus_run(&["profile", "remove", name, profile])?;
         if !o.ok() {
             return Err(Error::Incus(format!("profile remove {profile}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Apply a converge plan (from `reconcile::converge_plan`) to a live instance, step by step.
+    pub fn converge(&self, name: &str, plan: &[ConvergeOp], reporter: &dyn Reporter) -> Result<()> {
+        for op in plan {
+            match op {
+                ConvergeOp::SetConfig { key, value } => {
+                    reporter.step(&format!("set {key}={value}"));
+                    self.set_config(name, key, value)?;
+                }
+                ConvergeOp::UnsetConfig { key } => {
+                    reporter.step(&format!("unset {key}"));
+                    self.unset_config(name, key)?;
+                }
+                ConvergeOp::AddDevice { name: dev, keys } => {
+                    reporter.step(&format!("add device {dev}"));
+                    self.add_device(name, dev, keys)?;
+                }
+                ConvergeOp::RemoveDevice { name: dev } => {
+                    reporter.step(&format!("remove device {dev}"));
+                    self.remove_device(name, dev)?;
+                }
+                ConvergeOp::AddProfile { name: p } => {
+                    reporter.step(&format!("apply profile {p}"));
+                    self.add_profile(name, p)?;
+                }
+                ConvergeOp::RemoveProfile { name: p } => {
+                    reporter.step(&format!("remove profile {p}"));
+                    self.remove_profile(name, p)?;
+                }
+            }
         }
         Ok(())
     }

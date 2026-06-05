@@ -4,10 +4,59 @@
 //! missing, leave declared+present ones, and **surface drift** (present in Incus but not in
 //! config) without deleting — destructive actions stay explicit.
 
-use crate::config::Config;
+use crate::config::{Config, Sandbox};
 use crate::error::Result;
-use crate::incus::IncusClient;
+use crate::incus::{ConvergeOp, IncusClient, InstanceConfig};
 use crate::progress::Reporter;
+
+/// Compute the steps to converge a *live* instance toward its *declared* sandbox intent.
+///
+/// Conservative by design: sets/updates declared config keys and unsets drifted ones (but never
+/// touches read-only `image.*`); adds declared devices and removes drifted instance-local ones (by
+/// name; in-place device edits are a manual remove+add for now); adds declared profiles and removes
+/// drifted ones — but **never removes `default`** (it provides the base eth0/root).
+pub fn converge_plan(desired: &Sandbox, live: &InstanceConfig) -> Vec<ConvergeOp> {
+    let mut plan = Vec::new();
+
+    // config
+    let want = desired.effective_config();
+    for (k, v) in &want {
+        if live.config.get(k) != Some(v) {
+            plan.push(ConvergeOp::SetConfig { key: k.clone(), value: v.clone() });
+        }
+    }
+    for k in live.config.keys() {
+        if !want.contains_key(k) && !k.starts_with("image.") {
+            plan.push(ConvergeOp::UnsetConfig { key: k.clone() });
+        }
+    }
+
+    // devices (instance-local only; profile-inherited are not in live.local_devices)
+    for (name, keys) in &desired.devices {
+        if !live.local_devices.contains(name) {
+            plan.push(ConvergeOp::AddDevice { name: name.clone(), keys: keys.clone() });
+        }
+    }
+    for name in &live.local_devices {
+        if !desired.devices.contains_key(name) {
+            plan.push(ConvergeOp::RemoveDevice { name: name.clone() });
+        }
+    }
+
+    // profiles
+    for p in &desired.profiles {
+        if !live.profiles.contains(p) {
+            plan.push(ConvergeOp::AddProfile { name: p.clone() });
+        }
+    }
+    for p in &live.profiles {
+        if p != "default" && !desired.profiles.contains(p) {
+            plan.push(ConvergeOp::RemoveProfile { name: p.clone() });
+        }
+    }
+
+    plan
+}
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ReconcileReport {
@@ -100,6 +149,50 @@ mod tests {
         let report = reconcile(&config_with(&["a"]), &incus, &SilentReporter).unwrap();
         assert_eq!(report.created, vec!["a"]);
         assert_eq!(report.extra, vec!["rogue"]);
+    }
+
+    #[test]
+    fn converge_plan_diffs_config_devices_profiles() {
+        use crate::incus::{ConvergeOp, InstanceConfig, InstanceStatus};
+        use std::collections::BTreeMap;
+
+        let mut desired = sandbox("web-agent-01");
+        desired.nesting = true; // → security.nesting=true in effective_config
+        desired.config.insert("limits.processes".into(), "512".into());
+        let mut work = BTreeMap::new();
+        work.insert("type".into(), "disk".into());
+        work.insert("source".into(), "/h/p".into());
+        desired.devices.insert("work".into(), work);
+        desired.profiles = vec!["sandbox".into()];
+
+        let live = InstanceConfig {
+            name: "web-agent-01".into(),
+            status: InstanceStatus::Running,
+            description: String::new(),
+            ephemeral: false,
+            profiles: vec!["default".into(), "old-profile".into()],
+            // has the privileged invariant already, an image.* (read-only), and a drifted key
+            config: BTreeMap::from([
+                ("security.privileged".into(), "false".into()),
+                ("image.os".into(), "Alpine".into()),
+                ("drifted.key".into(), "x".into()),
+            ]),
+            devices: BTreeMap::new(),
+            local_devices: vec!["stale".into()],
+        };
+
+        let plan = converge_plan(&desired, &live);
+        assert!(plan.contains(&ConvergeOp::SetConfig { key: "security.nesting".into(), value: "true".into() }));
+        assert!(plan.contains(&ConvergeOp::SetConfig { key: "limits.processes".into(), value: "512".into() }));
+        assert!(plan.contains(&ConvergeOp::UnsetConfig { key: "drifted.key".into() }));
+        // image.* and the already-correct security.privileged are left alone.
+        assert!(!plan.iter().any(|op| matches!(op, ConvergeOp::UnsetConfig { key } if key.starts_with("image."))));
+        assert!(plan.contains(&ConvergeOp::RemoveDevice { name: "stale".into() }));
+        assert!(plan.iter().any(|op| matches!(op, ConvergeOp::AddDevice { name, .. } if name == "work")));
+        assert!(plan.contains(&ConvergeOp::AddProfile { name: "sandbox".into() }));
+        assert!(plan.contains(&ConvergeOp::RemoveProfile { name: "old-profile".into() }));
+        // never removes the default profile
+        assert!(!plan.contains(&ConvergeOp::RemoveProfile { name: "default".into() }));
     }
 
     #[test]

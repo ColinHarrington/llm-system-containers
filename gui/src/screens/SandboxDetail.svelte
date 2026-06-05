@@ -4,7 +4,7 @@
   import {
     topology, removeSandbox, removeAgent, instanceConfig,
     instanceSetConfig, instanceUnsetConfig, instanceAddMount, instanceRemoveDevice,
-    instanceAddProfile, instanceRemoveProfile,
+    instanceAddProfile, instanceRemoveProfile, applySandbox,
   } from "../lib/core";
   import type { InstanceConfig, TopoSandbox } from "../lib/types";
 
@@ -63,6 +63,21 @@
 
   const sb = $derived(all.find((s) => s.name === ui.selectedSandbox) ?? null);
   const initials = (name: string) => name.replace(/^agent-/, "").slice(0, 2).toUpperCase();
+
+  async function applyConfig() {
+    if (!sb) return;
+    cfgBusy = true;
+    showToast(`$ llmsc apply ${sb.name}`);
+    try {
+      const n = await applySandbox(sb.name);
+      showToast(n === 0 ? "Already in sync" : `Converged — ${n} change(s)`, "ok");
+      bump();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally {
+      cfgBusy = false;
+    }
+  }
 
   async function remove() {
     if (!sb) return;
@@ -155,7 +170,9 @@
     <!-- Live Incus surface (round-trip read from the server) -->
     {#if inst}
       <div class="card mt16">
-        <div class="card-head"><h3>Incus configuration</h3><span class="sub">live surface · editable · <span class="mono">incus config show {sb.name}</span></span></div>
+        <div class="card-head"><h3>Incus configuration</h3><span class="sub">live surface · editable · <span class="mono">incus config show {sb.name}</span></span>
+          <button class="btn sm right" disabled={cfgBusy} onclick={applyConfig} title="Converge the running instance to your config intent"><Icon name="check" size={13} /><span>Apply config</span></button>
+        </div>
         <div class="pad">
           <!-- profiles -->
           <div class="sub2">Profiles</div>

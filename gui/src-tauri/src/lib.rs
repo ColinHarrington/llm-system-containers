@@ -349,6 +349,28 @@ fn save_user_config(cfg: &Config) {
     let _ = cfg.save(&config::user_config_path());
 }
 
+/// Converge a running instance toward its declared intent (config/devices/profiles). Returns the
+/// number of changes applied (0 = already in sync). Streams each step to the GUI.
+#[tauri::command]
+fn apply_sandbox(app: AppHandle, name: String) -> Result<usize, String> {
+    let reporter = EventReporter { app };
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let live = incus.instance(&name).map_err(|e| e.to_string())?;
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let desired = cfg
+        .sandbox(&name)
+        .ok_or_else(|| format!("'{name}' is not config-managed"))?;
+    let plan = llmsc_core::reconcile::converge_plan(desired, &live);
+    let n = plan.len();
+    if n == 0 {
+        reporter.step("already in sync");
+        return Ok(0);
+    }
+    reporter.step(&format!("Converging {name} — {n} change(s)"));
+    incus.converge(&name, &plan, &reporter).map_err(|e| e.to_string())?;
+    Ok(n)
+}
+
 /// Set a live instance config key and converge it into config intent.
 #[tauri::command]
 fn instance_set_config(name: String, key: String, value: String) -> Result<(), String> {
@@ -781,6 +803,7 @@ pub fn run() {
             instance_remove_device,
             instance_add_profile,
             instance_remove_profile,
+            apply_sandbox,
             operator_default,
             add_agent,
             remove_agent,

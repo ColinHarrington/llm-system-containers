@@ -21,6 +21,7 @@ vi.mock("../lib/core", () => ({
   instanceRemoveDevice: vi.fn(async () => {}),
   instanceAddProfile: vi.fn(async () => {}),
   instanceRemoveProfile,
+  applySandbox: vi.fn(async () => 0),
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",

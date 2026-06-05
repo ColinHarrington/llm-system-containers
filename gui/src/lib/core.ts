@@ -178,6 +178,13 @@ export async function instanceConfig(name: string): Promise<InstanceConfig> {
   };
 }
 
+// Converge a running instance toward its declared config intent. Returns the number of changes.
+export async function applySandbox(name: string): Promise<number> {
+  if (inTauri()) return invokeCmd<number>("apply_sandbox", { name });
+  await mockSteps([`Converging ${name}`, "already in sync"], 150);
+  return 0;
+}
+
 // Edit a live instance's Incus surface; each also converges the change into config intent.
 export async function instanceSetConfig(name: string, key: string, value: string): Promise<void> {
   if (inTauri()) return invokeCmd<void>("instance_set_config", { name, key, value });
