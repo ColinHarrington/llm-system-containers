@@ -21,23 +21,22 @@ const LITELLM_VERSION: &str = "1.87.0";
 /// in the generated config and to authenticate virtual-key minting.
 const MASTER_KEY: &str = "sk-llmsc-master";
 
-/// Provisions LiteLLM in its own L2 container.
-pub struct LiteLlmDeployer<'a, R: CommandRunner> {
+/// Shared plumbing for a service that lives in its own L2 container: drives `incus` in the VM via
+/// `limactl shell`, execs commands inside the container, and launches/starts it. Every deployer
+/// composes one of these so the boilerplate lives in exactly one place.
+struct ServiceContainer<'a, R: CommandRunner> {
     vm: String,
     container: String,
     image: String,
-    port: u16,
     runner: &'a R,
 }
 
-impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
-    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+impl<'a, R: CommandRunner> ServiceContainer<'a, R> {
+    fn new(vm: impl Into<String>, service: &str, image: impl Into<String>, runner: &'a R) -> Self {
         Self {
             vm: vm.into(),
-            container: crate::service::container_name("litellm"),
-            // debian/13 (trixie) systemd hangs at boot under this Incus → no networking; bookworm works.
-            image: "images:debian/12".into(),
-            port: 4000,
+            container: crate::service::container_name(service),
+            image: image.into(),
             runner,
         }
     }
@@ -62,9 +61,17 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         self.incus_streamed(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
     }
 
-    /// Provision and start LiteLLM. Idempotent-ish (skips container creation if present).
-    pub fn deploy(&self, reporter: &dyn Reporter) -> Result<()> {
-        reporter.step("Creating LiteLLM service container");
+    /// Run a command in the container, mapping a non-zero exit to an error labeled `what`.
+    fn check(&self, cmd: &str, what: &str) -> Result<()> {
+        let o = self.exec(cmd)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("{what}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Launch the container from its image if it does not already exist.
+    fn launch_if_absent(&self) -> Result<()> {
         if !self.incus(&["info", self.container.as_str()])?.ok() {
             let code =
                 self.incus_streamed(&["launch", self.image.as_str(), self.container.as_str()])?;
@@ -75,6 +82,45 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
                 )));
             }
         }
+        Ok(())
+    }
+
+    /// `systemctl daemon-reload && systemctl enable --now <units>`.
+    fn start(&self, units: &str) -> Result<()> {
+        self.check(
+            &format!("systemctl daemon-reload && systemctl enable --now {units}"),
+            "starting service",
+        )
+    }
+}
+
+/// Provisions LiteLLM in its own L2 container.
+pub struct LiteLlmDeployer<'a, R: CommandRunner> {
+    svc: ServiceContainer<'a, R>,
+    port: u16,
+}
+
+impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
+    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+        Self {
+            // debian/13 (trixie) systemd hangs at boot under this Incus → no networking; bookworm works.
+            svc: ServiceContainer::new(vm, "litellm", "images:debian/12", runner),
+            port: 4000,
+        }
+    }
+
+    fn exec(&self, cmd: &str) -> Result<RunOutput> {
+        self.svc.exec(cmd)
+    }
+
+    fn exec_streamed(&self, cmd: &str) -> Result<i32> {
+        self.svc.exec_streamed(cmd)
+    }
+
+    /// Provision and start LiteLLM. Idempotent-ish (skips container creation if present).
+    pub fn deploy(&self, reporter: &dyn Reporter) -> Result<()> {
+        reporter.step("Creating LiteLLM service container");
+        self.svc.launch_if_absent()?;
 
         reporter.step("Installing Python (apt)");
         // Always install python3-venv: the base image ships python3 but not the venv module.
@@ -113,11 +159,11 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         self.exec(&unit_script(self.port))?;
 
         reporter.step("Starting LiteLLM");
-        self.exec("systemctl daemon-reload && systemctl enable --now litellm")?;
+        self.svc.start("litellm")?;
 
         reporter.step(&format!(
             "LiteLLM deployed — reachable in the VM at {}:{} (TODO: set a provider key + virtual keys)",
-            self.container, self.port
+            self.svc.container, self.port
         ));
         Ok(())
     }
@@ -316,74 +362,34 @@ fn unit_script(port: u16) -> String {
 /// token usage). Mirrors [`LiteLlmDeployer`]; LiteLLM is wired to export traces here via
 /// [`LiteLlmDeployer::enable_phoenix`].
 pub struct PhoenixDeployer<'a, R: CommandRunner> {
-    vm: String,
-    container: String,
-    image: String,
+    svc: ServiceContainer<'a, R>,
     port: u16,
-    runner: &'a R,
 }
 
 impl<'a, R: CommandRunner> PhoenixDeployer<'a, R> {
     pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
         Self {
-            vm: vm.into(),
-            container: crate::service::container_name("phoenix"),
-            image: "images:debian/12".into(),
+            svc: ServiceContainer::new(vm, "phoenix", "images:debian/12", runner),
             port: 6006,
-            runner,
         }
-    }
-
-    fn incus(&self, args: &[&str]) -> Result<RunOutput> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run("limactl", &full)
-    }
-
-    fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run_streamed("limactl", &full)
-    }
-
-    fn exec(&self, cmd: &str) -> Result<RunOutput> {
-        self.incus(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
-    }
-
-    fn exec_streamed(&self, cmd: &str) -> Result<i32> {
-        self.incus_streamed(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
     }
 
     /// Provision and start Phoenix (pip `arize-phoenix`, systemd `phoenix serve`).
     pub fn deploy(&self, reporter: &dyn Reporter) -> Result<()> {
         reporter.step("Creating Phoenix service container");
-        if !self.incus(&["info", self.container.as_str()])?.ok() {
-            let code =
-                self.incus_streamed(&["launch", self.image.as_str(), self.container.as_str()])?;
-            if code != 0 {
-                return Err(Error::Incus(format!(
-                    "creating {} failed (exit {code})",
-                    self.container
-                )));
-            }
-        }
+        self.svc.launch_if_absent()?;
         reporter.step("Installing Python (apt)");
-        let o = self.exec(
+        self.svc.check(
             "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv",
+            "apt install python",
         )?;
-        if !o.ok() {
-            return Err(Error::Incus(format!(
-                "apt install python: {}",
-                o.stderr.trim()
-            )));
-        }
         reporter.step("Creating virtualenv");
-        let o = self.exec("test -x /opt/phoenix/bin/pip || python3 -m venv /opt/phoenix")?;
-        if !o.ok() {
-            return Err(Error::Incus(format!("python venv: {}", o.stderr.trim())));
-        }
+        self.svc.check(
+            "test -x /opt/phoenix/bin/pip || python3 -m venv /opt/phoenix",
+            "python venv",
+        )?;
         reporter.step("Installing arize-phoenix (pip)");
-        let code = self.exec_streamed(
+        let code = self.svc.exec_streamed(
             "/opt/phoenix/bin/pip install --quiet --upgrade pip && \
              /opt/phoenix/bin/pip install --quiet arize-phoenix",
         )?;
@@ -393,12 +399,12 @@ impl<'a, R: CommandRunner> PhoenixDeployer<'a, R> {
             )));
         }
         reporter.step("Writing systemd unit");
-        self.exec(&phoenix_unit_script(self.port))?;
+        self.svc.exec(&phoenix_unit_script(self.port))?;
         reporter.step("Starting Phoenix");
-        self.exec("systemctl daemon-reload && systemctl enable --now phoenix")?;
+        self.svc.start("phoenix")?;
         reporter.step(&format!(
             "Phoenix deployed — UI/collector in the VM at {}:{}",
-            self.container, self.port
+            self.svc.container, self.port
         ));
         Ok(())
     }
@@ -424,62 +430,23 @@ const LOKI_VERSION: &str = "3.3.2";
 /// (metrics, :8428), Loki (logs, :3100), and Grafana (dashboards, :3000) with both wired in as
 /// datasources. Representative install — pinned versions / apt repo are validated on the VM later.
 pub struct GrafanaStackDeployer<'a, R: CommandRunner> {
-    vm: String,
-    container: String,
-    image: String,
-    runner: &'a R,
+    svc: ServiceContainer<'a, R>,
 }
 
 impl<'a, R: CommandRunner> GrafanaStackDeployer<'a, R> {
     pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
         Self {
-            vm: vm.into(),
-            container: crate::service::container_name("grafana"),
-            image: "images:debian/12".into(),
-            runner,
+            svc: ServiceContainer::new(vm, "grafana", "images:debian/12", runner),
         }
-    }
-
-    fn incus(&self, args: &[&str]) -> Result<RunOutput> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run("limactl", &full)
-    }
-
-    fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run_streamed("limactl", &full)
-    }
-
-    fn exec(&self, cmd: &str) -> Result<RunOutput> {
-        self.incus(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
-    }
-
-    fn check(&self, cmd: &str, what: &str) -> Result<()> {
-        let o = self.exec(cmd)?;
-        if !o.ok() {
-            return Err(Error::Incus(format!("{what}: {}", o.stderr.trim())));
-        }
-        Ok(())
     }
 
     /// Provision and start VictoriaMetrics + Loki + Grafana, with Grafana datasources wired.
     pub fn deploy(&self, reporter: &dyn Reporter) -> Result<()> {
         reporter.step("Creating metrics/logs service container");
-        if !self.incus(&["info", self.container.as_str()])?.ok() {
-            let code =
-                self.incus_streamed(&["launch", self.image.as_str(), self.container.as_str()])?;
-            if code != 0 {
-                return Err(Error::Incus(format!(
-                    "creating {} failed (exit {code})",
-                    self.container
-                )));
-            }
-        }
+        self.svc.launch_if_absent()?;
 
         reporter.step("Installing Grafana (apt repo)");
-        self.check(
+        self.svc.check(
             "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y wget ca-certificates gpg tar && \
              wget -qO /usr/share/keyrings/grafana.key https://apt.grafana.com/gpg.key && \
              echo 'deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main' > /etc/apt/sources.list.d/grafana.list && \
@@ -492,7 +459,7 @@ impl<'a, R: CommandRunner> GrafanaStackDeployer<'a, R> {
         ));
         let arch = "$(dpkg --print-architecture)"; // amd64 / arm64 — matches the VM
         let vm_v = VICTORIAMETRICS_VERSION;
-        self.check(
+        self.svc.check(
             &format!(
                 "wget -qO /tmp/vm.tar.gz https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/{vm_v}/victoria-metrics-linux-{arch}-{vm_v}.tar.gz && \
                  tar -xzf /tmp/vm.tar.gz -C /usr/local/bin && \
@@ -503,7 +470,7 @@ impl<'a, R: CommandRunner> GrafanaStackDeployer<'a, R> {
 
         reporter.step(&format!("Installing Loki {LOKI_VERSION}"));
         let loki_v = LOKI_VERSION;
-        self.check(
+        self.svc.check(
             &format!(
                 "wget -qO /tmp/loki.zip https://github.com/grafana/loki/releases/download/v{loki_v}/loki-linux-{arch}.zip && \
                  (command -v unzip >/dev/null || apt-get install -y unzip) && \
@@ -513,14 +480,12 @@ impl<'a, R: CommandRunner> GrafanaStackDeployer<'a, R> {
         )?;
 
         reporter.step("Writing systemd units + Grafana datasources");
-        self.check(&metrics_units_script(), "write units")?;
-        self.check(&grafana_datasources_script(), "write datasources")?;
+        self.svc.check(&metrics_units_script(), "write units")?;
+        self.svc
+            .check(&grafana_datasources_script(), "write datasources")?;
 
         reporter.step("Starting VictoriaMetrics + Loki + Grafana");
-        self.check(
-            "systemctl daemon-reload && systemctl enable --now victoria-metrics loki grafana-server",
-            "start stack",
-        )?;
+        self.svc.start("victoria-metrics loki grafana-server")?;
         reporter
             .step("Metrics/logs stack deployed — Grafana :3000, VictoriaMetrics :8428, Loki :3100");
         Ok(())
@@ -574,44 +539,14 @@ pub const SHARED_VOLUME: &str = "llmsc-shared";
 /// is an Incus custom volume ([`SHARED_VOLUME`]) that also attaches to sandboxes, so files are
 /// shared host ↔ container and container ↔ container. Representative install (pinned release).
 pub struct SeaweedFsDeployer<'a, R: CommandRunner> {
-    vm: String,
-    container: String,
-    image: String,
-    runner: &'a R,
+    svc: ServiceContainer<'a, R>,
 }
 
 impl<'a, R: CommandRunner> SeaweedFsDeployer<'a, R> {
     pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
         Self {
-            vm: vm.into(),
-            container: crate::service::container_name("seaweedfs"),
-            image: "images:debian/12".into(),
-            runner,
+            svc: ServiceContainer::new(vm, "seaweedfs", "images:debian/12", runner),
         }
-    }
-
-    fn incus(&self, args: &[&str]) -> Result<RunOutput> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run("limactl", &full)
-    }
-
-    fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run_streamed("limactl", &full)
-    }
-
-    fn exec(&self, cmd: &str) -> Result<RunOutput> {
-        self.incus(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
-    }
-
-    fn check(&self, cmd: &str, what: &str) -> Result<()> {
-        let o = self.exec(cmd)?;
-        if !o.ok() {
-            return Err(Error::Incus(format!("{what}: {}", o.stderr.trim())));
-        }
-        Ok(())
     }
 
     /// Provision and start SeaweedFS with the S3 gateway, backed by the shared custom volume.
@@ -622,7 +557,9 @@ impl<'a, R: CommandRunner> SeaweedFsDeployer<'a, R> {
                 .contains("already exists")
         };
         reporter.step("Creating shared storage volume");
-        let c = self.incus(&["storage", "volume", "create", SHARED_POOL, SHARED_VOLUME])?;
+        let c = self
+            .svc
+            .incus(&["storage", "volume", "create", SHARED_POOL, SHARED_VOLUME])?;
         if !c.ok() && !dup(&c) {
             return Err(Error::Incus(format!(
                 "creating shared volume: {}",
@@ -631,22 +568,13 @@ impl<'a, R: CommandRunner> SeaweedFsDeployer<'a, R> {
         }
 
         reporter.step("Creating SeaweedFS service container");
-        if !self.incus(&["info", self.container.as_str()])?.ok() {
-            let code =
-                self.incus_streamed(&["launch", self.image.as_str(), self.container.as_str()])?;
-            if code != 0 {
-                return Err(Error::Incus(format!(
-                    "creating {} failed (exit {code})",
-                    self.container
-                )));
-            }
-        }
+        self.svc.launch_if_absent()?;
         // Back /data with the shared volume (idempotent).
-        let o = self.incus(&[
+        let o = self.svc.incus(&[
             "config",
             "device",
             "add",
-            self.container.as_str(),
+            self.svc.container.as_str(),
             "shared",
             "disk",
             "pool=default",
@@ -663,7 +591,7 @@ impl<'a, R: CommandRunner> SeaweedFsDeployer<'a, R> {
         reporter.step(&format!("Installing SeaweedFS {SEAWEEDFS_VERSION}"));
         let arch = "$(dpkg --print-architecture)";
         let v = SEAWEEDFS_VERSION;
-        self.check(
+        self.svc.check(
             &format!(
                 "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y wget tar && \
                  wget -qO /tmp/weed.tar.gz https://github.com/seaweedfs/seaweedfs/releases/download/{v}/linux_{arch}.tar.gz && \
@@ -672,15 +600,12 @@ impl<'a, R: CommandRunner> SeaweedFsDeployer<'a, R> {
             "install weed",
         )?;
         reporter.step("Writing systemd unit");
-        self.check(&seaweedfs_unit_script(), "write unit")?;
+        self.svc.check(&seaweedfs_unit_script(), "write unit")?;
         reporter.step("Starting SeaweedFS");
-        self.check(
-            "systemctl daemon-reload && systemctl enable --now seaweedfs",
-            "start seaweedfs",
-        )?;
+        self.svc.start("seaweedfs")?;
         reporter.step(&format!(
             "SeaweedFS deployed — S3 gateway in the VM at {}:8333 (shared volume at /data)",
-            self.container
+            self.svc.container
         ));
         Ok(())
     }
@@ -707,71 +632,35 @@ pub const MITMPROXY_PORT: u16 = 8080;
 /// must be *forced* through it (Tetragon/iptables redirect) — both are follow-ups. Today this
 /// blocks plain HTTP to non-allowlisted hosts and HTTPS for proxy-respecting clients.
 pub struct MitmproxyDeployer<'a, R: CommandRunner> {
-    vm: String,
-    container: String,
-    image: String,
+    svc: ServiceContainer<'a, R>,
     port: u16,
-    runner: &'a R,
 }
 
 impl<'a, R: CommandRunner> MitmproxyDeployer<'a, R> {
     pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
         Self {
-            vm: vm.into(),
-            container: crate::service::container_name("mitmproxy"),
-            image: "images:debian/12".into(),
+            svc: ServiceContainer::new(vm, "mitmproxy", "images:debian/12", runner),
             port: MITMPROXY_PORT,
-            runner,
         }
-    }
-
-    fn incus(&self, args: &[&str]) -> Result<RunOutput> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run("limactl", &full)
-    }
-
-    fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run_streamed("limactl", &full)
-    }
-
-    fn exec(&self, cmd: &str) -> Result<RunOutput> {
-        self.incus(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
     }
 
     /// Provision and start mitmproxy with an initial (empty) allowlist addon.
     pub fn deploy(&self, reporter: &dyn Reporter) -> Result<()> {
         reporter.step("Creating mitmproxy service container");
-        if !self.incus(&["info", self.container.as_str()])?.ok() {
-            let code =
-                self.incus_streamed(&["launch", self.image.as_str(), self.container.as_str()])?;
-            if code != 0 {
-                return Err(Error::Incus(format!(
-                    "creating {} failed (exit {code})",
-                    self.container
-                )));
-            }
-        }
+        self.svc.launch_if_absent()?;
         reporter.step("Installing mitmproxy (apt)");
-        let o = self.exec(
+        self.svc.check(
             "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y mitmproxy",
+            "apt install mitmproxy",
         )?;
-        if !o.ok() {
-            return Err(Error::Incus(format!(
-                "apt install mitmproxy: {}",
-                o.stderr.trim()
-            )));
-        }
         reporter.step("Writing allowlist addon + systemd unit");
-        self.exec(&mitm_addon_script(&[]))?;
-        self.exec(&mitm_unit_script(self.port))?;
+        self.svc.exec(&mitm_addon_script(&[]))?;
+        self.svc.exec(&mitm_unit_script(self.port))?;
         reporter.step("Starting mitmproxy");
-        self.exec("systemctl daemon-reload && systemctl enable --now mitmproxy")?;
+        self.svc.start("mitmproxy")?;
         reporter.step(&format!(
             "mitmproxy deployed — egress proxy in the VM at {}:{}",
-            self.container, self.port
+            self.svc.container, self.port
         ));
         Ok(())
     }
@@ -782,14 +671,16 @@ impl<'a, R: CommandRunner> MitmproxyDeployer<'a, R> {
             "Syncing mitmproxy allowlist ({} domains)",
             domains.len()
         ));
-        let o = self.exec(&mitm_addon_script(domains))?;
+        let o = self.svc.exec(&mitm_addon_script(domains))?;
         if !o.ok() {
             return Err(Error::Incus(format!(
                 "writing mitmproxy allowlist: {}",
                 o.stderr.trim()
             )));
         }
-        let _ = self.exec("systemctl restart mitmproxy 2>/dev/null || true");
+        let _ = self
+            .svc
+            .exec("systemctl restart mitmproxy 2>/dev/null || true");
         Ok(())
     }
 }
