@@ -4,7 +4,7 @@
   import {
     topology, removeSandbox, removeAgent, instanceConfig,
     instanceSetConfig, instanceUnsetConfig, instanceAddMount, instanceRemoveDevice,
-    instanceAddProfile, instanceRemoveProfile, applySandbox,
+    instanceAddProfile, instanceRemoveProfile, applySandbox, instanceYaml,
   } from "../lib/core";
   import type { InstanceConfig, TopoSandbox } from "../lib/types";
 
@@ -63,6 +63,23 @@
 
   const sb = $derived(all.find((s) => s.name === ui.selectedSandbox) ?? null);
   const initials = (name: string) => name.replace(/^agent-/, "").slice(0, 2).toUpperCase();
+
+  let yamlText = $state<string | null>(null);
+  async function toggleYaml() {
+    if (!sb) return;
+    if (yamlText !== null) { yamlText = null; return; }
+    try {
+      yamlText = await instanceYaml(sb.name);
+    } catch (e) {
+      showToast(String(e), "danger");
+    }
+  }
+  function copyYaml() {
+    if (yamlText) {
+      void navigator.clipboard?.writeText(yamlText);
+      showToast("YAML copied", "ok");
+    }
+  }
 
   async function applyConfig() {
     if (!sb) return;
@@ -171,8 +188,17 @@
     {#if inst}
       <div class="card mt16">
         <div class="card-head"><h3>Incus configuration</h3><span class="sub">live surface · editable · <span class="mono">incus config show {sb.name}</span></span>
-          <button class="btn sm right" disabled={cfgBusy} onclick={applyConfig} title="Converge the running instance to your config intent"><Icon name="check" size={13} /><span>Apply config</span></button>
+          <button class="btn sm right" onclick={toggleYaml} title="Render the Incus instance YAML">
+            <Icon name="doc" size={13} /><span>{yamlText !== null ? "Hide YAML" : "YAML"}</span></button>
+          <button class="btn sm" disabled={cfgBusy} onclick={applyConfig} title="Converge the running instance to your config intent"><Icon name="check" size={13} /><span>Apply config</span></button>
         </div>
+        {#if yamlText !== null}
+          <div class="pad" style="padding-bottom:0">
+            <div class="flex mb8"><span class="sub2">Rendered intent <span class="muted" style="text-transform:none">· incus create &lt; config.yaml</span></span>
+              <button class="btn sm right" onclick={copyYaml}><Icon name="copy" size={13} /> Copy</button></div>
+            <pre class="console yaml">{yamlText}</pre>
+          </div>
+        {/if}
         <div class="pad">
           <!-- profiles -->
           <div class="sub2">Profiles</div>
@@ -253,4 +279,5 @@
   .input.mini { width: 130px; padding: 4px 8px; font-size: 11.5px; }
   .addmount { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; align-items: center; }
   .addcfg { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; }
+  .yaml { white-space: pre; margin: 0; }
 </style>

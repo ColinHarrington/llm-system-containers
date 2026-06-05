@@ -12,6 +12,26 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+/// Quote a single-line YAML scalar (Incus config values are always strings).
+fn yaml_inline(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// Emit a `key: value` line at the given indent; multiline values use a `|` block scalar
+/// (the natural YAML form for e.g. `cloud-init.user-data`).
+fn push_yaml_kv(out: &mut String, indent: usize, key: &str, value: &str) {
+    let pad = " ".repeat(indent);
+    if value.contains('\n') {
+        out.push_str(&format!("{pad}{key}: |\n"));
+        let inner = " ".repeat(indent + 2);
+        for line in value.lines() {
+            out.push_str(&format!("{inner}{line}\n"));
+        }
+    } else {
+        out.push_str(&format!("{pad}{key}: {}\n", yaml_inline(value)));
+    }
+}
+
 /// Top-level llmsc configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
@@ -108,6 +128,50 @@ impl Sandbox {
             Some(u) => *u = user,
             None => self.users.push(user),
         }
+    }
+
+    /// Render this sandbox's declarative intent as the Incus instance YAML (`InstancePut` shape)
+    /// — the exact artifact `incus create <image> <name> < config.yaml` consumes. TOML stays the
+    /// source of intent; this is the rendered boundary artifact (see the research note §8).
+    pub fn to_instance_yaml(&self) -> String {
+        let mut out = String::new();
+        out.push_str(&format!("# incus create {} {}\n", self.image, self.name));
+        if let Some(d) = self.description.as_deref().filter(|d| !d.is_empty()) {
+            out.push_str(&format!("description: {}\n", yaml_inline(d)));
+        }
+        if self.ephemeral {
+            out.push_str("ephemeral: true\n");
+        }
+        out.push_str("profiles:\n");
+        if self.profiles.is_empty() {
+            out.push_str("- default\n");
+        } else {
+            for p in &self.profiles {
+                out.push_str(&format!("- {p}\n"));
+            }
+        }
+        let cfg = self.effective_config();
+        if !cfg.is_empty() {
+            out.push_str("config:\n");
+            for (k, v) in &cfg {
+                push_yaml_kv(&mut out, 2, k, v);
+            }
+        }
+        if !self.devices.is_empty() {
+            out.push_str("devices:\n");
+            for (name, keys) in &self.devices {
+                out.push_str(&format!("  {name}:\n"));
+                if let Some(t) = keys.get("type") {
+                    push_yaml_kv(&mut out, 4, "type", t);
+                }
+                for (k, v) in keys {
+                    if k != "type" {
+                        push_yaml_kv(&mut out, 4, k, v);
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// The effective Incus `config` map for this sandbox: the invariants
@@ -396,6 +460,36 @@ mod tests {
     #[test]
     fn toml_snapshot() {
         insta::assert_snapshot!(sample().to_toml().unwrap());
+    }
+
+    #[test]
+    fn renders_instance_yaml() {
+        let mut sb = Sandbox {
+            name: "web-02".into(),
+            image: "images:alpine/3.21".into(),
+            description: Some("dev box".into()),
+            nesting: true,
+            ephemeral: true,
+            profiles: vec!["sandbox".into(), "net-egress-filtered".into()],
+            ..Default::default()
+        };
+        sb.config.insert("cloud-init.user-data".into(), "#cloud-config\npackages:\n- git".into());
+        let mut work = BTreeMap::new();
+        work.insert("type".into(), "disk".into());
+        work.insert("source".into(), "/h/p".into());
+        work.insert("path".into(), "/work".into());
+        sb.devices.insert("work".into(), work);
+
+        let y = sb.to_instance_yaml();
+        assert!(y.contains("# incus create images:alpine/3.21 web-02"));
+        assert!(y.contains("description: \"dev box\""));
+        assert!(y.contains("ephemeral: true"));
+        assert!(y.contains("profiles:\n- sandbox\n- net-egress-filtered"));
+        assert!(y.contains("  security.privileged: \"false\"")); // invariant
+        assert!(y.contains("  security.nesting: \"true\""));
+        assert!(y.contains("  cloud-init.user-data: |\n    #cloud-config\n    packages:")); // block scalar
+        assert!(y.contains("  work:\n    type: \"disk\""));
+        assert!(y.contains("    path: \"/work\""));
     }
 
     #[test]

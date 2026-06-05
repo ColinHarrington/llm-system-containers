@@ -376,6 +376,16 @@ fn save_user_config(cfg: &Config) {
     let _ = cfg.save(&config::user_config_path());
 }
 
+/// Render a sandbox's declared intent as the Incus instance YAML (`InstancePut`) — the artifact
+/// `incus create <image> <name> < config.yaml` consumes.
+#[tauri::command]
+fn instance_yaml(name: String) -> Result<String, String> {
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    cfg.sandbox(&name)
+        .map(|s| s.to_instance_yaml())
+        .ok_or_else(|| format!("'{name}' is not config-managed"))
+}
+
 /// Converge a running instance toward its declared intent (config/devices/profiles). Returns the
 /// number of changes applied (0 = already in sync). Streams each step to the GUI.
 #[tauri::command]
@@ -831,6 +841,7 @@ pub fn run() {
             instance_add_profile,
             instance_remove_profile,
             apply_sandbox,
+            instance_yaml,
             operator_default,
             add_agent,
             remove_agent,

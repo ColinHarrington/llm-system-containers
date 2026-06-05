@@ -179,6 +179,13 @@ export async function instanceConfig(name: string): Promise<InstanceConfig> {
   };
 }
 
+// Render a sandbox's declared intent as the Incus instance YAML (InstancePut).
+export async function instanceYaml(name: string): Promise<string> {
+  if (inTauri()) return invokeCmd<string>("instance_yaml", { name });
+  await delay(60);
+  return `# incus create images:alpine/3.21 ${name}\nephemeral: false\nprofiles:\n- default\nconfig:\n  security.nesting: "true"\n  security.privileged: "false"\ndevices:\n  work:\n    type: "disk"\n    path: "/work"\n    source: "~/projects/app"\n`;
+}
+
 // Converge a running instance toward its declared config intent. Returns the number of changes.
 export async function applySandbox(name: string): Promise<number> {
   if (inTauri()) return invokeCmd<number>("apply_sandbox", { name });
