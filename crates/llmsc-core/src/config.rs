@@ -159,6 +159,49 @@ pub struct Sandbox {
     pub devices: BTreeMap<String, BTreeMap<String, String>>,
     #[serde(default, rename = "user", skip_serializing_if = "Vec::is_empty")]
     pub users: Vec<User>,
+    /// Container-level network egress policy. `None` = unmanaged (no ACL applied — existing
+    /// behavior). `Some` = a structured policy that compiles to an Incus network ACL bound to
+    /// the nic (see [`crate::enforce`]). This is the per-container ring; per-UID egress is a
+    /// later Tetragon ring that compiles from each agent's [`Guardrails::network`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub egress: Option<EgressPolicy>,
+}
+
+/// A container-level network egress policy — the legible intent that compiles to an Incus
+/// network ACL. Incus ACLs are L3/L4 only (CIDR + port + protocol); domain/HTTP allowlists are
+/// mitmproxy's job (a later ring), so a named set like `web` is coarse here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EgressPolicy {
+    #[serde(default)]
+    pub posture: EgressPosture,
+    /// Allowed destinations (only meaningful for `Allowlist`): named sets (`llm`,
+    /// `package-registries`, `web`) or raw `CIDR:port[/proto]` (e.g. `10.0.0.0/8:443/tcp`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow: Vec<String>,
+}
+
+/// The posture of an egress policy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EgressPosture {
+    /// Drop all egress (default — least privilege).
+    #[default]
+    DenyAll,
+    /// Drop all egress except the entries in [`EgressPolicy::allow`].
+    Allowlist,
+    /// No restriction — no ACL is created/bound.
+    Open,
+}
+
+impl EgressPolicy {
+    /// The default policy for a newly-created managed sandbox: agents may reach the LLM proxy and
+    /// nothing else (the headline default-deny posture from `planning/security-model.md`).
+    pub fn default_managed() -> Self {
+        Self {
+            posture: EgressPosture::Allowlist,
+            allow: vec!["llm".to_string()],
+        }
+    }
 }
 
 impl Sandbox {
@@ -390,6 +433,17 @@ impl Config {
                 }
                 None => false,
             },
+            None => false,
+        }
+    }
+
+    /// Set a declared sandbox's egress policy. Returns true if the sandbox exists.
+    pub fn set_sandbox_egress(&mut self, sandbox: &str, policy: EgressPolicy) -> bool {
+        match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
+            Some(s) => {
+                s.egress = Some(policy);
+                true
+            }
             None => false,
         }
     }
@@ -723,6 +777,38 @@ mod tests {
         let u = &c.sandbox("sb").unwrap().users[0];
         assert_eq!(u.guardrails.as_ref().unwrap().network, "none");
         assert!(!c.set_user_guardrails("sb", "missing", Guardrails::default()));
+    }
+
+    #[test]
+    fn egress_policy_set_and_serde_roundtrip() {
+        let mut c = Config::default();
+        c.upsert_sandbox("sb", "images:alpine/3.21", false);
+        // Unmanaged by default (absent from TOML).
+        assert!(c.sandbox("sb").unwrap().egress.is_none());
+
+        // Set a managed allowlist policy.
+        assert!(c.set_sandbox_egress("sb", EgressPolicy::default_managed()));
+        assert!(!c.set_sandbox_egress("nope", EgressPolicy::default_managed()));
+        let p = c.sandbox("sb").unwrap().egress.clone().unwrap();
+        assert_eq!(p.posture, EgressPosture::Allowlist);
+        assert_eq!(p.allow, vec!["llm".to_string()]);
+
+        // Round-trips through TOML with the kebab-case posture tag.
+        let toml = c.to_toml().unwrap();
+        assert!(toml.contains("posture = \"allowlist\""));
+        let back = Config::from_toml(&toml).unwrap();
+        assert_eq!(
+            back.sandbox("sb").unwrap().egress,
+            c.sandbox("sb").unwrap().egress
+        );
+
+        // An unmanaged sandbox emits no [sandbox.egress] block.
+        c.set_sandbox_egress("sb", EgressPolicy::default());
+        // deny-all is the enum default; allow is empty so it still serializes the posture.
+        assert_eq!(
+            c.sandbox("sb").unwrap().egress.as_ref().unwrap().posture,
+            EgressPosture::DenyAll
+        );
     }
 
     #[test]

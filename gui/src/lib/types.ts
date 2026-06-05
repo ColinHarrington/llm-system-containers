@@ -192,6 +192,14 @@ export interface AclRule {
   description: string;
 }
 
+// --- Egress policy (per-container enforcement ring) ---
+export type EgressPosture = "deny-all" | "allowlist" | "open";
+
+export interface EgressPolicy {
+  posture: EgressPosture;
+  allow: string[]; // named sets (llm, package-registries, web) or raw CIDR:port[/proto]
+}
+
 export interface NetworkAclInfo {
   name: string;
   description: string;

@@ -259,6 +259,8 @@ fn sandbox_launch(app: AppHandle, spec: NewSandboxSpec) -> Result<(), String> {
             profile: None,
             guardrails: None,
         }],
+        // Managed by default: agents may reach the LLM proxy and nothing else, until enforced.
+        egress: Some(llmsc_core::config::EgressPolicy::default_managed()),
     };
 
     incus
@@ -952,6 +954,162 @@ fn network_acls() -> Result<Vec<NetworkAclDto>, String> {
         .collect())
 }
 
+// --- Egress policy (per-container enforcement ring) ---
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EgressPolicyDto {
+    /// "deny-all" | "allowlist" | "open"
+    posture: String,
+    #[serde(default)]
+    allow: Vec<String>,
+}
+
+fn posture_str(p: llmsc_core::config::EgressPosture) -> String {
+    use llmsc_core::config::EgressPosture::*;
+    match p {
+        DenyAll => "deny-all",
+        Allowlist => "allowlist",
+        Open => "open",
+    }
+    .to_string()
+}
+
+fn parse_posture(s: &str) -> llmsc_core::config::EgressPosture {
+    use llmsc_core::config::EgressPosture::*;
+    match s {
+        "allowlist" => Allowlist,
+        "open" => Open,
+        _ => DenyAll,
+    }
+}
+
+fn to_egress_policy(dto: EgressPolicyDto) -> llmsc_core::config::EgressPolicy {
+    llmsc_core::config::EgressPolicy {
+        posture: parse_posture(&dto.posture),
+        allow: dto.allow,
+    }
+}
+
+/// Build the enforcement context for a sandbox: its nic's bridge + that bridge's IPv4 subnet
+/// (for resolving the `llm` named set). Falls back to the first managed bridge.
+fn enforce_ctx(incus: &CliIncus<SystemRunner>, sandbox: &str) -> llmsc_core::enforce::EnforceCtx {
+    let networks = incus.networks().unwrap_or_default();
+    let bridge = incus
+        .instance(sandbox)
+        .ok()
+        .and_then(|i| {
+            i.devices
+                .values()
+                .find(|d| d.get("type").map(String::as_str) == Some("nic"))
+                .and_then(|d| d.get("network").cloned())
+        })
+        .or_else(|| networks.first().map(|n| n.name.clone()))
+        .unwrap_or_else(|| "incusbr0".to_string());
+    let bridge_subnet = networks
+        .iter()
+        .find(|n| n.name == bridge)
+        .map(|n| n.ipv4.clone())
+        .unwrap_or_default();
+    llmsc_core::enforce::EnforceCtx {
+        bridge,
+        bridge_subnet,
+    }
+}
+
+/// The nic device name to bind the ACL to (the type=nic device, usually `eth0`).
+fn nic_device_name(incus: &CliIncus<SystemRunner>, sandbox: &str) -> String {
+    incus
+        .instance(sandbox)
+        .ok()
+        .and_then(|i| {
+            i.devices
+                .iter()
+                .find(|(_, d)| d.get("type").map(String::as_str) == Some("nic"))
+                .map(|(name, _)| name.clone())
+        })
+        .unwrap_or_else(|| "eth0".to_string())
+}
+
+/// Read a sandbox's egress policy intent from config. `None` = unmanaged (no ACL).
+#[tauri::command]
+fn egress_policy(sandbox: String) -> Result<Option<EgressPolicyDto>, String> {
+    let cfg = load_user_config()?;
+    Ok(cfg
+        .sandbox(&sandbox)
+        .and_then(|s| s.egress.as_ref())
+        .map(|p| EgressPolicyDto {
+            posture: posture_str(p.posture),
+            allow: p.allow.clone(),
+        }))
+}
+
+/// Write a sandbox's egress policy intent to config (does not enforce — call `apply_egress`).
+#[tauri::command]
+fn set_egress_policy(sandbox: String, policy: EgressPolicyDto) -> Result<(), String> {
+    let mut cfg = load_user_config()?;
+    if cfg.set_sandbox_egress(&sandbox, to_egress_policy(policy)) {
+        save_user_config(&cfg);
+        Ok(())
+    } else {
+        Err(format!("'{sandbox}' is not config-managed"))
+    }
+}
+
+/// The compiled Incus ACL for a sandbox's egress policy (for display). `None` if open/unmanaged.
+#[tauri::command]
+fn egress_acl_preview(sandbox: String) -> Result<Option<NetworkAclDto>, String> {
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let sb = cfg
+        .sandbox(&sandbox)
+        .ok_or_else(|| format!("'{sandbox}' is not config-managed"))?;
+    let ctx = enforce_ctx(&incus, &sandbox);
+    Ok(
+        llmsc_core::enforce::egress_acl(sb, &ctx).map(|a| NetworkAclDto {
+            name: a.name,
+            description: a.description,
+            used_by: a.used_by,
+            ingress: a.ingress.into_iter().map(acl_rule_dto).collect(),
+            egress: a.egress.into_iter().map(acl_rule_dto).collect(),
+        }),
+    )
+}
+
+/// Enforce a sandbox's egress policy: compile → diff against the live ACL → apply + bind to the
+/// nic. Returns the number of ACL ops applied. Open/unmanaged → no-op (0).
+#[tauri::command]
+fn apply_egress(app: AppHandle, sandbox: String) -> Result<usize, String> {
+    let reporter = EventReporter { app };
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let sb = cfg
+        .sandbox(&sandbox)
+        .ok_or_else(|| format!("'{sandbox}' is not config-managed"))?;
+    let ctx = enforce_ctx(&incus, &sandbox);
+    let Some(desired) = llmsc_core::enforce::egress_acl(sb, &ctx) else {
+        reporter.step("Egress is open/unmanaged — nothing to enforce");
+        return Ok(0);
+    };
+    let acl_name = desired.name.clone();
+    let live = incus.network_acls().map_err(|e| e.to_string())?;
+    let live_match = live.iter().find(|a| a.name == acl_name);
+    let plan = llmsc_core::enforce::egress_acl_plan(&desired, live_match);
+    let n = plan.len();
+    reporter.step(&format!(
+        "Enforcing egress for {sandbox} — {n} ACL change(s)"
+    ));
+    incus
+        .apply_egress(&acl_name, &plan, &reporter)
+        .map_err(|e| e.to_string())?;
+    let nic = nic_device_name(&incus, &sandbox);
+    reporter.step(&format!("Binding {acl_name} to {nic} (default-drop)"));
+    incus
+        .bind_egress_acl(&sandbox, &nic, &acl_name)
+        .map_err(|e| e.to_string())?;
+    Ok(n)
+}
+
 #[derive(Serialize)]
 struct SandboxNetDto {
     name: String,
@@ -1246,6 +1404,10 @@ pub fn run() {
             topology,
             host_resources,
             network_acls,
+            egress_policy,
+            set_egress_policy,
+            egress_acl_preview,
+            apply_egress,
             images,
             images_available,
             build_image,

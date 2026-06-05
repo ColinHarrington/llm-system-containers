@@ -7,8 +7,11 @@
     instanceSetConfig, instanceUnsetConfig, instanceAddMount, instanceRemoveDevice,
     instanceAddProfile, instanceRemoveProfile, applySandbox, instanceYaml,
     listSnapshots, snapshotCreate, snapshotRestore, snapshotDelete, setAgentGuardrails,
+    egressPolicy, setEgressPolicy, egressAclPreview, applyEgress,
   } from "../lib/core";
-  import type { Guardrails, InstanceConfig, SnapshotInfo, TopoAgent, TopoSandbox } from "../lib/types";
+  import type {
+    EgressPolicy, EgressPosture, Guardrails, InstanceConfig, NetworkAclInfo, SnapshotInfo, TopoAgent, TopoSandbox,
+  } from "../lib/types";
 
   let all = $state<TopoSandbox[]>([]);
   let inst = $state<InstanceConfig | null>(null);
@@ -109,6 +112,63 @@
 
   const sb = $derived(all.find((s) => s.name === ui.selectedSandbox) ?? null);
   const initials = (name: string) => name.replace(/^agent-/, "").slice(0, 2).toUpperCase();
+
+  // --- Network egress (per-container enforcement ring) ---
+  let egress = $state<EgressPolicy | null>(null);
+  let egressAcl = $state<NetworkAclInfo | null>(null);
+  let egressBusy = $state(false);
+  let enforcing = $state(false);
+  let newAllow = $state("");
+  const NAMED_SETS = ["llm", "package-registries", "web"];
+  $effect(() => {
+    ui.dataVersion;
+    const sel = ui.selectedSandbox;
+    egress = null;
+    egressAcl = null;
+    if (sel) {
+      void egressPolicy(sel).then((p) => (egress = p)).catch(() => (egress = null));
+      void egressAclPreview(sel).then((a) => (egressAcl = a)).catch(() => (egressAcl = null));
+    }
+  });
+  async function saveEgress(next: EgressPolicy) {
+    if (!sb) return;
+    egressBusy = true;
+    try {
+      await setEgressPolicy(sb.name, next);
+      egress = next;
+      egressAcl = await egressAclPreview(sb.name).catch(() => null);
+      showToast("Egress policy saved (not yet enforced)", "ok");
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { egressBusy = false; }
+  }
+  function setPosture(posture: EgressPosture) {
+    saveEgress({ posture, allow: egress?.allow ?? [] });
+  }
+  function addAllow() {
+    const e = newAllow.trim();
+    if (!e || !egress) return;
+    newAllow = "";
+    if (egress.allow.includes(e)) return;
+    saveEgress({ posture: egress.posture, allow: [...egress.allow, e] });
+  }
+  function removeAllow(entry: string) {
+    if (!egress) return;
+    saveEgress({ posture: egress.posture, allow: egress.allow.filter((a) => a !== entry) });
+  }
+  async function enforceEgress() {
+    if (!sb) return;
+    egressBusy = true;
+    enforcing = true;
+    showToast(`$ llmsc egress apply ${sb.name}`);
+    try {
+      const n = await applyEgress(sb.name);
+      showToast(n === 0 ? "Open/unmanaged — nothing to enforce" : `Egress enforced — ${n} ACL change(s)`, "ok");
+      bump();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { egressBusy = false; enforcing = false; }
+  }
 
   let yamlText = $state<string | null>(null);
   async function toggleYaml() {
@@ -303,6 +363,76 @@
         </div>
       </div>
     {/if}
+
+    <!-- Network egress (per-container enforcement ring) -->
+    <div class="card mt16">
+      <div class="card-head"><h3>Network egress</h3>
+        <span class="sub">container-level ACL · <span class="mono">incus network acl</span></span>
+        <button class="btn sm primary right" disabled={egressBusy || egress === null || egress.posture === "open"} onclick={enforceEgress}
+          title="Compile the policy to an Incus ACL and bind it to the nic (default-drop)">
+          <Icon name="shield" size={13} /><span>{enforcing ? "Enforcing…" : "Apply (enforce)"}</span></button>
+      </div>
+      <div class="pad">
+        <p class="hint mb12">Compiles to an Incus network ACL bound to the nic. <strong>Container-level</strong> — applies to every UID in the sandbox. Per-agent egress is a later Tetragon ring. ACLs are L3/L4 only; domain allowlists (mitmproxy) come later, so <span class="mono">web</span> is coarse.</p>
+
+        {#if egress === null}
+          <div class="flex gap8" style="align-items:center">
+            <span class="muted small">Unmanaged — no ACL applied.</span>
+            <button class="btn sm" disabled={egressBusy} onclick={() => saveEgress({ posture: "allowlist", allow: ["llm"] })}>Manage egress</button>
+          </div>
+        {:else}
+          <!-- posture -->
+          <div class="sub2">Posture</div>
+          <div class="flex gap6 mb16">
+            {#each (["deny-all", "allowlist", "open"] as EgressPosture[]) as p}
+              <button class="btn sm" class:primary={egress.posture === p} disabled={egressBusy} onclick={() => setPosture(p)}>{p}</button>
+            {/each}
+          </div>
+
+          {#if egress.posture === "allowlist"}
+            <div class="sub2">Allowed destinations</div>
+            <div class="flex gap6 wrap mb12">
+              {#each egress.allow as a}
+                <span class="echip">{a}<button class="ex" title="Remove" disabled={egressBusy} onclick={() => removeAllow(a)}>×</button></span>
+              {/each}
+              {#if egress.allow.length === 0}<span class="muted small">none — all egress dropped</span>{/if}
+            </div>
+            <div class="flex gap6 wrap mb16" style="align-items:center">
+              {#each NAMED_SETS.filter((s) => !egress!.allow.includes(s)) as s}
+                <button class="btn sm" disabled={egressBusy} onclick={() => saveEgress({ posture: "allowlist", allow: [...egress!.allow, s] })}>+ {s}</button>
+              {/each}
+              <input class="input mini mono" bind:value={newAllow} placeholder="CIDR:port (e.g. 10.0.0.0/8:443)" onkeydown={(e) => { if (e.key === 'Enter') addAllow(); }} />
+              <button class="btn sm" disabled={egressBusy || !newAllow.trim()} onclick={addAllow}>Add</button>
+            </div>
+          {/if}
+
+          <!-- compiled ACL preview -->
+          {#if egressAcl}
+            <div class="sub2">Compiled ACL <span class="muted mono" style="text-transform:none">{egressAcl.name}</span></div>
+            {#if egressAcl.egress.length === 0}
+              <div class="muted small">No allow rules — the nic default-drop blocks all egress.</div>
+            {:else}
+              <table class="tbl">
+                <thead><tr><th>Action</th><th>Destination</th><th>Port</th><th>Proto</th><th>Note</th></tr></thead>
+                <tbody>
+                  {#each egressAcl.egress as r}
+                    <tr>
+                      <td>{#if r.action === "allow"}<span class="pill ok">allow</span>{:else}<span class="pill">{r.action}</span>{/if}</td>
+                      <td class="mono small">{r.destination || "—"}</td>
+                      <td class="mono small">{r.port || "any"}</td>
+                      <td class="mono small">{r.protocol || "any"}</td>
+                      <td class="muted small">{r.description}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          {:else if egress.posture === "open"}
+            <div class="muted small">Open — no ACL is created or bound.</div>
+          {/if}
+        {/if}
+      </div>
+    </div>
 
     <!-- Snapshots -->
     <div class="card mt16">

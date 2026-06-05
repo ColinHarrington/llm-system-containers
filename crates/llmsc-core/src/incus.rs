@@ -254,6 +254,18 @@ pub enum ConvergeOp {
     },
 }
 
+/// One step in converging a network ACL toward its compiled intent (see `enforce::egress_acl_plan`).
+/// Scoped to a single named ACL — `apply_egress` takes the name once. We only manage `egress`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AclOp {
+    /// Create the ACL (no-op if it already exists).
+    Create,
+    /// Add a rule in the given direction (e.g. `egress`).
+    AddRule { direction: String, rule: AclRule },
+    /// Remove a matching rule in the given direction.
+    RemoveRule { direction: String, rule: AclRule },
+}
+
 /// A live instance's Incus surface, read back from the server (the round-trip view).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstanceConfig {
@@ -1263,6 +1275,147 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         parse_network_acls(&o.stdout)
     }
 
+    /// Create a network ACL (`incus network acl create <name>`). Idempotent: an
+    /// "already exists" failure is treated as success.
+    pub fn network_acl_create(&self, name: &str) -> Result<()> {
+        let o = self.incus_run(&["network", "acl", "create", name])?;
+        let already = format!("{} {}", o.stderr, o.stdout)
+            .to_lowercase()
+            .contains("already exists");
+        if !o.ok() && !already {
+            return Err(Error::Incus(format!(
+                "network acl create {name}: {}",
+                o.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    /// The `key=value` args for a rule (action/destination/destination_port/protocol), shared by
+    /// add and remove. Empty fields are omitted.
+    fn acl_rule_args(rule: &AclRule) -> Vec<String> {
+        let mut args = vec![format!("action={}", rule.action)];
+        if !rule.destination.is_empty() {
+            args.push(format!("destination={}", rule.destination));
+        }
+        if !rule.port.is_empty() {
+            args.push(format!("destination_port={}", rule.port));
+        }
+        if !rule.protocol.is_empty() {
+            args.push(format!("protocol={}", rule.protocol));
+        }
+        args
+    }
+
+    /// Add a rule to an ACL (`incus network acl rule add <acl> <direction> key=value…`).
+    pub fn network_acl_rule_add(&self, acl: &str, direction: &str, rule: &AclRule) -> Result<()> {
+        let mut args: Vec<String> = vec![
+            "network".into(),
+            "acl".into(),
+            "rule".into(),
+            "add".into(),
+            acl.into(),
+            direction.into(),
+        ];
+        args.extend(Self::acl_rule_args(rule));
+        if !rule.description.is_empty() {
+            args.push("--description".into());
+            args.push(rule.description.clone());
+        }
+        let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+        let o = self.incus_run(&argv)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "network acl rule add {acl}/{direction}: {}",
+                o.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Remove a matching rule from an ACL (`incus network acl rule remove <acl> <direction> …`).
+    pub fn network_acl_rule_remove(
+        &self,
+        acl: &str,
+        direction: &str,
+        rule: &AclRule,
+    ) -> Result<()> {
+        let mut args: Vec<String> = vec![
+            "network".into(),
+            "acl".into(),
+            "rule".into(),
+            "remove".into(),
+            acl.into(),
+            direction.into(),
+        ];
+        args.extend(Self::acl_rule_args(rule));
+        let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+        let o = self.incus_run(&argv)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "network acl rule remove {acl}/{direction}: {}",
+                o.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Apply an egress-ACL plan (from `enforce::egress_acl_plan`) to a single named ACL.
+    pub fn apply_egress(&self, acl: &str, plan: &[AclOp], reporter: &dyn Reporter) -> Result<()> {
+        for op in plan {
+            match op {
+                AclOp::Create => {
+                    reporter.step(&format!("Creating network ACL '{acl}'"));
+                    self.network_acl_create(acl)?;
+                }
+                AclOp::AddRule { direction, rule } => {
+                    reporter.step(&format!("{acl}: allow {} {}", rule.destination, rule.port));
+                    self.network_acl_rule_add(acl, direction, rule)?;
+                }
+                AclOp::RemoveRule { direction, rule } => {
+                    reporter.step(&format!("{acl}: remove {} {}", rule.destination, rule.port));
+                    self.network_acl_rule_remove(acl, direction, rule)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Bind an egress ACL to a sandbox's nic with a default-drop egress posture, idempotently.
+    /// The nic is usually inherited from a profile, so we `config device override` it (copies the
+    /// inherited device instance-local with our keys); if it is already instance-local, `override`
+    /// reports it exists and we fall back to `config device set` for each key.
+    pub fn bind_egress_acl(&self, sandbox: &str, nic: &str, acl: &str) -> Result<()> {
+        let acls = format!("security.acls={acl}");
+        let drop = "security.acls.default.egress.action=drop".to_string();
+        let o = self.incus_run(&["config", "device", "override", sandbox, nic, &acls, &drop])?;
+        if o.ok() {
+            return Ok(());
+        }
+        let exists = format!("{} {}", o.stderr, o.stdout)
+            .to_lowercase()
+            .contains("already exists");
+        if !exists {
+            return Err(Error::Incus(format!(
+                "binding ACL to {nic}: {}",
+                o.stderr.trim()
+            )));
+        }
+        for (k, v) in [
+            ("security.acls", acl),
+            ("security.acls.default.egress.action", "drop"),
+        ] {
+            let s = self.incus_run(&["config", "device", "set", sandbox, nic, k, v])?;
+            if !s.ok() {
+                return Err(Error::Incus(format!(
+                    "setting {k} on {nic}: {}",
+                    s.stderr.trim()
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Per-sandbox network attachments and addresses (services excluded).
     pub fn sandbox_networks(&self) -> Result<Vec<SandboxNetwork>> {
         let o = self.incus_run(&["list", "--format", "json"])?;
@@ -1807,6 +1960,80 @@ mod tests {
         assert_eq!(a[0].egress[0].action, "allow");
         assert_eq!(a[0].egress[0].destination, "github.com");
         assert_eq!(a[0].egress[0].port, "443");
+    }
+
+    #[test]
+    fn apply_egress_creates_acl_and_diffs_rules() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        let allow = AclRule {
+            action: "allow".into(),
+            source: String::new(),
+            destination: "10.21.32.0/24".into(),
+            port: "4000".into(),
+            protocol: "tcp".into(),
+            description: "LLM proxy".into(),
+        };
+        let stale = AclRule {
+            action: "allow".into(),
+            source: String::new(),
+            destination: "203.0.113.0/24".into(),
+            port: "22".into(),
+            protocol: "tcp".into(),
+            description: String::new(),
+        };
+        let plan = vec![
+            AclOp::Create,
+            AclOp::AddRule {
+                direction: "egress".into(),
+                rule: allow,
+            },
+            AclOp::RemoveRule {
+                direction: "egress".into(),
+                rule: stale,
+            },
+        ];
+        c.apply_egress("llmsc-egress-web-agent-01", &plan, &SilentReporter)
+            .unwrap();
+        assert!(r.called_with("create"));
+        assert!(r.called_with("llmsc-egress-web-agent-01"));
+        assert!(r.called_with("add"));
+        assert!(r.called_with("destination_port=4000"));
+        assert!(r.called_with("remove"));
+        assert!(r.called_with("destination=203.0.113.0/24"));
+    }
+
+    #[test]
+    fn bind_egress_acl_overrides_then_falls_back_to_set() {
+        // override succeeds (profile-inherited nic).
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.bind_egress_acl("web-agent-01", "eth0", "llmsc-egress-web-agent-01")
+            .unwrap();
+        assert!(r.called_with("override"));
+        assert!(r.called_with("security.acls=llmsc-egress-web-agent-01"));
+
+        // override reports the device already exists → fall back to per-key set.
+        let r2 = FakeRunner::new(|_, args| {
+            if args.contains(&"override") {
+                out(1, "Error: Device already exists")
+            } else {
+                out(0, "")
+            }
+        });
+        let c2 = CliIncus::new("llmsc", &r2);
+        c2.bind_egress_acl("web-agent-01", "eth0", "llmsc-egress-web-agent-01")
+            .unwrap();
+        assert!(r2.called_with("set"));
+        assert!(r2.called_with("security.acls.default.egress.action"));
+    }
+
+    #[test]
+    fn network_acl_create_is_idempotent_on_already_exists() {
+        let r = FakeRunner::new(|_, _| out(1, "Error: The network ACL already exists"));
+        let c = CliIncus::new("llmsc", &r);
+        // "already exists" is swallowed; a real failure would propagate.
+        c.network_acl_create("llmsc-egress-x").unwrap();
     }
 
     #[test]

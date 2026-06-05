@@ -8,6 +8,7 @@
 // return representative demo data in BOTH environments for now — clearly marked until those land.
 import type {
   AgentInfo,
+  EgressPolicy,
   HostResources,
   Guardrails,
   ImageInfo,
@@ -317,6 +318,37 @@ export async function applyIncusProfile(name: string): Promise<void> {
 export async function setAgentGuardrails(sandbox: string, name: string, guardrails: Guardrails): Promise<void> {
   if (inTauri()) return invokeCmd<void>("set_agent_guardrails", { sandbox, name, guardrails });
   await delay(80);
+}
+
+// --- Egress policy (per-container enforcement ring) ---
+// Read a sandbox's egress policy intent (config). null = unmanaged (no ACL).
+export async function egressPolicy(sandbox: string): Promise<EgressPolicy | null> {
+  if (inTauri()) return invokeCmd<EgressPolicy | null>("egress_policy", { sandbox });
+  await delay(60);
+  return { posture: "allowlist", allow: ["llm"] };
+}
+// Write the egress policy intent (does not enforce — call applyEgress).
+export async function setEgressPolicy(sandbox: string, policy: EgressPolicy): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("set_egress_policy", { sandbox, policy });
+  await delay(60);
+}
+// The compiled Incus ACL for display. null if open/unmanaged.
+export async function egressAclPreview(sandbox: string): Promise<NetworkAclInfo | null> {
+  if (inTauri()) return invokeCmd<NetworkAclInfo | null>("egress_acl_preview", { sandbox });
+  await delay(60);
+  return {
+    name: `llmsc-egress-${sandbox}`,
+    description: `llmsc-managed egress for ${sandbox}`,
+    usedBy: 0,
+    ingress: [],
+    egress: [{ action: "allow", source: "", destination: "10.21.32.0/24", protocol: "tcp", port: "4000", description: "LLM proxy (coarse: bridge subnet:4000)" }],
+  };
+}
+// Enforce the egress policy: compile -> diff against live ACL -> apply + bind to nic.
+export async function applyEgress(sandbox: string): Promise<number> {
+  if (inTauri()) return invokeCmd<number>("apply_egress", { sandbox });
+  await mockSteps([`Enforcing egress for ${sandbox} — 2 ACL change(s)`, "Binding ACL to eth0 (default-drop)"], 160);
+  return 2;
 }
 
 // The shipped agent-profile archetypes (definition layer).

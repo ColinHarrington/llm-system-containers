@@ -2,10 +2,12 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { removeAgent, instanceRemoveProfile, setAgentGuardrails } = vi.hoisted(() => ({
+const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress } = vi.hoisted(() => ({
   removeAgent: vi.fn(async () => {}),
   instanceRemoveProfile: vi.fn(async () => {}),
   setAgentGuardrails: vi.fn(async () => {}),
+  setEgressPolicy: vi.fn(async () => {}),
+  applyEgress: vi.fn(async () => 2),
 }));
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
@@ -29,6 +31,13 @@ vi.mock("../lib/core", () => ({
   snapshotRestore: vi.fn(async () => {}),
   snapshotDelete: vi.fn(async () => {}),
   setAgentGuardrails,
+  egressPolicy: vi.fn(async () => ({ posture: "allowlist", allow: ["llm"] })),
+  setEgressPolicy,
+  applyEgress,
+  egressAclPreview: vi.fn(async () => ({
+    name: "llmsc-egress-web-agent-01", description: "", usedBy: 0, ingress: [],
+    egress: [{ action: "allow", source: "", destination: "10.21.32.0/24", protocol: "tcp", port: "4000", description: "LLM proxy" }],
+  })),
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",
@@ -75,6 +84,20 @@ describe("SandboxDetail", () => {
     await fireEvent.click(screen.getByTitle("Guardrails"));
     await fireEvent.click(screen.getByRole("button", { name: /Save guardrails/ }));
     expect(setAgentGuardrails).toHaveBeenCalledWith("web-agent-01", "agent-claude", expect.any(Object));
+  });
+
+  it("shows the egress policy with its compiled ACL and enforces it", async () => {
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    await screen.findByText("Network egress");
+    // The compiled ACL preview shows the LLM allow rule.
+    expect(await screen.findByText("10.21.32.0/24")).toBeInTheDocument();
+    // Add a named set → persists via setEgressPolicy.
+    await fireEvent.click(screen.getByRole("button", { name: "+ web" }));
+    expect(setEgressPolicy).toHaveBeenCalledWith("web-agent-01", expect.objectContaining({ posture: "allowlist" }));
+    // Apply (enforce) → applyEgress.
+    await fireEvent.click(screen.getByRole("button", { name: /Apply \(enforce\)/ }));
+    expect(applyEgress).toHaveBeenCalledWith("web-agent-01");
   });
 
   it("edits the live Incus surface (remove a profile)", async () => {
