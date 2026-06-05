@@ -316,6 +316,34 @@ fn sandbox_rm(name: String) -> Result<(), String> {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstanceConfigDto {
+    name: String,
+    status: String,
+    description: String,
+    ephemeral: bool,
+    profiles: Vec<String>,
+    config: std::collections::BTreeMap<String, String>,
+    devices: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+}
+
+/// Read a sandbox's live Incus surface (config/devices/profiles) back from the server.
+#[tauri::command]
+fn instance_config(name: String) -> Result<InstanceConfigDto, String> {
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let i = incus.instance(&name).map_err(|e| e.to_string())?;
+    Ok(InstanceConfigDto {
+        name: i.name,
+        status: if i.status == InstanceStatus::Running { "running" } else { "stopped" }.to_string(),
+        description: i.description,
+        ephemeral: i.ephemeral,
+        profiles: i.profiles,
+        config: i.config,
+        devices: i.devices,
+    })
+}
+
+#[derive(Serialize)]
 struct TopoAgentDto {
     name: String,
     kind: String,
@@ -650,6 +678,7 @@ pub fn run() {
             sandbox_list,
             sandbox_launch,
             sandbox_rm,
+            instance_config,
             operator_default,
             add_agent,
             remove_agent,

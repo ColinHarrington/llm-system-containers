@@ -6,6 +6,11 @@ const { removeAgent } = vi.hoisted(() => ({ removeAgent: vi.fn(async () => {}) }
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
   removeAgent,
+  instanceConfig: vi.fn(async () => ({
+    name: "web-agent-01", status: "running", description: "", ephemeral: false,
+    profiles: ["default"], config: { "security.nesting": "true" },
+    devices: { work: { type: "disk", source: "~/proj", path: "/work" } },
+  })),
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",

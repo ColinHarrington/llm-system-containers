@@ -10,6 +10,7 @@ import type {
   AgentInfo,
   HostResources,
   ImageInfo,
+  InstanceConfig,
   NetworkingData,
   ProfileInfo,
   Sandbox,
@@ -158,6 +159,22 @@ export async function addAgent(sandbox: string, name: string, profile: string): 
   if (inTauri()) return invokeCmd<void>("add_agent", { sandbox, name, profile });
   const suffix = profile ? ` (${profile})` : "";
   await mockSteps([`Adding agent '${name}' to ${sandbox}${suffix}`, `Agent '${name}' added${suffix}`], 200);
+}
+
+// Read a sandbox's live Incus surface (config/devices/profiles) back from the server.
+export async function instanceConfig(name: string): Promise<InstanceConfig> {
+  if (inTauri()) return invokeCmd<InstanceConfig>("instance_config", { name });
+  await delay(100);
+  return {
+    name, status: "running", description: "dev box", ephemeral: false,
+    profiles: ["default", "sandbox"],
+    config: { "security.privileged": "false", "security.nesting": "true", "image.description": "Alpine 3.21" },
+    devices: {
+      eth0: { type: "nic", network: "incusbr0" },
+      root: { type: "disk", path: "/", pool: "default" },
+      work: { type: "disk", source: "~/projects/app", path: "/work", shift: "true" },
+    },
+  };
 }
 
 // Remove an agent (its Linux user) from a sandbox.

@@ -80,6 +80,17 @@ export interface HostResources {
   diskTotal: number;
 }
 
+// --- Live Incus instance surface (read back from the server) ---
+export interface InstanceConfig {
+  name: string;
+  status: "running" | "stopped";
+  description: string;
+  ephemeral: boolean;
+  profiles: string[];
+  config: Record<string, string>;
+  devices: Record<string, Record<string, string>>;
+}
+
 // --- Topology (nested VM -> sandboxes -> agents) ---
 export type AgentState = "active" | "thinking" | "waiting" | "idle";
 

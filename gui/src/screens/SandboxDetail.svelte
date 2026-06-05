@@ -1,10 +1,11 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import { ui, navigate, bump, openTerminal, showToast } from "../lib/store.svelte";
-  import { topology, removeSandbox, removeAgent } from "../lib/core";
-  import type { TopoSandbox } from "../lib/types";
+  import { topology, removeSandbox, removeAgent, instanceConfig } from "../lib/core";
+  import type { InstanceConfig, TopoSandbox } from "../lib/types";
 
   let all = $state<TopoSandbox[]>([]);
+  let inst = $state<InstanceConfig | null>(null);
   let busy = $state(false);
   let userBusy = $state<string | null>(null);
 
@@ -12,6 +13,15 @@
     ui.dataVersion;
     void (async () => { all = await topology(); })();
   });
+  $effect(() => {
+    ui.dataVersion;
+    const sel = ui.selectedSandbox;
+    inst = null;
+    if (sel) void instanceConfig(sel).then((c) => (inst = c)).catch(() => (inst = null));
+  });
+
+  const deviceEntries = $derived(inst ? Object.entries(inst.devices) : []);
+  const configEntries = $derived(inst ? Object.entries(inst.config) : []);
 
   async function removeUser(agent: string) {
     if (!sb) return;
@@ -115,6 +125,46 @@
       </div>
     </div>
 
+    <!-- Live Incus surface (round-trip read from the server) -->
+    {#if inst}
+      <div class="card mt16">
+        <div class="card-head"><h3>Incus configuration</h3><span class="sub">live surface · <span class="mono">incus config show {sb.name}</span></span>
+          {#if inst.profiles.length}
+            <span class="right flex gap6">{#each inst.profiles as p}<span class="tag mono">{p}</span>{/each}</span>
+          {/if}
+        </div>
+        <div class="pad">
+          <div class="sub2">Devices</div>
+          {#if deviceEntries.length === 0}
+            <div class="muted small mb12">none</div>
+          {:else}
+            <div class="devs mb16">
+              {#each deviceEntries as [dname, dev]}
+                <div class="dev">
+                  <div class="flex gap8 mb4"><span class="mono small strong" style="color:var(--text)">{dname}</span><span class="tag">{dev.type ?? "?"}</span></div>
+                  <div class="kvs">
+                    {#each Object.entries(dev).filter(([k]) => k !== "type") as [k, v]}
+                      <div class="kvline"><span class="kk mono">{k}</span><span class="vv mono">{v}</span></div>
+                    {/each}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+          <div class="sub2">Config</div>
+          {#if configEntries.length === 0}
+            <div class="muted small">none</div>
+          {:else}
+            <div class="kvs">
+              {#each configEntries as [k, v]}
+                <div class="kvline"><span class="kk mono">{k}</span><span class="vv mono">{v}</span></div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
     <p class="xsmall muted mt12">Live per-agent activity (sessions, trace, tokens) is not instrumented yet.</p>
   {/if}
 </div>
@@ -123,4 +173,11 @@
   .hico { width: 44px; height: 44px; border-radius: 11px; background: var(--accent-dim); color: var(--accent-text); display: grid; place-items: center; flex: none; }
   .hico.off { background: var(--card-2); color: var(--text-3); border: 1px solid var(--border); }
   .btn.sm + .btn.sm { margin-left: 4px; }
+  .sub2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); margin-bottom: 8px; }
+  .devs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .dev { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card-2); padding: 10px; }
+  .kvs { display: flex; flex-direction: column; gap: 3px; }
+  .kvline { display: flex; gap: 10px; font-size: 11.5px; }
+  .kk { color: var(--text-3); min-width: 120px; }
+  .vv { color: var(--text); overflow-wrap: anywhere; }
 </style>

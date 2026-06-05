@@ -9,6 +9,7 @@ use crate::error::{Error, Result};
 use crate::process::{CommandRunner, RunOutput};
 use crate::progress::Reporter;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstanceStatus {
@@ -174,6 +175,63 @@ pub fn builder_name(alias: &str) -> String {
     let s = s.trim_matches('-');
     let s = if s.is_empty() { "img" } else { s };
     format!("build-{s}")
+}
+
+/// A live instance's Incus surface, read back from the server (the round-trip view).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstanceConfig {
+    pub name: String,
+    pub status: InstanceStatus,
+    pub description: String,
+    pub ephemeral: bool,
+    pub profiles: Vec<String>,
+    /// Instance-local `config` keys (`volatile.*` filtered out — never surfaced).
+    pub config: BTreeMap<String, String>,
+    /// Effective devices (expanded — includes profile-provided eth0/root plus instance-local).
+    pub devices: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+/// Parse `incus list <name> --format json` into the named instance's [`InstanceConfig`].
+pub fn parse_instance(list_json: &str, name: &str) -> Result<InstanceConfig> {
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        #[serde(default, deserialize_with = "null_default")]
+        status: String,
+        #[serde(default, deserialize_with = "null_default")]
+        description: String,
+        #[serde(default, deserialize_with = "null_default")]
+        ephemeral: bool,
+        #[serde(default, deserialize_with = "null_default")]
+        profiles: Vec<String>,
+        #[serde(default, deserialize_with = "null_default")]
+        config: BTreeMap<String, String>,
+        #[serde(default, deserialize_with = "null_default")]
+        expanded_devices: BTreeMap<String, BTreeMap<String, String>>,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus list` output: {e}")))?;
+    let inst = raw
+        .into_iter()
+        .find(|r| r.name == name)
+        .ok_or_else(|| Error::NotFound(format!("instance '{name}'")))?;
+    Ok(InstanceConfig {
+        status: if inst.status == "Running" {
+            InstanceStatus::Running
+        } else {
+            InstanceStatus::Stopped
+        },
+        config: inst
+            .config
+            .into_iter()
+            .filter(|(k, _)| !k.starts_with("volatile."))
+            .collect(),
+        devices: inst.expanded_devices,
+        description: inst.description,
+        ephemeral: inst.ephemeral,
+        profiles: inst.profiles,
+        name: inst.name,
+    })
 }
 
 /// A managed Incus network (bridge) in the VM.
@@ -562,6 +620,15 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         parse_images(&o.stdout)
     }
 
+    /// Read a live instance's Incus surface back from the server (config/devices/profiles).
+    pub fn instance(&self, name: &str) -> Result<InstanceConfig> {
+        let o = self.incus_run(&["list", name, "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("list {name}: {}", o.stderr.trim())));
+        }
+        parse_instance(&o.stdout, name)
+    }
+
     /// Managed Incus networks (bridges) in the VM.
     pub fn networks(&self) -> Result<Vec<NetworkRecord>> {
         let o = self.incus_run(&["network", "list", "--format", "json"])?;
@@ -920,6 +987,30 @@ mod tests {
         assert_eq!(imgs[0].name, "abc123def456"); // fingerprint fallback (null aliases)
         assert_eq!(imgs[0].base, "Debian 12");
         assert_eq!(imgs[0].used_by, 0);
+    }
+
+    #[test]
+    fn parse_instance_reads_the_surface_and_filters_volatile() {
+        let json = r#"[
+          {"name":"web-agent-01","status":"Running","description":"dev box","ephemeral":true,
+           "profiles":["default","sandbox"],
+           "config":{"security.nesting":"true","image.description":"Alpine 3.21",
+                     "volatile.eth0.hwaddr":"00:11:22:33:44:55"},
+           "expanded_devices":{
+             "eth0":{"type":"nic","network":"incusbr0"},
+             "root":{"type":"disk","path":"/","pool":"default"},
+             "work":{"type":"disk","source":"/home/colin/proj","path":"/work","shift":"true"}}},
+          {"name":"other","status":"Stopped","config":{},"expanded_devices":{}}
+        ]"#;
+        let i = parse_instance(json, "web-agent-01").unwrap();
+        assert_eq!(i.name, "web-agent-01");
+        assert_eq!(i.status, InstanceStatus::Running);
+        assert!(i.ephemeral);
+        assert_eq!(i.profiles, vec!["default", "sandbox"]);
+        assert_eq!(i.config.get("security.nesting").map(String::as_str), Some("true"));
+        assert!(!i.config.contains_key("volatile.eth0.hwaddr")); // volatile filtered out
+        assert_eq!(i.devices["work"]["source"], "/home/colin/proj");
+        assert!(matches!(parse_instance(json, "missing"), Err(Error::NotFound(_))));
     }
 
     #[test]
