@@ -7,6 +7,7 @@
   import Services from "./screens/Services.svelte";
   import Agent from "./screens/Agent.svelte";
   import Profiles from "./screens/Profiles.svelte";
+  import Security from "./screens/Security.svelte";
   import Wizard from "./screens/Wizard.svelte";
   import Progress from "./lib/Progress.svelte";
   import Toast from "./lib/Toast.svelte";
@@ -41,6 +42,7 @@
   const platformNav: { id: Screen; label: string; icon: string }[] = [
     { id: "incus", label: "Incus", icon: "layers" },
     { id: "services", label: "Services", icon: "store" },
+    { id: "security", label: "Security posture", icon: "shield" },
     { id: "profiles", label: "Agent profiles", icon: "shield" },
     { id: "wizard", label: "Setup wizard", icon: "cog" },
   ];
@@ -303,6 +305,8 @@
       <Services />
     {:else if ui.screen === "profiles"}
       <Profiles />
+    {:else if ui.screen === "security"}
+      <Security />
     {:else if ui.screen === "wizard"}
       <Wizard />
     {/if}

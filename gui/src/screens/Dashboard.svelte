@@ -109,7 +109,7 @@
       <div class="num">{servicesRunning} <small>/ {knownServices}</small></div>
       <div class="delta t2">{services.filter((s) => s.enabled).length} enabled in config</div>
     </button>
-    <button class="card pad stat clickable" onclick={() => navigate("topology")}>
+    <button class="card pad stat clickable" onclick={() => navigate("security")}>
       <div class="label">Managed egress</div>
       <div class="num">{managed} <small>/ {sandboxes.length}</small></div>
       <div class="delta" style="color:var(--ok)">sandboxes with an egress policy</div>
@@ -164,7 +164,7 @@
     <!-- Security posture -->
     <div class="card">
       <div class="card-head"><h3>Security posture</h3><span class="sub">configured enforcement intent</span>
-        <button class="btn sm right" onclick={() => navigate("topology")}>Fleet view</button>
+        <button class="btn sm right" onclick={() => navigate("security")}>Fleet view</button>
       </div>
       <div class="pad">
         <div class="flex gap8 wrap">

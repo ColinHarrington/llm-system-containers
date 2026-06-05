@@ -40,6 +40,7 @@
     incusCmd("networks", "Networks", "net"),
     incusCmd("images", "Images", "image"),
     gotoCmd("services", "Services", "cog", "6"),
+    gotoCmd("security", "Security posture", "shield", ""),
     gotoCmd("profiles", "Agent profiles", "shield", ""),
     gotoCmd("wizard", "Setup wizard", "cog", ""),
   ];

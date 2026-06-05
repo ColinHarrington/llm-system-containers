@@ -5,7 +5,7 @@ import type { AgentInfo } from "./types";
 
 export type Screen =
   | "dashboard" | "sandboxes" | "sandbox-detail" | "topology" | "agent"
-  | "incus" | "services" | "profiles" | "wizard";
+  | "incus" | "services" | "profiles" | "security" | "wizard";
 
 export type IncusTab = "profiles" | "networks" | "storage" | "images" | "project";
 
@@ -87,5 +87,6 @@ export const SCREEN_TITLES: Record<Screen, [string, string]> = {
   incus: ["Incus", "The Incus control surface — profiles, networks, storage, images"],
   services: ["Services", "Shared infrastructure for your sandboxes"],
   profiles: ["Agent profiles", "Reusable permission profiles assigned to agents"],
+  security: ["Security posture", "Defense-in-depth enforcement across every sandbox"],
   wizard: ["Set up your environment", "First-run configuration"],
 };
