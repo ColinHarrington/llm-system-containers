@@ -253,6 +253,7 @@
       </button>
     </div>
 
+    <div class="main-scroll">
     {#if ui.screen === "dashboard"}
       <Dashboard />
     {:else if ui.screen === "sandboxes"}
@@ -274,6 +275,7 @@
     {:else if ui.screen === "wizard"}
       <Wizard />
     {/if}
+    </div>
   </main>
 
   <Progress />

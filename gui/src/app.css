@@ -165,20 +165,24 @@ body {
 .vm-card .vm-meta { font-size: 10px; color: var(--text-3); margin-top: 4px; font-family: var(--mono); }
 
 /* ---------- Main / topbar ---------- */
+/* Header + scroll region as a flex column so the topbar reserves its own space (no sticky overlap). */
 .main {
-  overflow-y: auto; height: 100vh; background: var(--bg);
+  display: flex; flex-direction: column;
+  height: 100vh; overflow: hidden; background: var(--bg);
+}
+.main-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
   background-image: linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
                     linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
   background-size: 28px 28px;
 }
-html[data-theme="light"] .main { background-image: none; }
+html[data-theme="light"] .main-scroll { background-image: none; }
 
 .topbar {
-  position: sticky; top: 0; z-index: 20;
+  flex: 0 0 56px; z-index: 1;
   display: flex; align-items: center; gap: 12px;
-  padding: 0 20px; height: 56px;
-  background: color-mix(in srgb, var(--bg) 85%, transparent);
-  backdrop-filter: saturate(160%) blur(12px);
+  padding: 0 20px;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 .topbar h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
