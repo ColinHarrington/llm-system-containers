@@ -1237,6 +1237,60 @@ fn sync_virtual_keys(app: AppHandle) -> Result<usize, String> {
     Ok(synced.len())
 }
 
+// --- Tetragon per-UID kernel policies (the kernel ring) ---
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TetragonPolicyDto {
+    name: String,
+    agent: String,
+    denied_syscalls: Vec<String>,
+    egress_note: String,
+}
+
+/// Per-agent Tetragon policies compiled from guardrails (the kernel enforcement ring).
+#[tauri::command]
+fn tetragon_policies(sandbox: String) -> Result<Vec<TetragonPolicyDto>, String> {
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    Ok(llmsc_core::tetragon::sandbox_policies(&cfg, &sandbox)
+        .into_iter()
+        .map(|p| TetragonPolicyDto {
+            name: p.name,
+            agent: p.agent,
+            denied_syscalls: p.denied_syscalls,
+            egress_note: p.egress_note,
+        })
+        .collect())
+}
+
+/// The rendered TracingPolicy YAML (DRAFT) for one agent.
+#[tauri::command]
+fn tetragon_policy_yaml(sandbox: String, agent: String) -> Result<String, String> {
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let g = cfg
+        .sandbox(&sandbox)
+        .and_then(|s| s.users.iter().find(|u| u.name == agent))
+        .and_then(|u| u.guardrails.clone());
+    Ok(llmsc_core::tetragon::agent_policy(&sandbox, &agent, g.as_ref()).to_tracing_policy_yaml())
+}
+
+/// Load a sandbox's compiled Tetragon policies into the VM. Returns the count applied. Requires
+/// Tetragon installed in the VM (scaffold — write+reload is wired, install is follow-up work).
+#[tauri::command]
+fn apply_tetragon_policies(app: AppHandle, sandbox: String) -> Result<usize, String> {
+    let reporter = EventReporter { app };
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let pols = llmsc_core::tetragon::sandbox_policies(&cfg, &sandbox);
+    if pols.is_empty() {
+        reporter.step("No agent policies to load");
+        return Ok(0);
+    }
+    let applied = llmsc_core::deploy::TetragonDeployer::new(vm_name(), &SystemRunner)
+        .apply_policies(&pols, &reporter)
+        .map_err(|e| e.to_string())?;
+    Ok(applied.len())
+}
+
 #[derive(Serialize)]
 struct SandboxNetDto {
     name: String,
@@ -1538,6 +1592,9 @@ pub fn run() {
             egress_status,
             virtual_keys,
             sync_virtual_keys,
+            tetragon_policies,
+            tetragon_policy_yaml,
+            apply_tetragon_policies,
             images,
             images_available,
             build_image,

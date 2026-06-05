@@ -8,9 +8,11 @@
     instanceAddProfile, instanceRemoveProfile, applySandbox, instanceYaml,
     listSnapshots, snapshotCreate, snapshotRestore, snapshotDelete, setAgentGuardrails,
     egressPolicy, setEgressPolicy, egressAclPreview, applyEgress, egressStatus,
+    tetragonPolicies, tetragonPolicyYaml, applyTetragonPolicies,
   } from "../lib/core";
   import type {
-    EgressPolicy, EgressPosture, EgressStatus, Guardrails, InstanceConfig, NetworkAclInfo, SnapshotInfo, TopoAgent, TopoSandbox,
+    EgressPolicy, EgressPosture, EgressStatus, Guardrails, InstanceConfig, NetworkAclInfo,
+    SnapshotInfo, TetragonPolicy, TopoAgent, TopoSandbox,
   } from "../lib/types";
 
   let all = $state<TopoSandbox[]>([]);
@@ -160,6 +162,37 @@
     if (!egress) return;
     saveEgress({ posture: egress.posture, allow: egress.allow.filter((a) => a !== entry) });
   }
+  // --- Tetragon per-UID kernel policies ---
+  let tetraPols = $state<TetragonPolicy[]>([]);
+  let tetraBusy = $state(false);
+  let tetraYaml = $state<string | null>(null);
+  let tetraYamlAgent = $state<string | null>(null);
+  $effect(() => {
+    ui.dataVersion;
+    const sel = ui.selectedSandbox;
+    tetraPols = [];
+    if (sel) void tetragonPolicies(sel).then((p) => (tetraPols = p)).catch(() => (tetraPols = []));
+  });
+  async function viewTetraYaml(agent: string) {
+    if (!sb) return;
+    if (tetraYamlAgent === agent) { tetraYamlAgent = null; tetraYaml = null; return; }
+    try {
+      tetraYaml = await tetragonPolicyYaml(sb.name, agent);
+      tetraYamlAgent = agent;
+    } catch (e) { showToast(String(e), "danger"); }
+  }
+  async function loadTetra() {
+    if (!sb) return;
+    tetraBusy = true;
+    showToast(`$ llmsctl tetragon apply ${sb.name}`);
+    try {
+      const n = await applyTetragonPolicies(sb.name);
+      showToast(n === 0 ? "No agent policies to load" : `Loaded ${n} Tetragon policy(ies)`, "ok");
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { tetraBusy = false; }
+  }
+
   async function enforceEgress() {
     if (!sb) return;
     egressBusy = true;
@@ -446,6 +479,37 @@
           {:else if egress.posture === "open"}
             <div class="muted small">Open — no ACL is created or bound.</div>
           {/if}
+        {/if}
+      </div>
+    </div>
+
+    <!-- Kernel enforcement (Tetragon per-UID) -->
+    <div class="card mt16">
+      <div class="card-head"><h3>Kernel enforcement</h3>
+        <span class="sub">per-UID Tetragon (eBPF) · <span class="mono">TracingPolicy</span></span>
+        <span class="pill warn right" title="Generated draft; requires Tetragon installed in the VM">draft</span>
+        <button class="btn sm" disabled={tetraBusy || tetraPols.length === 0} onclick={loadTetra}
+          title="Write the compiled policies into the VM and reload Tetragon (requires Tetragon installed)">
+          <Icon name="shield" size={13} /><span>{tetraBusy ? "Loading…" : "Load policies"}</span></button>
+      </div>
+      <div class="pad">
+        <p class="hint mb12">One policy per agent (per Linux UID): denies dangerous syscalls and carries the egress posture. The non-bypassable kernel ring. <strong>Draft</strong> — the TracingPolicy schema must be validated against the installed Tetragon.</p>
+        {#if tetraPols.length === 0}
+          <div class="muted small">No agents — nothing to enforce at the kernel.</div>
+        {:else}
+          {#each tetraPols as p (p.name)}
+            <div class="dev mb8">
+              <div class="flex gap8 mb4">
+                <span class="mono small strong" style="color:var(--text)">{p.agent}</span>
+                <span class="tag">{p.deniedSyscalls.length} syscalls denied</span>
+                <button class="btn sm right" onclick={() => viewTetraYaml(p.agent)}><Icon name="doc" size={12} /> {tetraYamlAgent === p.agent ? "Hide" : "YAML"}</button>
+              </div>
+              <div class="muted small mono">egress: {p.egressNote}</div>
+              {#if tetraYamlAgent === p.agent && tetraYaml}
+                <pre class="console yaml mt8">{tetraYaml}</pre>
+              {/if}
+            </div>
+          {/each}
         {/if}
       </div>
     </div>

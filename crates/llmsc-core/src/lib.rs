@@ -15,4 +15,5 @@ pub mod profile;
 pub mod progress;
 pub mod reconcile;
 pub mod service;
+pub mod tetragon;
 pub mod vm;

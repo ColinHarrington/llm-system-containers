@@ -209,6 +209,14 @@ export interface EgressStatus {
   inSync: boolean;
 }
 
+// --- Tetragon per-UID kernel policies (the kernel ring) ---
+export interface TetragonPolicy {
+  name: string;
+  agent: string;
+  deniedSyscalls: string[];
+  egressNote: string;
+}
+
 export interface NetworkAclInfo {
   name: string;
   description: string;

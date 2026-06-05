@@ -199,6 +199,66 @@ fn unit_script(port: u16) -> String {
     )
 }
 
+/// Loads Tetragon TracingPolicies into the **L1 VM** (Tetragon runs in the VM, not a container —
+/// `planning/security-model.md`). Policies live under `/etc/tetragon/tetragon.tp.d/`.
+///
+/// **Scaffold:** this assumes Tetragon is already installed and running in the VM; installing it
+/// (and validating the generated policy schema) is follow-up work. The write+reload path is wired
+/// and tested so the GUI/CLI can drive it once Tetragon is present.
+pub struct TetragonDeployer<'a, R: CommandRunner> {
+    vm: String,
+    runner: &'a R,
+}
+
+impl<'a, R: CommandRunner> TetragonDeployer<'a, R> {
+    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+        Self {
+            vm: vm.into(),
+            runner,
+        }
+    }
+
+    /// Run a command directly in the VM (sudo) — Tetragon is an L1-host daemon, not in a container.
+    fn vm_sh(&self, cmd: &str) -> Result<RunOutput> {
+        self.runner.run(
+            "limactl",
+            &["shell", self.vm.as_str(), "sudo", "bash", "-lc", cmd],
+        )
+    }
+
+    /// Write a TracingPolicy file and reload Tetragon. `name` is the policy name (file stem).
+    pub fn apply_policy(&self, name: &str, yaml: &str) -> Result<()> {
+        let dir = "/etc/tetragon/tetragon.tp.d";
+        let write =
+            format!("mkdir -p {dir} && cat > {dir}/{name}.yaml <<'LLMSC_EOF'\n{yaml}\nLLMSC_EOF",);
+        let o = self.vm_sh(&write)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "writing Tetragon policy {name}: {}",
+                o.stderr.trim()
+            )));
+        }
+        // Reload is best-effort: Tetragon may not be installed yet (scaffold).
+        let _ = self.vm_sh("systemctl reload tetragon 2>/dev/null || systemctl restart tetragon 2>/dev/null || true");
+        Ok(())
+    }
+
+    /// Apply many policies (one per agent). Returns the names applied.
+    pub fn apply_policies(
+        &self,
+        policies: &[crate::tetragon::TetragonPolicy],
+        reporter: &dyn Reporter,
+    ) -> Result<Vec<String>> {
+        let mut applied = Vec::new();
+        for p in policies {
+            reporter.step(&format!("Loading Tetragon policy {}", p.name));
+            self.apply_policy(&p.name, &p.to_tracing_policy_yaml())?;
+            applied.push(p.name.clone());
+        }
+        Ok(applied)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,6 +311,23 @@ mod tests {
         LiteLlmDeployer::new("llmsc", &r)
             .sync_virtual_keys(&specs, &SilentReporter)
             .unwrap();
+    }
+
+    #[test]
+    fn tetragon_apply_writes_policy_and_reloads() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let pols = vec![crate::tetragon::agent_policy(
+            "web-agent-01",
+            "agent-claude",
+            None,
+        )];
+        let applied = TetragonDeployer::new("llmsc", &r)
+            .apply_policies(&pols, &SilentReporter)
+            .unwrap();
+        assert_eq!(applied, vec!["llmsc-web-agent-01-agent-claude"]);
+        assert!(r.called_with("tetragon.tp.d"));
+        assert!(r.called_with("TracingPolicy"));
+        assert!(r.called_with("tetragon")); // reload
     }
 
     #[test]
