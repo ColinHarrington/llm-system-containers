@@ -166,6 +166,24 @@ export async function operatorDefault(): Promise<string> {
   return "operator";
 }
 
+// --- Control-plane actions (observe / interrupt / re-steer) ---
+export async function agentPause(sandbox: string, agent: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("agent_pause", { sandbox, agent });
+  await delay(80);
+}
+export async function agentResume(sandbox: string, agent: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("agent_resume", { sandbox, agent });
+  await delay(80);
+}
+export async function agentStop(sandbox: string, agent: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("agent_stop", { sandbox, agent });
+  await delay(80);
+}
+export async function agentSteer(sandbox: string, agent: string, message: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("agent_steer", { sandbox, agent, message });
+  await delay(80);
+}
+
 // Add an agent (one Linux user) to a running sandbox. The profile seeds the agent's
 // guardrails; `guardrails`, when given, are the refined values that override the seed.
 export async function addAgent(

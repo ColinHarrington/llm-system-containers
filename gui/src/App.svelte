@@ -20,7 +20,7 @@
     ui, navigate, openSandbox, bump, toggleTheme, showToast, SCREEN_TITLES, type Screen,
   } from "./lib/store.svelte";
   import {
-    vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, addAgent, listProfiles,
+    vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, addAgent, listProfiles, agentSteer,
   } from "./lib/core";
   import type { Guardrails, ProfileInfo, Sandbox, VmStatus } from "./lib/types";
 
@@ -159,10 +159,19 @@
 
   // Steer modal
   let steerText = $state("");
-  function sendSteer() {
-    steerText = "";
-    ui.steerAgent = null;
-    showToast("Steering message injected into agent context");
+  let steerBusy = $state(false);
+  async function sendSteer() {
+    const a = ui.steerAgent;
+    if (!a || !steerText.trim()) return;
+    steerBusy = true;
+    try {
+      await agentSteer(a.sandbox, a.name, steerText.trim());
+      steerText = "";
+      ui.steerAgent = null;
+      showToast(`Steering message delivered to ${a.name}`, "ok");
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { steerBusy = false; }
   }
 
   const title = $derived(
@@ -362,7 +371,7 @@
     {/snippet}
     {#snippet foot()}
       <button class="btn" onclick={() => (ui.steerAgent = null)}>Cancel</button>
-      <button class="btn primary" onclick={sendSteer}><Icon name="arrow" size={15} /><span>Send to agent</span></button>
+      <button class="btn primary" onclick={sendSteer} disabled={steerBusy || !steerText.trim()}><Icon name="arrow" size={15} /><span>{steerBusy ? "Sending…" : "Send to agent"}</span></button>
     {/snippet}
   </Modal>
 {/if}

@@ -1264,6 +1264,40 @@ fn set_workspace_readonly(sandbox: String, readonly: bool) -> Result<usize, Stri
         .map_err(|e| e.to_string())
 }
 
+// --- Control-plane actions (observe / interrupt / re-steer) ---
+
+/// Pause an agent — `SIGSTOP` all its processes. Operator-initiated (always allowed).
+#[tauri::command]
+fn agent_pause(sandbox: String, agent: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .signal_user(&sandbox, &agent, "STOP")
+        .map_err(|e| e.to_string())
+}
+
+/// Resume a paused agent — `SIGCONT`.
+#[tauri::command]
+fn agent_resume(sandbox: String, agent: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .signal_user(&sandbox, &agent, "CONT")
+        .map_err(|e| e.to_string())
+}
+
+/// Stop an agent — `SIGTERM` all its processes (clean termination per UID).
+#[tauri::command]
+fn agent_stop(sandbox: String, agent: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .signal_user(&sandbox, &agent, "TERM")
+        .map_err(|e| e.to_string())
+}
+
+/// Inject a steering message into an agent's mailbox.
+#[tauri::command]
+fn agent_steer(sandbox: String, agent: String, message: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .steer_user(&sandbox, &agent, &message)
+        .map_err(|e| e.to_string())
+}
+
 // --- Unified enforcement overview (all rings) ---
 
 #[derive(Serialize)]
@@ -1803,6 +1837,10 @@ pub fn run() {
             set_workspace_readonly,
             enforcement_overview,
             enforce_all,
+            agent_pause,
+            agent_resume,
+            agent_stop,
+            agent_steer,
             images,
             images_available,
             build_image,

@@ -57,6 +57,23 @@ enum Command {
         #[arg(long)]
         apply: bool,
     },
+    /// Control an agent: pause / resume / stop / steer (target is `agent@sandbox`).
+    Agent {
+        #[command(subcommand)]
+        action: AgentAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentAction {
+    /// Pause the agent (SIGSTOP all its processes).
+    Pause { target: String },
+    /// Resume the agent (SIGCONT).
+    Resume { target: String },
+    /// Stop the agent (SIGTERM).
+    Stop { target: String },
+    /// Inject a steering message into the agent's mailbox.
+    Steer { target: String, message: String },
 }
 
 fn vm_name() -> String {
@@ -147,6 +164,43 @@ fn run() -> Result<(), String> {
                         println!("(use --apply to enforce)");
                     }
                     None => println!("egress is open/unmanaged — no ACL"),
+                }
+            }
+        }
+        Command::Agent { action } => {
+            let split = |t: &str| -> Result<(String, String), String> {
+                t.split_once('@')
+                    .map(|(a, s)| (a.to_string(), s.to_string()))
+                    .ok_or_else(|| format!("target must be agent@sandbox (got '{t}')"))
+            };
+            match action {
+                AgentAction::Pause { target } => {
+                    let (a, s) = split(&target)?;
+                    incus
+                        .signal_user(&s, &a, "STOP")
+                        .map_err(|e| e.to_string())?;
+                    println!("paused {a}@{s}");
+                }
+                AgentAction::Resume { target } => {
+                    let (a, s) = split(&target)?;
+                    incus
+                        .signal_user(&s, &a, "CONT")
+                        .map_err(|e| e.to_string())?;
+                    println!("resumed {a}@{s}");
+                }
+                AgentAction::Stop { target } => {
+                    let (a, s) = split(&target)?;
+                    incus
+                        .signal_user(&s, &a, "TERM")
+                        .map_err(|e| e.to_string())?;
+                    println!("stopped {a}@{s}");
+                }
+                AgentAction::Steer { target, message } => {
+                    let (a, s) = split(&target)?;
+                    incus
+                        .steer_user(&s, &a, &message)
+                        .map_err(|e| e.to_string())?;
+                    println!("steered {a}@{s}");
                 }
             }
         }

@@ -9,7 +9,7 @@
     listSnapshots, snapshotCreate, snapshotRestore, snapshotDelete, setAgentGuardrails,
     egressPolicy, setEgressPolicy, egressAclPreview, applyEgress, egressStatus,
     tetragonPolicies, tetragonPolicyYaml, applyTetragonPolicies, setWorkspaceReadonly,
-    enforcementOverview, enforceAll,
+    enforcementOverview, enforceAll, agentPause, agentResume, agentStop,
   } from "../lib/core";
   import type {
     EgressPolicy, EgressPosture, EgressStatus, Guardrails, InstanceConfig, NetworkAclInfo,
@@ -100,6 +100,17 @@
     } catch (e) {
       showToast(String(e), "danger");
     } finally { gBusy = false; }
+  }
+
+  async function controlAgent(agent: string, fn: () => Promise<void>, msg: string) {
+    if (!sb) return;
+    userBusy = agent;
+    try {
+      await fn();
+      showToast(msg, "ok");
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { userBusy = null; }
   }
 
   async function removeUser(agent: string) {
@@ -393,6 +404,9 @@
                   <td style="text-align:right; white-space:nowrap">
                     <button class="btn sm" title="Open shell" onclick={() => openTerminal(`${u.name}@${sb.name}`)}><Icon name="terminal" size={13} /></button>
                     {#if u.kind !== "human"}
+                      <button class="btn sm" title="Pause agent" disabled={userBusy === u.name} onclick={() => controlAgent(u.name, () => agentPause(sb.name, u.name), `Paused ${u.name}`)}><Icon name="pause" size={13} /></button>
+                      <button class="btn sm" title="Resume agent" disabled={userBusy === u.name} onclick={() => controlAgent(u.name, () => agentResume(sb.name, u.name), `Resumed ${u.name}`)}><Icon name="play" size={13} /></button>
+                      <button class="btn sm" title="Stop agent" disabled={userBusy === u.name} onclick={() => controlAgent(u.name, () => agentStop(sb.name, u.name), `Stopped ${u.name}`)}><Icon name="stop" size={13} /></button>
                       <button class="btn sm" title="Guardrails" onclick={() => openGuardrails(u)}><Icon name="shield" size={13} /></button>
                       <button class="btn sm danger" title="Remove agent" onclick={() => removeUser(u.name)} disabled={userBusy === u.name}><Icon name="x" size={13} /></button>
                     {/if}

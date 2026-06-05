@@ -1671,6 +1671,40 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         Ok(())
     }
 
+    /// Send a signal to **all** of an agent's processes inside a sandbox (control-plane action):
+    /// `STOP` (pause), `CONT` (resume), `TERM` (stop). Scoped to the agent's Linux user via
+    /// `pkill -u`. `pkill` exit 1 means "no matching processes" — treated as success.
+    pub fn signal_user(&self, sandbox: &str, agent: &str, signal: &str) -> Result<()> {
+        let o = self.incus_run(&[
+            "exec", sandbox, "--", "pkill", "--signal", signal, "-u", agent,
+        ])?;
+        // 0 = signalled, 1 = no matching processes; anything else is a real failure.
+        if o.code != 0 && o.code != 1 {
+            return Err(Error::Incus(format!(
+                "signal {signal} to {agent}: {}",
+                o.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Inject a steering message into an agent's mailbox (`~/.llmsc/steer.log`) inside the sandbox.
+    /// The control-plane delivers it; an agent runtime must read the mailbox to act on it.
+    pub fn steer_user(&self, sandbox: &str, agent: &str, message: &str) -> Result<()> {
+        let safe = message.replace('\'', "'\\''");
+        let script = format!(
+            "d=/home/{agent}/.llmsc; mkdir -p \"$d\" && printf '%s\\n' '{safe}' >> \"$d/steer.log\" && chown -R {agent} \"$d\" 2>/dev/null || true"
+        );
+        let o = self.incus_run(&["exec", sandbox, "--", "sh", "-c", &script])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "steering {agent}: {}",
+                o.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
     /// Build a custom image via the publish-from-container flow: launch a throwaway builder from
     /// `base`, run `setup` inside it, then `incus publish` it under `alias`. The builder is removed
     /// on success or failure. Progress streams via `reporter`.
@@ -1851,6 +1885,31 @@ mod tests {
         assert!(r.called_with("exec"));
         assert!(r.called_with("userdel"));
         assert!(r.called_with("agent-claude"));
+    }
+
+    #[test]
+    fn signal_and_steer_user() {
+        // pkill exit 1 (no matching processes) is tolerated.
+        let r = FakeRunner::new(|_, _| out(1, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.signal_user("web-agent-01", "agent-claude", "STOP")
+            .unwrap();
+        assert!(r.called_with("pkill"));
+        assert!(r.called_with("STOP"));
+        assert!(r.called_with("agent-claude"));
+
+        let r2 = FakeRunner::new(|_, _| out(0, ""));
+        let c2 = CliIncus::new("llmsc", &r2);
+        c2.steer_user("web-agent-01", "agent-claude", "stop touching migrations")
+            .unwrap();
+        assert!(r2.called_with("steer.log"));
+        assert!(r2.called_with("agent-claude"));
+
+        // A real pkill failure (e.g. exit 2) propagates.
+        let r3 = FakeRunner::new(|_, _| out(2, "permission denied"));
+        assert!(CliIncus::new("llmsc", &r3)
+            .signal_user("sb", "a", "TERM")
+            .is_err());
     }
 
     #[test]

@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly, enforceAll } = vi.hoisted(() => ({
+const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly, enforceAll, agentPause } = vi.hoisted(() => ({
   removeAgent: vi.fn(async () => {}),
   instanceRemoveProfile: vi.fn(async () => {}),
   setAgentGuardrails: vi.fn(async () => {}),
@@ -13,6 +13,7 @@ const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy,
   enforceAll: vi.fn(async () => [
     { ring: "Egress (L3/L4)", state: "enforced", detail: "allowlist · bound" },
   ]),
+  agentPause: vi.fn(async () => {}),
 }));
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
@@ -57,6 +58,9 @@ vi.mock("../lib/core", () => ({
     { ring: "Kernel (Tetragon)", state: "draft", detail: "1 policy(ies) compiled" },
   ]),
   enforceAll,
+  agentPause,
+  agentResume: vi.fn(async () => {}),
+  agentStop: vi.fn(async () => {}),
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",
@@ -148,6 +152,14 @@ describe("SandboxDetail", () => {
     expect(screen.getByText("2 syscalls denied")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: /Load policies/ }));
     expect(applyTetragonPolicies).toHaveBeenCalledWith("web-agent-01");
+  });
+
+  it("pauses an agent (control-plane action)", async () => {
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    await screen.findAllByText("agent-claude");
+    await fireEvent.click(screen.getByTitle("Pause agent"));
+    expect(agentPause).toHaveBeenCalledWith("web-agent-01", "agent-claude");
   });
 
   it("sets the workspace mounts read-only", async () => {
