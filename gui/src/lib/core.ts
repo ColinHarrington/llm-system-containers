@@ -241,6 +241,21 @@ export async function listIncusProfiles(): Promise<IncusProfileInfo[]> {
   ];
 }
 
+// Recommended starter Incus profiles the user can apply into the project.
+export async function starterIncusProfiles(): Promise<IncusProfileInfo[]> {
+  if (inTauri()) return invokeCmd<IncusProfileInfo[]>("starter_incus_profiles");
+  return [
+    { name: "sandbox", description: "LLMSC unprivileged sandbox base", usedBy: 0, config: { "security.privileged": "false" }, devices: {} },
+    { name: "nesting", description: "Nested rootless app containers (L3)", usedBy: 0, config: { "security.nesting": "true" }, devices: {} },
+  ];
+}
+
+// Apply (reconcile into the project) a starter/TOML-owned Incus profile.
+export async function applyIncusProfile(name: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("incus_profile_apply", { name });
+  await mockSteps([`Creating Incus profile '${name}'`, `${name}: set …`], 180);
+}
+
 // The shipped agent-profile archetypes (definition layer).
 export async function listProfiles(): Promise<ProfileInfo[]> {
   if (inTauri()) return invokeCmd<ProfileInfo[]>("profiles");

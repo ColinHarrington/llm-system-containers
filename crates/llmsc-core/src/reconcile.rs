@@ -4,10 +4,45 @@
 //! missing, leave declared+present ones, and **surface drift** (present in Incus but not in
 //! config) without deleting — destructive actions stay explicit.
 
-use crate::config::{Config, Sandbox};
+use crate::config::{Config, IncusProfile, Sandbox};
 use crate::error::Result;
-use crate::incus::{ConvergeOp, IncusClient, InstanceConfig};
+use crate::incus::{ConvergeOp, IncusClient, IncusProfileRecord, InstanceConfig};
 use crate::progress::Reporter;
+use std::collections::BTreeMap;
+
+/// Compute the steps to converge a live Incus profile toward its TOML-owned intent (config +
+/// devices only — profiles carry no `source`/`ephemeral`/profiles-of-profiles). Additive on
+/// devices (in-place change is a manual remove+add); unsets/removes drift.
+pub fn profile_converge_plan(desired: &IncusProfile, live: Option<&IncusProfileRecord>) -> Vec<ConvergeOp> {
+    let empty_cfg: BTreeMap<String, String> = BTreeMap::new();
+    let empty_dev: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    let (lcfg, ldev) = match live {
+        Some(p) => (&p.config, &p.devices),
+        None => (&empty_cfg, &empty_dev),
+    };
+    let mut plan = Vec::new();
+    for (k, v) in &desired.config {
+        if lcfg.get(k) != Some(v) {
+            plan.push(ConvergeOp::SetConfig { key: k.clone(), value: v.clone() });
+        }
+    }
+    for k in lcfg.keys() {
+        if !desired.config.contains_key(k) {
+            plan.push(ConvergeOp::UnsetConfig { key: k.clone() });
+        }
+    }
+    for (name, keys) in &desired.devices {
+        if !ldev.contains_key(name) {
+            plan.push(ConvergeOp::AddDevice { name: name.clone(), keys: keys.clone() });
+        }
+    }
+    for name in ldev.keys() {
+        if !desired.devices.contains_key(name) {
+            plan.push(ConvergeOp::RemoveDevice { name: name.clone() });
+        }
+    }
+    plan
+}
 
 /// Compute the steps to converge a *live* instance toward its *declared* sandbox intent.
 ///
@@ -120,6 +155,7 @@ mod tests {
             vm: VmConfig::default(),
             sandboxes: names.iter().map(|n| sandbox(n)).collect(),
             services: vec![],
+            incus_profiles: vec![],
         }
     }
 
@@ -193,6 +229,39 @@ mod tests {
         assert!(plan.contains(&ConvergeOp::RemoveProfile { name: "old-profile".into() }));
         // never removes the default profile
         assert!(!plan.contains(&ConvergeOp::RemoveProfile { name: "default".into() }));
+    }
+
+    #[test]
+    fn profile_converge_plan_diffs_config_and_devices() {
+        use crate::config::IncusProfile;
+        use crate::incus::{ConvergeOp, IncusProfileRecord};
+        use std::collections::BTreeMap;
+
+        let desired = IncusProfile {
+            name: "sandbox".into(),
+            description: None,
+            config: BTreeMap::from([("security.nesting".into(), "true".into())]),
+            devices: BTreeMap::from([("eth0".into(), BTreeMap::from([("type".into(), "nic".into())]))]),
+        };
+        // Missing profile → everything is an add/set.
+        let plan = profile_converge_plan(&desired, None);
+        assert!(plan.contains(&ConvergeOp::SetConfig { key: "security.nesting".into(), value: "true".into() }));
+        assert!(plan.iter().any(|op| matches!(op, ConvergeOp::AddDevice { name, .. } if name == "eth0")));
+
+        // Existing with drift → set the changed key, unset the extra, remove the extra device.
+        let live = IncusProfileRecord {
+            name: "sandbox".into(),
+            description: String::new(),
+            used_by: 0,
+            config: BTreeMap::from([("drift".into(), "x".into())]),
+            devices: BTreeMap::from([("eth0".into(), BTreeMap::from([("type".into(), "nic".into())])), ("stale".into(), BTreeMap::new())]),
+        };
+        let plan = profile_converge_plan(&desired, Some(&live));
+        assert!(plan.contains(&ConvergeOp::SetConfig { key: "security.nesting".into(), value: "true".into() }));
+        assert!(plan.contains(&ConvergeOp::UnsetConfig { key: "drift".into() }));
+        assert!(plan.contains(&ConvergeOp::RemoveDevice { name: "stale".into() }));
+        // eth0 already present → not re-added.
+        assert!(!plan.iter().any(|op| matches!(op, ConvergeOp::AddDevice { name, .. } if name == "eth0")));
     }
 
     #[test]

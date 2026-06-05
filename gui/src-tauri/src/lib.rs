@@ -296,6 +296,52 @@ struct IncusProfileDto {
     devices: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
 }
 
+/// Recommended starter Incus profiles the user can apply into the project.
+#[tauri::command]
+fn starter_incus_profiles() -> Vec<IncusProfileDto> {
+    llmsc_core::config::starter_incus_profiles()
+        .into_iter()
+        .map(|p| IncusProfileDto {
+            name: p.name,
+            description: p.description.unwrap_or_default(),
+            used_by: 0,
+            config: p.config,
+            devices: p.devices,
+        })
+        .collect()
+}
+
+/// Apply (reconcile into the project) a starter or TOML-owned Incus profile, and record it in config.
+#[tauri::command]
+fn incus_profile_apply(app: AppHandle, name: String) -> Result<(), String> {
+    let reporter = EventReporter { app };
+    let cfg = load_user_config().unwrap_or_default();
+    let desired = cfg
+        .incus_profile(&name)
+        .cloned()
+        .or_else(|| llmsc_core::config::starter_incus_profiles().into_iter().find(|p| p.name == name))
+        .ok_or_else(|| format!("unknown profile '{name}'"))?;
+    CliIncus::new(vm_name(), &SystemRunner)
+        .reconcile_profile(&desired, &reporter)
+        .map_err(|e| e.to_string())?;
+    let mut cfg2 = load_user_config().unwrap_or_default();
+    cfg2.put_incus_profile(desired);
+    save_user_config(&cfg2);
+    Ok(())
+}
+
+/// Reconcile all TOML-owned Incus profiles into the project. Returns how many.
+#[tauri::command]
+fn reconcile_incus_profiles(app: AppHandle) -> Result<usize, String> {
+    let reporter = EventReporter { app };
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    for p in &cfg.incus_profiles {
+        incus.reconcile_profile(p, &reporter).map_err(|e| e.to_string())?;
+    }
+    Ok(cfg.incus_profiles.len())
+}
+
 /// The Incus profiles (config+devices composition bundles) in the project.
 #[tauri::command]
 fn incus_profiles() -> Result<Vec<IncusProfileDto>, String> {
@@ -847,6 +893,9 @@ pub fn run() {
             remove_agent,
             profiles,
             incus_profiles,
+            starter_incus_profiles,
+            incus_profile_apply,
+            reconcile_incus_profiles,
             topology,
             host_resources,
             images,

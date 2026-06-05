@@ -1,14 +1,34 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui } from "../lib/store.svelte";
-  import { listIncusProfiles } from "../lib/core";
+  import { ui, bump, showToast } from "../lib/store.svelte";
+  import { listIncusProfiles, starterIncusProfiles, applyIncusProfile } from "../lib/core";
   import type { IncusProfileInfo } from "../lib/types";
 
   let profiles = $state<IncusProfileInfo[]>([]);
+  let starters = $state<IncusProfileInfo[]>([]);
+  let busy = $state<string | null>(null);
+
   $effect(() => {
     ui.dataVersion;
     void (async () => { profiles = await listIncusProfiles(); })();
   });
+  $effect(() => {
+    void starterIncusProfiles().then((s) => (starters = s));
+  });
+
+  const existingNames = $derived(new Set(profiles.map((p) => p.name)));
+
+  async function apply(name: string) {
+    busy = name;
+    showToast(`$ incus profile reconcile ${name}`);
+    try {
+      await applyIncusProfile(name);
+      showToast(`Applied profile '${name}'`, "ok");
+      bump();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { busy = null; }
+  }
 </script>
 
 <div class="content">
@@ -21,6 +41,20 @@
     </span>
   </div>
 
+  {#if starters.some((s) => !existingNames.has(s.name))}
+    <div class="sec">Recommended <span class="hint">— apply into the project (TOML-owned, reconciled)</span></div>
+    <div class="grid g-3 mb20">
+      {#each starters.filter((s) => !existingNames.has(s.name)) as s (s.name)}
+        <div class="card pad rec">
+          <div><div class="strong mono" style="color:var(--text)">{s.name}</div><div class="muted xsmall">{s.description}</div></div>
+          <button class="btn sm primary right" disabled={busy !== null} onclick={() => apply(s.name)}>
+            <Icon name="plus" size={13} /><span>{busy === s.name ? "Applying…" : "Apply"}</span></button>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
+  <div class="sec">In the project</div>
   <div class="grid g-2">
     {#each profiles as p (p.name)}
       <div class="card pad">
@@ -65,4 +99,6 @@
   .kvline { display: flex; gap: 10px; font-size: 11.5px; }
   .kk { color: var(--text-3); min-width: 130px; }
   .vv { color: var(--text); overflow-wrap: anywhere; }
+  .sec { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); margin-bottom: 10px; }
+  .rec { display: flex; align-items: center; gap: 10px; }
 </style>

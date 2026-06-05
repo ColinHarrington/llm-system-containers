@@ -780,6 +780,64 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         parse_instance(&o.stdout, name)
     }
 
+    /// Reconcile a TOML-owned Incus profile into the project: create it if missing, then converge
+    /// its config + devices toward the declared intent.
+    pub fn reconcile_profile(
+        &self,
+        desired: &crate::config::IncusProfile,
+        reporter: &dyn Reporter,
+    ) -> Result<()> {
+        let live = self.incus_profiles()?;
+        let existing = live.iter().find(|p| p.name == desired.name);
+        if existing.is_none() {
+            reporter.step(&format!("Creating Incus profile '{}'", desired.name));
+            let o = self.incus_run(&["profile", "create", &desired.name])?;
+            if !o.ok() {
+                return Err(Error::Incus(format!("profile create {}: {}", desired.name, o.stderr.trim())));
+            }
+        }
+        let plan = crate::reconcile::profile_converge_plan(desired, existing);
+        for op in &plan {
+            match op {
+                ConvergeOp::SetConfig { key, value } => {
+                    reporter.step(&format!("{}: set {key}={value}", desired.name));
+                    let o = self.incus_run(&["profile", "set", &desired.name, key, value])?;
+                    if !o.ok() {
+                        return Err(Error::Incus(format!("profile set {key}: {}", o.stderr.trim())));
+                    }
+                }
+                ConvergeOp::UnsetConfig { key } => {
+                    reporter.step(&format!("{}: unset {key}", desired.name));
+                    let _ = self.incus_run(&["profile", "unset", &desired.name, key]);
+                }
+                ConvergeOp::AddDevice { name: dev, keys } => {
+                    reporter.step(&format!("{}: add device {dev}", desired.name));
+                    let dtype = keys.get("type").cloned().unwrap_or_else(|| "disk".into());
+                    let mut args: Vec<String> = vec![
+                        "profile".into(), "device".into(), "add".into(),
+                        desired.name.clone(), dev.clone(), dtype,
+                    ];
+                    for (k, v) in keys {
+                        if k != "type" {
+                            args.push(format!("{k}={v}"));
+                        }
+                    }
+                    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+                    let o = self.incus_run(&argv)?;
+                    if !o.ok() {
+                        return Err(Error::Incus(format!("profile device add {dev}: {}", o.stderr.trim())));
+                    }
+                }
+                ConvergeOp::RemoveDevice { name: dev } => {
+                    reporter.step(&format!("{}: remove device {dev}", desired.name));
+                    let _ = self.incus_run(&["profile", "device", "remove", &desired.name, dev]);
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     /// Incus profiles (config+devices composition bundles) in the project.
     pub fn incus_profiles(&self) -> Result<Vec<IncusProfileRecord>> {
         let o = self.incus_run(&["profile", "list", "--format", "json"])?;

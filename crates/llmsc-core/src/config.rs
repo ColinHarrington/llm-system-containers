@@ -47,6 +47,9 @@ pub struct Config {
     /// Enabled services.
     #[serde(default, rename = "service", skip_serializing_if = "Vec::is_empty")]
     pub services: Vec<Service>,
+    /// TOML-owned Incus profiles (config+device composition bundles) reconciled into the project.
+    #[serde(default, rename = "incus_profile", skip_serializing_if = "Vec::is_empty")]
+    pub incus_profiles: Vec<IncusProfile>,
 }
 
 impl Default for Config {
@@ -56,8 +59,41 @@ impl Default for Config {
             vm: VmConfig::default(),
             sandboxes: Vec::new(),
             services: Vec::new(),
+            incus_profiles: Vec::new(),
         }
     }
+}
+
+/// A TOML-owned Incus profile: a reusable bundle of `config` + `devices` (the same two maps an
+/// instance carries) composed onto sandboxes. See `planning/research/incus-instance-inputs.md` §9.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IncusProfile {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub config: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub devices: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+/// Recommended starter Incus profiles (safe, no external deps). The user adopts/reconciles these
+/// into the project; richer kinds (`net-*`/`fs-*`) depend on networks/storage that must exist.
+pub fn starter_incus_profiles() -> Vec<IncusProfile> {
+    vec![
+        IncusProfile {
+            name: "sandbox".into(),
+            description: Some("LLMSC unprivileged sandbox base".into()),
+            config: BTreeMap::from([("security.privileged".into(), "false".into())]),
+            devices: BTreeMap::new(),
+        },
+        IncusProfile {
+            name: "nesting".into(),
+            description: Some("Nested rootless app containers (L3)".into()),
+            config: BTreeMap::from([("security.nesting".into(), "true".into())]),
+            devices: BTreeMap::new(),
+        },
+    ]
 }
 
 /// The host username — used as the default operator name. Falls back to "operator".
@@ -268,6 +304,19 @@ impl Config {
         self.sandboxes.last_mut().unwrap()
     }
 
+    /// A TOML-owned Incus profile by name.
+    pub fn incus_profile(&self, name: &str) -> Option<&IncusProfile> {
+        self.incus_profiles.iter().find(|p| p.name == name)
+    }
+
+    /// Insert/replace a TOML-owned Incus profile by name.
+    pub fn put_incus_profile(&mut self, profile: IncusProfile) {
+        match self.incus_profiles.iter().position(|p| p.name == profile.name) {
+            Some(i) => self.incus_profiles[i] = profile,
+            None => self.incus_profiles.push(profile),
+        }
+    }
+
     /// Insert a sandbox, or replace the existing one with the same name (declarative intent).
     pub fn put_sandbox(&mut self, sandbox: Sandbox) {
         match self.sandboxes.iter().position(|s| s.name == sandbox.name) {
@@ -404,6 +453,7 @@ mod tests {
                 ..Default::default()
             }],
             services: vec![],
+            incus_profiles: vec![],
         }
     }
 
@@ -627,6 +677,7 @@ mod tests {
                 vm,
                 sandboxes,
                 services: vec![],
+                incus_profiles: vec![],
             },
         )
     }
