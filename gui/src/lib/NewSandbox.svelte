@@ -15,6 +15,8 @@
   let network = $state("");
   let cloudInit = $state("");
   let profilesStr = $state("");
+  let cpuLimit = $state("");
+  let memoryLimit = $state("");
   let busy = $state(false);
 
   $effect(() => {
@@ -46,6 +48,8 @@
         mounts: mounts.filter((m) => m.source.trim() && m.path.trim()),
         cloudInit,
         network: network.trim(),
+        cpuLimit: cpuLimit.trim(),
+        memoryLimit: memoryLimit.trim(),
       });
       close();
       navigate("sandboxes");
@@ -110,10 +114,10 @@
     <div class="field mb16"><label for="ns-prof">Profiles <span class="hint">(comma/space separated; applied in order)</span></label>
       <input id="ns-prof" class="input mono" bind:value={profilesStr} placeholder="default" /></div>
 
-    <div class="sec">Resources <span class="hint">— not implemented yet</span></div>
-    <div class="grid g-2 stubbed">
-      <div class="field"><label for="ns-cpu">CPU limit</label><input id="ns-cpu" class="input mono" placeholder="limits.cpu" disabled /></div>
-      <div class="field"><label for="ns-mem">Memory limit</label><input id="ns-mem" class="input mono" placeholder="limits.memory" disabled /></div>
+    <div class="sec">Resources <span class="hint">(optional · Incus <span class="mono">limits.*</span>)</span></div>
+    <div class="grid g-2">
+      <div class="field"><label for="ns-cpu">CPU limit <span class="hint">(cores)</span></label><input id="ns-cpu" class="input mono" bind:value={cpuLimit} placeholder="2" /></div>
+      <div class="field"><label for="ns-mem">Memory limit</label><input id="ns-mem" class="input mono" bind:value={memoryLimit} placeholder="4GiB" /></div>
     </div>
   {/snippet}
   {#snippet foot()}
@@ -132,5 +136,4 @@
   .ro { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-3); }
   .chip { font-family: var(--mono); font-size: 11px; color: var(--text-2); background: var(--card-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
   .chip.on { border-color: var(--accent); color: var(--accent-text); background: var(--accent-dim); }
-  .stubbed { opacity: .55; }
 </style>

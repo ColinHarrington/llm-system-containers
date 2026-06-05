@@ -161,6 +161,10 @@ struct NewSandboxSpec {
     cloud_init: String,
     #[serde(default)]
     network: String,
+    #[serde(default)]
+    cpu_limit: String,
+    #[serde(default)]
+    memory_limit: String,
 }
 
 /// Sanitize a mount path into an Incus device name (`/work/src` → `work-src`).
@@ -205,6 +209,12 @@ fn sandbox_launch(app: AppHandle, spec: NewSandboxSpec) -> Result<(), String> {
     let mut config: std::collections::BTreeMap<String, String> = Default::default();
     if !spec.cloud_init.trim().is_empty() {
         config.insert("cloud-init.user-data".into(), spec.cloud_init.clone());
+    }
+    if !spec.cpu_limit.trim().is_empty() {
+        config.insert("limits.cpu".into(), spec.cpu_limit.trim().to_string());
+    }
+    if !spec.memory_limit.trim().is_empty() {
+        config.insert("limits.memory".into(), spec.memory_limit.trim().to_string());
     }
 
     let desc = if spec.description.trim().is_empty() { None } else { Some(spec.description.trim().to_string()) };

@@ -137,6 +137,8 @@ export interface NewSandboxInput {
   mounts: SandboxMount[];
   cloudInit: string;
   network: string;
+  cpuLimit: string;
+  memoryLimit: string;
 }
 
 export async function launchSandbox(input: NewSandboxInput): Promise<void> {
