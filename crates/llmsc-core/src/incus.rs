@@ -1671,6 +1671,40 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         Ok(())
     }
 
+    /// Attach the shared SeaweedFS-backed Incus custom volume to a sandbox at `path`. Creates the
+    /// volume if absent (idempotent) and adds it as a `disk` device named `shared`. The same volume
+    /// attaches to many sandboxes → shared storage across containers.
+    pub fn attach_shared_volume(&self, sandbox: &str, path: &str) -> Result<()> {
+        let pool = crate::deploy::SHARED_POOL;
+        let vol = crate::deploy::SHARED_VOLUME;
+        let exists = |o: &RunOutput| {
+            format!("{} {}", o.stderr, o.stdout)
+                .to_lowercase()
+                .contains("already exists")
+        };
+        // Create the custom volume (ignore "already exists").
+        let c = self.incus_run(&["storage", "volume", "create", pool, vol])?;
+        if !c.ok() && !exists(&c) {
+            return Err(Error::Incus(format!(
+                "creating shared volume: {}",
+                c.stderr.trim()
+            )));
+        }
+        let poolarg = format!("pool={pool}");
+        let src = format!("source={vol}");
+        let patharg = format!("path={path}");
+        let o = self.incus_run(&[
+            "config", "device", "add", sandbox, "shared", "disk", &poolarg, &src, &patharg,
+        ])?;
+        if !o.ok() && !exists(&o) {
+            return Err(Error::Incus(format!(
+                "attaching shared volume to {sandbox}: {}",
+                o.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
     /// Send a signal to **all** of an agent's processes inside a sandbox (control-plane action):
     /// `STOP` (pause), `CONT` (resume), `TERM` (stop). Scoped to the agent's Linux user via
     /// `pkill -u`. `pkill` exit 1 means "no matching processes" — treated as success.
@@ -2306,6 +2340,21 @@ mod tests {
         let c = CliIncus::new("llmsc", &r);
         // "already exists" is swallowed; a real failure would propagate.
         c.network_acl_create("llmsc-egress-x").unwrap();
+    }
+
+    #[test]
+    fn attach_shared_volume_creates_and_attaches() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.attach_shared_volume("web-agent-01", "/shared").unwrap();
+        assert!(r.called_with("volume"));
+        assert!(r.called_with("llmsc-shared"));
+        assert!(r.called_with("path=/shared"));
+        // "already exists" on create/attach is tolerated (idempotent).
+        let r2 = FakeRunner::new(|_, _| out(1, "Error: storage volume already exists"));
+        CliIncus::new("llmsc", &r2)
+            .attach_shared_volume("web-agent-01", "/shared")
+            .unwrap();
     }
 
     #[test]

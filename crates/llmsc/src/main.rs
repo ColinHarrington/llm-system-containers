@@ -62,6 +62,14 @@ enum Command {
         #[command(subcommand)]
         action: AgentAction,
     },
+    /// Mount the shared SeaweedFS-backed volume into a sandbox.
+    MountShared {
+        /// Sandbox name.
+        name: String,
+        /// Mount path inside the sandbox.
+        #[arg(default_value = "/shared")]
+        path: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -203,6 +211,12 @@ fn run() -> Result<(), String> {
                     println!("steered {a}@{s}");
                 }
             }
+        }
+        Command::MountShared { name, path } => {
+            incus
+                .attach_shared_volume(&name, &path)
+                .map_err(|e| e.to_string())?;
+            println!("mounted shared volume into {name} at {path}");
         }
         Command::Cp { src, dst } => println!("cp {src} -> {dst}: not yet implemented (M6)"),
     }

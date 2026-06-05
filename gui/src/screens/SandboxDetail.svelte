@@ -9,7 +9,7 @@
     listSnapshots, snapshotCreate, snapshotRestore, snapshotDelete, setAgentGuardrails,
     egressPolicy, setEgressPolicy, egressAclPreview, applyEgress, egressStatus,
     tetragonPolicies, tetragonPolicyYaml, applyTetragonPolicies, setWorkspaceReadonly,
-    enforcementOverview, enforceAll, agentPause, agentResume, agentStop,
+    enforcementOverview, enforceAll, agentPause, agentResume, agentStop, mountShared,
   } from "../lib/core";
   import type {
     EgressPolicy, EgressPosture, EgressStatus, Guardrails, InstanceConfig, NetworkAclInfo,
@@ -289,6 +289,11 @@
     }
   }
 
+  async function mountSharedVol() {
+    if (!sb) return;
+    await edit(() => mountShared(sb.name, "/shared"), "Mounted shared volume at /shared");
+  }
+
   async function applyConfig() {
     if (!sb) return;
     cfgBusy = true;
@@ -470,6 +475,10 @@
             <input class="input mono" bind:value={mPath} placeholder="/container/path" />
             <label class="ro"><input type="checkbox" bind:checked={mRo} /> ro</label>
             <button class="btn sm" disabled={cfgBusy || !mSource.trim() || !mPath.trim()} onclick={() => { const s = mSource.trim(), p = mPath.trim(), ro = mRo; mSource = ""; mPath = ""; mRo = false; void edit(() => instanceAddMount(sb.name, s, p, ro), `Added mount ${p}`); }}>Add mount</button>
+          </div>
+          <div class="flex gap8 mb16" style="align-items:center">
+            <span class="muted small">Shared storage (SeaweedFS-backed Incus volume, shared across sandboxes):</span>
+            <button class="btn sm" disabled={cfgBusy} onclick={mountSharedVol}><Icon name="pkg" size={13} /> Mount shared at /shared</button>
           </div>
 
           <!-- config -->

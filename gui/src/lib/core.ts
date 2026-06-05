@@ -384,6 +384,12 @@ export async function tetragonPolicies(sandbox: string): Promise<TetragonPolicy[
   await delay(60);
   return [{ name: `llmsc-${sandbox}-agent-claude`, agent: "agent-claude", deniedSyscalls: ["ptrace", "mount", "bpf"], egressNote: "None except LLM", fsNote: "Read-only everything", readOnly: true }];
 }
+// Mount the shared SeaweedFS-backed volume into a sandbox.
+export async function mountShared(sandbox: string, path: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("mount_shared", { sandbox, path });
+  await delay(80);
+}
+
 // Set/clear readonly on a sandbox's workspace mounts (per-container filesystem backstop).
 export async function setWorkspaceReadonly(sandbox: string, readonly: boolean): Promise<number> {
   if (inTauri()) return invokeCmd<number>("set_workspace_readonly", { sandbox, readonly });
@@ -451,7 +457,7 @@ export async function setService(name: string, enabled: boolean): Promise<void> 
 }
 
 // Services that have a deployer in src-tauri (can be provisioned, not just toggled in config).
-export const DEPLOYABLE_SERVICES = new Set(["litellm", "mitmproxy", "phoenix", "grafana"]);
+export const DEPLOYABLE_SERVICES = new Set(["litellm", "mitmproxy", "phoenix", "grafana", "seaweedfs"]);
 
 export async function provisionService(name: string): Promise<void> {
   if (inTauri()) return invokeCmd<void>("service_up", { name });

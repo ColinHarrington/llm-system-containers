@@ -61,6 +61,7 @@ vi.mock("../lib/core", () => ({
   agentPause,
   agentResume: vi.fn(async () => {}),
   agentStop: vi.fn(async () => {}),
+  mountShared: vi.fn(async () => {}),
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",

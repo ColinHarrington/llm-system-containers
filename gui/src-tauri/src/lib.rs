@@ -1264,6 +1264,19 @@ fn set_workspace_readonly(sandbox: String, readonly: bool) -> Result<usize, Stri
         .map_err(|e| e.to_string())
 }
 
+/// Mount the shared SeaweedFS-backed volume into a sandbox at `path` (default `/shared`).
+#[tauri::command]
+fn mount_shared(sandbox: String, path: String) -> Result<(), String> {
+    let p = if path.trim().is_empty() {
+        "/shared"
+    } else {
+        path.trim()
+    };
+    CliIncus::new(vm_name(), &SystemRunner)
+        .attach_shared_volume(&sandbox, p)
+        .map_err(|e| e.to_string())
+}
+
 // --- Control-plane actions (observe / interrupt / re-steer) ---
 
 /// Pause an agent — `SIGSTOP` all its processes. Operator-initiated (always allowed).
@@ -1744,6 +1757,9 @@ fn service_up(app: AppHandle, name: String) -> Result<(), String> {
         "grafana" => llmsc_core::deploy::GrafanaStackDeployer::new(vm, &SystemRunner)
             .deploy(&reporter)
             .map_err(|e| e.to_string()),
+        "seaweedfs" => llmsc_core::deploy::SeaweedFsDeployer::new(vm, &SystemRunner)
+            .deploy(&reporter)
+            .map_err(|e| e.to_string()),
         other => Err(format!("no deployer yet for '{other}'")),
     }
 }
@@ -1849,6 +1865,7 @@ pub fn run() {
             tetragon_policy_yaml,
             apply_tetragon_policies,
             set_workspace_readonly,
+            mount_shared,
             enforcement_overview,
             enforce_all,
             agent_pause,

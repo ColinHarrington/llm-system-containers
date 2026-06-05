@@ -563,6 +563,139 @@ fn grafana_datasources_script() -> String {
     .to_string()
 }
 
+/// Pinned SeaweedFS release version (GitHub release tarball). Bump deliberately.
+const SEAWEEDFS_VERSION: &str = "3.80";
+/// The Incus storage pool + custom volume backing shared storage (attached to svc-seaweedfs and
+/// to sandboxes via [`crate::incus::CliIncus::attach_shared_volume`]).
+pub const SHARED_POOL: &str = "default";
+pub const SHARED_VOLUME: &str = "llmsc-shared";
+
+/// Provisions **SeaweedFS** in its own L2 container — S3-compatible shared storage. The data dir
+/// is an Incus custom volume ([`SHARED_VOLUME`]) that also attaches to sandboxes, so files are
+/// shared host ↔ container and container ↔ container. Representative install (pinned release).
+pub struct SeaweedFsDeployer<'a, R: CommandRunner> {
+    vm: String,
+    container: String,
+    image: String,
+    runner: &'a R,
+}
+
+impl<'a, R: CommandRunner> SeaweedFsDeployer<'a, R> {
+    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+        Self {
+            vm: vm.into(),
+            container: crate::service::container_name("seaweedfs"),
+            image: "images:debian/12".into(),
+            runner,
+        }
+    }
+
+    fn incus(&self, args: &[&str]) -> Result<RunOutput> {
+        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
+        full.extend_from_slice(args);
+        self.runner.run("limactl", &full)
+    }
+
+    fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
+        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
+        full.extend_from_slice(args);
+        self.runner.run_streamed("limactl", &full)
+    }
+
+    fn exec(&self, cmd: &str) -> Result<RunOutput> {
+        self.incus(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
+    }
+
+    fn check(&self, cmd: &str, what: &str) -> Result<()> {
+        let o = self.exec(cmd)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("{what}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Provision and start SeaweedFS with the S3 gateway, backed by the shared custom volume.
+    pub fn deploy(&self, reporter: &dyn Reporter) -> Result<()> {
+        let dup = |o: &RunOutput| {
+            format!("{} {}", o.stderr, o.stdout)
+                .to_lowercase()
+                .contains("already exists")
+        };
+        reporter.step("Creating shared storage volume");
+        let c = self.incus(&["storage", "volume", "create", SHARED_POOL, SHARED_VOLUME])?;
+        if !c.ok() && !dup(&c) {
+            return Err(Error::Incus(format!(
+                "creating shared volume: {}",
+                c.stderr.trim()
+            )));
+        }
+
+        reporter.step("Creating SeaweedFS service container");
+        if !self.incus(&["info", self.container.as_str()])?.ok() {
+            let code =
+                self.incus_streamed(&["launch", self.image.as_str(), self.container.as_str()])?;
+            if code != 0 {
+                return Err(Error::Incus(format!(
+                    "creating {} failed (exit {code})",
+                    self.container
+                )));
+            }
+        }
+        // Back /data with the shared volume (idempotent).
+        let o = self.incus(&[
+            "config",
+            "device",
+            "add",
+            self.container.as_str(),
+            "shared",
+            "disk",
+            "pool=default",
+            "source=llmsc-shared",
+            "path=/data",
+        ])?;
+        if !o.ok() && !dup(&o) {
+            return Err(Error::Incus(format!(
+                "attaching shared volume: {}",
+                o.stderr.trim()
+            )));
+        }
+
+        reporter.step(&format!("Installing SeaweedFS {SEAWEEDFS_VERSION}"));
+        let arch = "$(dpkg --print-architecture)";
+        let v = SEAWEEDFS_VERSION;
+        self.check(
+            &format!(
+                "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y wget tar && \
+                 wget -qO /tmp/weed.tar.gz https://github.com/seaweedfs/seaweedfs/releases/download/{v}/linux_{arch}.tar.gz && \
+                 tar -xzf /tmp/weed.tar.gz -C /usr/local/bin weed"
+            ),
+            "install weed",
+        )?;
+        reporter.step("Writing systemd unit");
+        self.check(&seaweedfs_unit_script(), "write unit")?;
+        reporter.step("Starting SeaweedFS");
+        self.check(
+            "systemctl daemon-reload && systemctl enable --now seaweedfs",
+            "start seaweedfs",
+        )?;
+        reporter.step(&format!(
+            "SeaweedFS deployed — S3 gateway in the VM at {}:8333 (shared volume at /data)",
+            self.container
+        ));
+        Ok(())
+    }
+}
+
+fn seaweedfs_unit_script() -> String {
+    "mkdir -p /data && cat > /etc/systemd/system/seaweedfs.service <<'EOF'\n\
+     [Unit]\nDescription=SeaweedFS (S3 shared storage)\nAfter=network.target\n\
+     [Service]\n\
+     ExecStart=/usr/local/bin/weed server -dir=/data -s3 -ip.bind=0.0.0.0\n\
+     Restart=on-failure\n\
+     [Install]\nWantedBy=multi-user.target\nEOF"
+        .to_string()
+}
+
 /// The mitmproxy egress proxy port (HTTP(S) interception).
 pub const MITMPROXY_PORT: u16 = 8080;
 
@@ -829,6 +962,25 @@ mod tests {
         assert_eq!(u[0].spend, 1.25);
         let wrap = r#"{"keys":[{"key_alias":"llmsc-b-y","spend":0.5}]}"#;
         assert_eq!(parse_key_usage(wrap).unwrap()[0].spend, 0.5);
+    }
+
+    #[test]
+    fn seaweedfs_deploy_creates_volume_and_starts() {
+        let r = FakeRunner::new(|_, args| {
+            if args.contains(&"info") {
+                out(1, "")
+            } else {
+                out(0, "")
+            }
+        });
+        SeaweedFsDeployer::new("llmsc", &r)
+            .deploy(&SilentReporter)
+            .unwrap();
+        assert!(r.called_with("svc-seaweedfs"));
+        assert!(r.called_with("llmsc-shared")); // shared volume
+        assert!(r.called_with("source=llmsc-shared")); // attached to /data
+        assert!(r.called_with("weed"));
+        assert!(r.called_with("seaweedfs.service"));
     }
 
     #[test]
