@@ -27,7 +27,8 @@
     try {
       await buildImage({ base: base.trim(), name: name.trim(), packages, script, description: description.trim() });
       close();
-      navigate("images");
+      ui.incusTab = "images";
+      navigate("incus");
       bump();
       showToast(`Image '${name.trim()}' built`, "ok");
     } catch (e) {

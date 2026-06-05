@@ -5,7 +5,9 @@ import type { AgentInfo } from "./types";
 
 export type Screen =
   | "dashboard" | "sandboxes" | "sandbox-detail" | "topology" | "agent"
-  | "networking" | "services" | "profiles" | "incus-profiles" | "images" | "wizard";
+  | "incus" | "services" | "profiles" | "wizard";
+
+export type IncusTab = "profiles" | "networks" | "storage" | "images" | "project";
 
 function initialTheme(): "light" | "dark" {
   if (typeof localStorage !== "undefined") {
@@ -19,6 +21,7 @@ export type ToastColor = "accent" | "ok" | "warn" | "danger";
 
 export const ui = $state({
   screen: "dashboard" as Screen,
+  incusTab: "profiles" as IncusTab,
   theme: initialTheme(),
   newSandboxOpen: false,
   buildImageOpen: false,
@@ -65,10 +68,8 @@ export const SCREEN_TITLES: Record<Screen, [string, string]> = {
   "sandbox-detail": ["Sandbox", "Sandbox container detail"],
   topology: ["Topology", "Nested view · VM → sandboxes → agents"],
   agent: ["Agent control", "Observe, interrupt and steer running agents"],
-  networking: ["Networking", "VM networks · attachments · egress & inspection"],
+  incus: ["Incus", "The Incus control surface — profiles, networks, storage, images"],
   services: ["Services", "Shared infrastructure for your sandboxes"],
   profiles: ["Agent profiles", "Reusable permission profiles assigned to agents"],
-  "incus-profiles": ["Incus profiles", "Config + device bundles composed onto sandboxes"],
-  images: ["Images", "Base and custom sandbox images"],
   wizard: ["Set up your environment", "First-run configuration"],
 };

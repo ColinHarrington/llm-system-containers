@@ -3,12 +3,10 @@
   import Sandboxes from "./screens/Sandboxes.svelte";
   import SandboxDetail from "./screens/SandboxDetail.svelte";
   import Topology from "./screens/Topology.svelte";
-  import Networking from "./screens/Networking.svelte";
+  import Incus from "./screens/Incus.svelte";
   import Services from "./screens/Services.svelte";
   import Agent from "./screens/Agent.svelte";
   import Profiles from "./screens/Profiles.svelte";
-  import IncusProfiles from "./screens/IncusProfiles.svelte";
-  import Images from "./screens/Images.svelte";
   import Wizard from "./screens/Wizard.svelte";
   import Progress from "./lib/Progress.svelte";
   import Toast from "./lib/Toast.svelte";
@@ -34,11 +32,9 @@
   ];
   const onSandboxes = $derived(ui.screen === "sandboxes" || ui.screen === "sandbox-detail");
   const platformNav: { id: Screen; label: string; icon: string }[] = [
-    { id: "networking", label: "Networking", icon: "net" },
+    { id: "incus", label: "Incus", icon: "layers" },
     { id: "services", label: "Services", icon: "store" },
     { id: "profiles", label: "Agent profiles", icon: "shield" },
-    { id: "incus-profiles", label: "Incus profiles", icon: "layers" },
-    { id: "images", label: "Images", icon: "image" },
     { id: "wizard", label: "Setup wizard", icon: "cog" },
   ];
 
@@ -55,7 +51,7 @@
   // Keyboard nav: Escape closes overlays; number keys jump between screens (direction A).
   const NUM_NAV: Record<string, Screen> = {
     "1": "dashboard", "2": "sandboxes", "3": "topology", "4": "agent",
-    "5": "networking", "6": "services", "7": "images",
+    "5": "incus", "6": "services", "7": "profiles",
   };
   $effect(() => {
     function onKey(e: KeyboardEvent) {
@@ -266,16 +262,12 @@
       <Topology />
     {:else if ui.screen === "agent"}
       <Agent />
-    {:else if ui.screen === "networking"}
-      <Networking />
+    {:else if ui.screen === "incus"}
+      <Incus />
     {:else if ui.screen === "services"}
       <Services />
     {:else if ui.screen === "profiles"}
       <Profiles />
-    {:else if ui.screen === "incus-profiles"}
-      <IncusProfiles />
-    {:else if ui.screen === "images"}
-      <Images />
     {:else if ui.screen === "wizard"}
       <Wizard />
     {/if}

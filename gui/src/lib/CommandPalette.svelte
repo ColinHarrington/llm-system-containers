@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
-  import { ui, navigate, openTerminal, toggleTheme, type Screen } from "./store.svelte";
+  import { ui, navigate, openTerminal, toggleTheme, type Screen, type IncusTab } from "./store.svelte";
 
   // ⌘K / Ctrl-K command palette (direction A). Fuzzy-ish filter over a flat command list;
   // ↑/↓ to move, Enter to run, Esc to close.
@@ -9,16 +9,21 @@
   function gotoCmd(id: string, label: string, icon: string, key?: string): Cmd {
     return { id: `go-${id}`, label: `Go to ${label}`, hint: key ?? "", icon, keywords: label, run: () => navigate(id as Screen) };
   }
+  function incusCmd(tab: IncusTab, label: string, icon: string): Cmd {
+    return { id: `incus-${tab}`, label: `Incus · ${label}`, hint: "", icon, keywords: `incus ${tab} ${label}`, run: () => { ui.incusTab = tab; navigate("incus"); } };
+  }
 
   const commands: Cmd[] = [
     gotoCmd("dashboard", "Dashboard", "home", "1"),
     gotoCmd("sandboxes", "Sandboxes", "box", "2"),
     gotoCmd("topology", "Topology", "layers", "3"),
     gotoCmd("agent", "Agent control", "agent", "4"),
-    gotoCmd("networking", "Networking", "net", "5"),
+    gotoCmd("incus", "Incus", "layers", "5"),
+    incusCmd("profiles", "Profiles", "layers"),
+    incusCmd("networks", "Networks", "net"),
+    incusCmd("images", "Images", "image"),
     gotoCmd("services", "Services", "store", "6"),
     gotoCmd("profiles", "Agent profiles", "shield", ""),
-    gotoCmd("images", "Images", "image", "7"),
     gotoCmd("wizard", "Setup wizard", "cog", ""),
     { id: "new-sandbox", label: "New sandbox", hint: "llmsc launch", icon: "plus", keywords: "create launch sandbox", run: () => (ui.newSandboxOpen = true) },
     { id: "build-image", label: "Build image", hint: "incus publish", icon: "layers", keywords: "build custom image distro", run: () => (ui.buildImageOpen = true) },
