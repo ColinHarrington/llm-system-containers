@@ -32,7 +32,7 @@ vi.mock("../lib/core", () => ({
   snapshotRestore: vi.fn(async () => {}),
   snapshotDelete: vi.fn(async () => {}),
   setAgentGuardrails,
-  egressPolicy: vi.fn(async () => ({ posture: "allowlist", allow: ["llm"] })),
+  egressPolicy: vi.fn(async () => ({ posture: "allowlist", allow: ["llm"], domains: [] })),
   setEgressPolicy,
   applyEgress,
   egressAclPreview: vi.fn(async () => ({
@@ -107,6 +107,19 @@ describe("SandboxDetail", () => {
     // Apply (enforce) → applyEgress.
     await fireEvent.click(screen.getByRole("button", { name: /Apply \(enforce\)/ }));
     expect(applyEgress).toHaveBeenCalledWith("web-agent-01");
+  });
+
+  it("adds an L7 domain to the egress policy", async () => {
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    await screen.findByText("Network egress");
+    const input = await screen.findByPlaceholderText("domain (e.g. github.com)");
+    await fireEvent.input(input, { target: { value: "github.com" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Add domain" }));
+    expect(setEgressPolicy).toHaveBeenCalledWith(
+      "web-agent-01",
+      expect.objectContaining({ domains: ["github.com"] }),
+    );
   });
 
   it("shows the per-agent Tetragon policy and loads it", async () => {

@@ -198,6 +198,7 @@ export type EgressPosture = "deny-all" | "allowlist" | "open";
 export interface EgressPolicy {
   posture: EgressPosture;
   allow: string[]; // named sets (llm, package-registries, web) or raw CIDR:port[/proto]
+  domains: string[]; // HTTP(S) domain allowlist (L7, enforced by mitmproxy)
 }
 
 export interface EgressStatus {

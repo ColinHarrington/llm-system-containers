@@ -148,19 +148,34 @@
       showToast(String(e), "danger");
     } finally { egressBusy = false; }
   }
+  // Merge a partial change onto the current policy (preserves the other fields).
+  function patchEgress(patch: Partial<EgressPolicy>) {
+    const cur = egress ?? { posture: "allowlist" as EgressPosture, allow: [], domains: [] };
+    saveEgress({ posture: cur.posture, allow: cur.allow, domains: cur.domains, ...patch });
+  }
   function setPosture(posture: EgressPosture) {
-    saveEgress({ posture, allow: egress?.allow ?? [] });
+    patchEgress({ posture });
   }
   function addAllow() {
     const e = newAllow.trim();
-    if (!e || !egress) return;
+    if (!e || !egress || egress.allow.includes(e)) { newAllow = ""; return; }
     newAllow = "";
-    if (egress.allow.includes(e)) return;
-    saveEgress({ posture: egress.posture, allow: [...egress.allow, e] });
+    patchEgress({ allow: [...egress.allow, e] });
   }
   function removeAllow(entry: string) {
     if (!egress) return;
-    saveEgress({ posture: egress.posture, allow: egress.allow.filter((a) => a !== entry) });
+    patchEgress({ allow: egress.allow.filter((a) => a !== entry) });
+  }
+  let newDomain = $state("");
+  function addDomain() {
+    const d = newDomain.trim();
+    if (!d || !egress || egress.domains.includes(d)) { newDomain = ""; return; }
+    newDomain = "";
+    patchEgress({ domains: [...egress.domains, d] });
+  }
+  function removeDomain(d: string) {
+    if (!egress) return;
+    patchEgress({ domains: egress.domains.filter((x) => x !== d) });
   }
   // --- Tetragon per-UID kernel policies ---
   let tetraPols = $state<TetragonPolicy[]>([]);
@@ -427,7 +442,7 @@
         {#if egress === null}
           <div class="flex gap8" style="align-items:center">
             <span class="muted small">Unmanaged — no ACL applied.</span>
-            <button class="btn sm" disabled={egressBusy} onclick={() => saveEgress({ posture: "allowlist", allow: ["llm"] })}>Manage egress</button>
+            <button class="btn sm" disabled={egressBusy} onclick={() => saveEgress({ posture: "allowlist", allow: ["llm"], domains: [] })}>Manage egress</button>
           </div>
         {:else}
           <!-- posture -->
@@ -448,11 +463,28 @@
             </div>
             <div class="flex gap6 wrap mb16" style="align-items:center">
               {#each NAMED_SETS.filter((s) => !egress!.allow.includes(s)) as s}
-                <button class="btn sm" disabled={egressBusy} onclick={() => saveEgress({ posture: "allowlist", allow: [...egress!.allow, s] })}>+ {s}</button>
+                <button class="btn sm" disabled={egressBusy} onclick={() => patchEgress({ allow: [...egress!.allow, s] })}>+ {s}</button>
               {/each}
               <input class="input mini mono" bind:value={newAllow} placeholder="CIDR:port (e.g. 10.0.0.0/8:443)" onkeydown={(e) => { if (e.key === 'Enter') addAllow(); }} />
               <button class="btn sm" disabled={egressBusy || !newAllow.trim()} onclick={addAllow}>Add</button>
             </div>
+          {/if}
+
+          {#if egress.posture !== "open"}
+            <div class="sub2">HTTP(S) domains <span class="hint">(L7 · mitmproxy)</span></div>
+            <div class="flex gap6 wrap mb8">
+              {#each egress.domains as d}
+                <span class="echip">{d}<button class="ex" title="Remove" disabled={egressBusy} onclick={() => removeDomain(d)}>×</button></span>
+              {/each}
+              {#if egress.domains.length === 0}<span class="muted small">none — no L7 domain allowlist (Incus ACL still applies)</span>{/if}
+            </div>
+            <div class="flex gap6 wrap mb12" style="align-items:center">
+              <input class="input mini mono" bind:value={newDomain} placeholder="domain (e.g. github.com)" onkeydown={(e) => { if (e.key === 'Enter') addDomain(); }} />
+              <button class="btn sm" disabled={egressBusy || !newDomain.trim()} onclick={addDomain}>Add domain</button>
+            </div>
+            {#if egress.domains.length > 0}
+              <p class="xsmall muted mb12">Routes the sandbox HTTP(S) through mitmproxy. Provision <span class="mono">mitmproxy</span> in Services; HTTPS interception needs the CA trusted and forced routing (follow-ups).</p>
+            {/if}
           {/if}
 
           <!-- compiled ACL preview -->

@@ -199,6 +199,135 @@ fn unit_script(port: u16) -> String {
     )
 }
 
+/// The mitmproxy egress proxy port (HTTP(S) interception).
+pub const MITMPROXY_PORT: u16 = 8080;
+
+/// Provisions **mitmproxy** in its own L2 container — the HTTP(S) egress proxy enforcing the L7
+/// domain allowlist. Mirrors [`LiteLlmDeployer`].
+///
+/// **Honest scope:** sandboxes are pointed at this proxy via `HTTP(S)_PROXY`, but for HTTPS
+/// interception the sandbox must also trust mitmproxy's CA, and to be non-bypassable the traffic
+/// must be *forced* through it (Tetragon/iptables redirect) — both are follow-ups. Today this
+/// blocks plain HTTP to non-allowlisted hosts and HTTPS for proxy-respecting clients.
+pub struct MitmproxyDeployer<'a, R: CommandRunner> {
+    vm: String,
+    container: String,
+    image: String,
+    port: u16,
+    runner: &'a R,
+}
+
+impl<'a, R: CommandRunner> MitmproxyDeployer<'a, R> {
+    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+        Self {
+            vm: vm.into(),
+            container: crate::service::container_name("mitmproxy"),
+            image: "images:debian/12".into(),
+            port: MITMPROXY_PORT,
+            runner,
+        }
+    }
+
+    fn incus(&self, args: &[&str]) -> Result<RunOutput> {
+        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
+        full.extend_from_slice(args);
+        self.runner.run("limactl", &full)
+    }
+
+    fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
+        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
+        full.extend_from_slice(args);
+        self.runner.run_streamed("limactl", &full)
+    }
+
+    fn exec(&self, cmd: &str) -> Result<RunOutput> {
+        self.incus(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
+    }
+
+    /// Provision and start mitmproxy with an initial (empty) allowlist addon.
+    pub fn deploy(&self, reporter: &dyn Reporter) -> Result<()> {
+        reporter.step("Creating mitmproxy service container");
+        if !self.incus(&["info", self.container.as_str()])?.ok() {
+            let code =
+                self.incus_streamed(&["launch", self.image.as_str(), self.container.as_str()])?;
+            if code != 0 {
+                return Err(Error::Incus(format!(
+                    "creating {} failed (exit {code})",
+                    self.container
+                )));
+            }
+        }
+        reporter.step("Installing mitmproxy (apt)");
+        let o = self.exec(
+            "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y mitmproxy",
+        )?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "apt install mitmproxy: {}",
+                o.stderr.trim()
+            )));
+        }
+        reporter.step("Writing allowlist addon + systemd unit");
+        self.exec(&mitm_addon_script(&[]))?;
+        self.exec(&mitm_unit_script(self.port))?;
+        reporter.step("Starting mitmproxy");
+        self.exec("systemctl daemon-reload && systemctl enable --now mitmproxy")?;
+        reporter.step(&format!(
+            "mitmproxy deployed — egress proxy in the VM at {}:{}",
+            self.container, self.port
+        ));
+        Ok(())
+    }
+
+    /// Rewrite the allowlist addon with the given domains and reload mitmproxy.
+    pub fn sync_allowlist(&self, domains: &[String], reporter: &dyn Reporter) -> Result<()> {
+        reporter.step(&format!(
+            "Syncing mitmproxy allowlist ({} domains)",
+            domains.len()
+        ));
+        let o = self.exec(&mitm_addon_script(domains))?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "writing mitmproxy allowlist: {}",
+                o.stderr.trim()
+            )));
+        }
+        let _ = self.exec("systemctl restart mitmproxy 2>/dev/null || true");
+        Ok(())
+    }
+}
+
+/// A mitmproxy addon that blocks any host not on `domains` (suffix match). Empty list = block all.
+fn mitm_addon_script(domains: &[String]) -> String {
+    let list = domains
+        .iter()
+        .map(|d| format!("\"{}\"", d.replace('"', "")))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "mkdir -p /etc/mitmproxy && cat > /etc/mitmproxy/allowlist.py <<'LLMSC_EOF'\n\
+         from mitmproxy import http\n\
+         ALLOW = [{list}]\n\
+         def _ok(host: str) -> bool:\n\
+         \x20   return any(host == d or host.endswith('.' + d) for d in ALLOW)\n\
+         def request(flow: http.HTTPFlow) -> None:\n\
+         \x20   if not _ok(flow.request.pretty_host):\n\
+         \x20       flow.response = http.Response.make(403, b'blocked by llmsc egress allowlist')\n\
+         LLMSC_EOF"
+    )
+}
+
+fn mitm_unit_script(port: u16) -> String {
+    format!(
+        "cat > /etc/systemd/system/mitmproxy.service <<'EOF'\n\
+         [Unit]\nDescription=mitmproxy egress allowlist\nAfter=network.target\n\
+         [Service]\n\
+         ExecStart=/usr/bin/mitmdump -s /etc/mitmproxy/allowlist.py --listen-port {port} --set block_global=false\n\
+         Restart=on-failure\n\
+         [Install]\nWantedBy=multi-user.target\nEOF"
+    )
+}
+
 /// Loads Tetragon TracingPolicies into the **L1 VM** (Tetragon runs in the VM, not a container —
 /// `planning/security-model.md`). Policies live under `/etc/tetragon/tetragon.tp.d/`.
 ///
@@ -311,6 +440,30 @@ mod tests {
         LiteLlmDeployer::new("llmsc", &r)
             .sync_virtual_keys(&specs, &SilentReporter)
             .unwrap();
+    }
+
+    #[test]
+    fn mitmproxy_deploy_and_allowlist_sync() {
+        let r = FakeRunner::new(|_, args| {
+            if args.contains(&"info") {
+                out(1, "")
+            } else {
+                out(0, "")
+            }
+        });
+        let d = MitmproxyDeployer::new("llmsc", &r);
+        d.deploy(&SilentReporter).unwrap();
+        assert!(r.called_with("svc-mitmproxy"));
+        assert!(r.called_with("mitmproxy")); // apt install + unit
+        assert!(r.called_with("allowlist.py"));
+        assert!(r.called_with("systemctl"));
+
+        let r2 = FakeRunner::new(|_, _| out(0, ""));
+        MitmproxyDeployer::new("llmsc", &r2)
+            .sync_allowlist(&["github.com".into(), "pypi.org".into()], &SilentReporter)
+            .unwrap();
+        assert!(r2.called_with("allowlist.py"));
+        assert!(r2.called_with("\"github.com\""));
     }
 
     #[test]

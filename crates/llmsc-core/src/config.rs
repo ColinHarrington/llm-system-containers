@@ -168,16 +168,19 @@ pub struct Sandbox {
 }
 
 /// A container-level network egress policy — the legible intent that compiles to an Incus
-/// network ACL. Incus ACLs are L3/L4 only (CIDR + port + protocol); domain/HTTP allowlists are
-/// mitmproxy's job (a later ring), so a named set like `web` is coarse here.
+/// network ACL (L3/L4) and, for HTTP(S) domain allowlists, a mitmproxy config (L7).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EgressPolicy {
     #[serde(default)]
     pub posture: EgressPosture,
-    /// Allowed destinations (only meaningful for `Allowlist`): named sets (`llm`,
+    /// Allowed L3/L4 destinations (only meaningful for `Allowlist`): named sets (`llm`,
     /// `package-registries`, `web`) or raw `CIDR:port[/proto]` (e.g. `10.0.0.0/8:443/tcp`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allow: Vec<String>,
+    /// Allowed HTTP(S) **domains** (the L7 allowlist enforced by mitmproxy, e.g. `github.com`).
+    /// When non-empty, the sandbox is pointed at the mitmproxy egress proxy.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub domains: Vec<String>,
 }
 
 /// The posture of an egress policy.
@@ -200,6 +203,7 @@ impl EgressPolicy {
         Self {
             posture: EgressPosture::Allowlist,
             allow: vec!["llm".to_string()],
+            domains: Vec::new(),
         }
     }
 }

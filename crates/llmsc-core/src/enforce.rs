@@ -209,6 +209,36 @@ pub fn egress_acl_plan(desired: &NetworkAcl, live: Option<&NetworkAcl>) -> Vec<A
     plan
 }
 
+// --- mitmproxy L7 domain allowlist (the HTTP(S) egress ring) ---
+//
+// Incus ACLs are L3/L4 only. HTTP(S) domain allowlists ("github.com only") are enforced by the
+// mitmproxy egress proxy: sandboxes are pointed at it (HTTP(S)_PROXY) and it blocks any host not
+// on the allowlist. v1 compiles a single global allowlist (the union across sandboxes); per-source
+// (per-sandbox) differentiation in the addon is a follow-up.
+
+/// The union of HTTP(S) domains allowed across all managed sandboxes (sorted, deduped).
+pub fn mitmproxy_allowlist(config: &Config) -> Vec<String> {
+    let mut domains: Vec<String> = config
+        .sandboxes
+        .iter()
+        .filter_map(|s| s.egress.as_ref())
+        .flat_map(|e| e.domains.iter().cloned())
+        .filter(|d| !d.trim().is_empty())
+        .collect();
+    domains.sort();
+    domains.dedup();
+    domains
+}
+
+/// Whether a sandbox should be routed through the mitmproxy egress proxy (it has an L7 allowlist).
+pub fn uses_l7_proxy(sandbox: &Sandbox) -> bool {
+    sandbox
+        .egress
+        .as_ref()
+        .map(|e| !e.domains.is_empty())
+        .unwrap_or(false)
+}
+
 // --- LLM virtual-key budgets (the credential-isolation ring) ---
 //
 // Agents never hold real provider credentials — they use a LiteLLM **virtual key** scoped to a
@@ -319,7 +349,7 @@ mod tests {
         assert!(egress_acl(
             &sb_with(Some(EgressPolicy {
                 posture: EgressPosture::Open,
-                allow: vec![]
+                ..Default::default()
             })),
             &ctx()
         )
@@ -331,7 +361,7 @@ mod tests {
         let acl = egress_acl(
             &sb_with(Some(EgressPolicy {
                 posture: EgressPosture::DenyAll,
-                allow: vec![],
+                ..Default::default()
             })),
             &ctx(),
         )
@@ -358,6 +388,34 @@ mod tests {
         c.llm_dest = Some("10.21.32.7".to_string());
         let acl = egress_acl(&sb_with(Some(EgressPolicy::default_managed())), &c).unwrap();
         assert_eq!(acl.egress[0].destination, "10.21.32.7/32");
+    }
+
+    #[test]
+    fn mitmproxy_allowlist_unions_sandbox_domains() {
+        use crate::config::Config;
+        let mut cfg = Config::default();
+        cfg.upsert_sandbox("a", "images:alpine/3.21", false);
+        cfg.upsert_sandbox("b", "images:alpine/3.21", false);
+        cfg.set_sandbox_egress(
+            "a",
+            EgressPolicy {
+                posture: EgressPosture::Allowlist,
+                allow: vec![],
+                domains: vec!["github.com".into(), "pypi.org".into()],
+            },
+        );
+        cfg.set_sandbox_egress(
+            "b",
+            EgressPolicy {
+                posture: EgressPosture::Allowlist,
+                allow: vec![],
+                domains: vec!["github.com".into()],
+            },
+        );
+        assert_eq!(mitmproxy_allowlist(&cfg), vec!["github.com", "pypi.org"]);
+        assert!(uses_l7_proxy(cfg.sandbox("a").unwrap()));
+        cfg.upsert_sandbox("c", "images:alpine/3.21", false);
+        assert!(!uses_l7_proxy(cfg.sandbox("c").unwrap()));
     }
 
     #[test]
@@ -405,6 +463,7 @@ mod tests {
             &sb_with(Some(EgressPolicy {
                 posture: EgressPosture::Allowlist,
                 allow: vec!["web".to_string(), "192.168.0.0/16:8080".to_string()],
+                ..Default::default()
             })),
             &ctx(),
         )

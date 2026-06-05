@@ -963,6 +963,9 @@ struct EgressPolicyDto {
     posture: String,
     #[serde(default)]
     allow: Vec<String>,
+    /// HTTP(S) domain allowlist (L7, enforced by mitmproxy).
+    #[serde(default)]
+    domains: Vec<String>,
 }
 
 fn posture_str(p: llmsc_core::config::EgressPosture) -> String {
@@ -988,6 +991,7 @@ fn to_egress_policy(dto: EgressPolicyDto) -> llmsc_core::config::EgressPolicy {
     llmsc_core::config::EgressPolicy {
         posture: parse_posture(&dto.posture),
         allow: dto.allow,
+        domains: dto.domains,
     }
 }
 
@@ -1001,6 +1005,7 @@ fn egress_policy(sandbox: String) -> Result<Option<EgressPolicyDto>, String> {
         .map(|p| EgressPolicyDto {
             posture: posture_str(p.posture),
             allow: p.allow.clone(),
+            domains: p.domains.clone(),
         }))
 }
 
@@ -1424,6 +1429,14 @@ fn service_up(app: AppHandle, name: String) -> Result<(), String> {
         "litellm" => LiteLlmDeployer::new(vm, &SystemRunner)
             .deploy(&reporter)
             .map_err(|e| e.to_string()),
+        "mitmproxy" => {
+            let d = llmsc_core::deploy::MitmproxyDeployer::new(vm, &SystemRunner);
+            d.deploy(&reporter).map_err(|e| e.to_string())?;
+            // Load the compiled allowlist (union of sandbox domains).
+            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+            d.sync_allowlist(&llmsc_core::enforce::mitmproxy_allowlist(&cfg), &reporter)
+                .map_err(|e| e.to_string())
+        }
         other => Err(format!("no deployer yet for '{other}'")),
     }
 }

@@ -1541,9 +1541,27 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
             .unwrap_or_else(|| "eth0".to_string())
     }
 
+    /// Set/clear the HTTP(S) proxy environment on a sandbox (the L7 mitmproxy routing). `Some(url)`
+    /// sets `HTTP_PROXY`/`HTTPS_PROXY` (lower- and upper-case); `None` unsets them.
+    pub fn set_proxy_env(&self, sandbox: &str, url: Option<&str>) -> Result<()> {
+        for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] {
+            let env_key = format!("environment.{key}");
+            match url {
+                Some(u) => {
+                    let _ = self.set_config(sandbox, &env_key, u);
+                }
+                None => {
+                    let _ = self.unset_config(sandbox, &env_key);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Reconcile a sandbox's egress policy into Incus: compile → diff the live ACL → apply + bind
-    /// to the nic (default-drop). Open/unmanaged tears down (unbind + delete the managed ACL).
-    /// Returns the number of ACL ops applied. Shared by the GUI command and the CLI.
+    /// to the nic (default-drop), then route HTTP(S) through mitmproxy if an L7 domain allowlist is
+    /// set. Open/unmanaged tears down (unbind + delete the managed ACL, clear proxy env). Returns
+    /// the number of ACL ops applied. Shared by the GUI command and the CLI.
     pub fn reconcile_egress(
         &self,
         sandbox_cfg: &crate::config::Sandbox,
@@ -1557,6 +1575,7 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
             reporter.step(&format!("Egress open — unbinding {acl_name} from {nic}"));
             self.unbind_egress_acl(name, &nic)?;
             let _ = self.network_acl_delete(&acl_name);
+            self.set_proxy_env(name, None)?;
             return Ok(0);
         };
         let acl_name = desired.name.clone();
@@ -1568,6 +1587,22 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         self.apply_egress(&acl_name, &plan, reporter)?;
         reporter.step(&format!("Binding {acl_name} to {nic} (default-drop)"));
         self.bind_egress_acl(name, &nic, &acl_name)?;
+
+        // L7: route HTTP(S) through mitmproxy when the sandbox carries a domain allowlist.
+        if crate::enforce::uses_l7_proxy(sandbox_cfg) {
+            match self.instance_ipv4(&crate::service::container_name("mitmproxy")) {
+                Some(ip) => {
+                    let url = format!("http://{ip}:{}", crate::deploy::MITMPROXY_PORT);
+                    reporter.step(&format!("Routing {name} HTTP(S) through mitmproxy ({url})"));
+                    self.set_proxy_env(name, Some(&url))?;
+                }
+                None => {
+                    reporter.step("mitmproxy not running — skipping proxy env (provision it first)")
+                }
+            }
+        } else {
+            self.set_proxy_env(name, None)?;
+        }
         Ok(n)
     }
 
@@ -2209,7 +2244,7 @@ mod tests {
             image: "images:alpine/3.21".into(),
             egress: Some(EgressPolicy {
                 posture: EgressPosture::Open,
-                allow: vec![],
+                ..Default::default()
             }),
             ..Default::default()
         };

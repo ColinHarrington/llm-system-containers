@@ -145,6 +145,16 @@ fn services(action: ServiceAction) -> Result<(), String> {
                     "litellm" => LiteLlmDeployer::new(vm.clone(), &SystemRunner)
                         .deploy(&ConsoleReporter)
                         .map_err(|e| e.to_string())?,
+                    "mitmproxy" => {
+                        let d =
+                            llmsc_core::deploy::MitmproxyDeployer::new(vm.clone(), &SystemRunner);
+                        d.deploy(&ConsoleReporter).map_err(|e| e.to_string())?;
+                        d.sync_allowlist(
+                            &llmsc_core::enforce::mitmproxy_allowlist(&cfg),
+                            &ConsoleReporter,
+                        )
+                        .map_err(|e| e.to_string())?;
+                    }
                     other => eprintln!("→ no deployer yet for '{other}' (M5 follow-up)"),
                 }
             }

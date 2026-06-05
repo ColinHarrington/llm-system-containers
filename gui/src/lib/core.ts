@@ -327,7 +327,7 @@ export async function setAgentGuardrails(sandbox: string, name: string, guardrai
 export async function egressPolicy(sandbox: string): Promise<EgressPolicy | null> {
   if (inTauri()) return invokeCmd<EgressPolicy | null>("egress_policy", { sandbox });
   await delay(60);
-  return { posture: "allowlist", allow: ["llm"] };
+  return { posture: "allowlist", allow: ["llm"], domains: ["github.com"] };
 }
 // Write the egress policy intent (does not enforce — call applyEgress).
 export async function setEgressPolicy(sandbox: string, policy: EgressPolicy): Promise<void> {
