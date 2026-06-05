@@ -103,8 +103,9 @@ export interface VirtualKey {
 }
 
 export interface HostResources {
-  cpuUsed: number;
-  cpuTotal: number;
+  cpuUsed: number; // cores
+  cpuTotal: number; // cores
+  // memory & disk are raw bytes; the UI formats them (MB / GB)
   memUsed: number;
   memTotal: number;
   diskUsed: number;

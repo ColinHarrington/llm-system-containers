@@ -375,7 +375,8 @@ export async function hostResources(): Promise<HostResources | null> {
     }
   }
   await delay(80);
-  return { cpuUsed: 5.2, cpuTotal: 8, memUsed: 9.4, memTotal: 16, diskUsed: 34, diskTotal: 120 };
+  const GiB = 1024 ** 3;
+  return { cpuUsed: 5.2, cpuTotal: 8, memUsed: 9.4 * GiB, memTotal: 16 * GiB, diskUsed: 34 * GiB, diskTotal: 120 * GiB };
 }
 
 export async function listAgents(): Promise<AgentInfo[]> {

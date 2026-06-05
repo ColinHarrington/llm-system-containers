@@ -13,23 +13,19 @@ use llmsc_core::progress::Reporter;
 use llmsc_core::service;
 use llmsc_core::vm::{LimaVmDriver, VmDriver, VmStatus};
 
-/// Bytes → GB rounded to one decimal (display units for the resource meters).
-fn to_gb(bytes: u64) -> f64 {
-    ((bytes as f64 / 1024.0 / 1024.0 / 1024.0) * 10.0).round() / 10.0
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct HostResourcesDto {
     cpu_used: f64,
     cpu_total: f64,
+    /// Memory and disk are raw **bytes** — the GUI formats them (MB / GB) for granularity.
     mem_used: f64,
     mem_total: f64,
     disk_used: f64,
     disk_total: f64,
 }
 
-/// Live host/VM resource usage for the Dashboard meters (CPU cores, memory & disk in GB).
+/// Live host/VM resource usage for the Dashboard meters (CPU in cores; memory & disk in bytes).
 #[tauri::command]
 fn host_resources() -> Result<HostResourcesDto, String> {
     let r = LimaVmDriver::new(Config::default().vm, SystemRunner)
@@ -38,10 +34,10 @@ fn host_resources() -> Result<HostResourcesDto, String> {
     Ok(HostResourcesDto {
         cpu_used: (r.cpu_used * 10.0).round() / 10.0,
         cpu_total: r.cpu_total as f64,
-        mem_used: to_gb(r.mem_used_bytes),
-        mem_total: to_gb(r.mem_total_bytes),
-        disk_used: to_gb(r.disk_used_bytes),
-        disk_total: to_gb(r.disk_total_bytes),
+        mem_used: r.mem_used_bytes as f64,
+        mem_total: r.mem_total_bytes as f64,
+        disk_used: r.disk_used_bytes as f64,
+        disk_total: r.disk_total_bytes as f64,
     })
 }
 use serde::{Deserialize, Serialize};

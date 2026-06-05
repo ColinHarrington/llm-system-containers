@@ -37,6 +37,9 @@
   const nested = $derived(sandboxes.reduce((n, s) => n + (s.nested ?? 0), 0));
   const enabledServices = $derived(services.filter((s) => s.enabled).length);
   const pct = (used: number, total: number) => (total ? Math.round((used / total) * 100) : 0);
+  // Bytes → MB under a GiB, else GB with one decimal — granular without losing readability.
+  const humanBytes = (n: number) =>
+    n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : `${Math.round(n / 1024 ** 2)} MB`;
   const recent = $derived(sandboxes.slice(0, 4));
 </script>
 
@@ -104,11 +107,11 @@
             <div class="meter mt8"><i style="width:{pct(res.cpuUsed, res.cpuTotal)}%"></i></div>
           </div>
           <div class="mb16">
-            <div class="flex"><span class="small strong">Memory</span><span class="right small mono t2">{res.memUsed} / {res.memTotal} GB</span></div>
+            <div class="flex"><span class="small strong">Memory</span><span class="right small mono t2">{humanBytes(res.memUsed)} / {humanBytes(res.memTotal)}</span></div>
             <div class="meter mt8"><i class="warn" style="width:{pct(res.memUsed, res.memTotal)}%"></i></div>
           </div>
           <div>
-            <div class="flex"><span class="small strong">Disk</span><span class="right small mono t2">{res.diskUsed} / {res.diskTotal} GB</span></div>
+            <div class="flex"><span class="small strong">Disk</span><span class="right small mono t2">{humanBytes(res.diskUsed)} / {humanBytes(res.diskTotal)}</span></div>
             <div class="meter mt8"><i class="ok" style="width:{pct(res.diskUsed, res.diskTotal)}%"></i></div>
           </div>
         {/if}
