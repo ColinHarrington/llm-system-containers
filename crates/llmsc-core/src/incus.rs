@@ -1207,6 +1207,27 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         parse_instance(&o.stdout, name)
     }
 
+    /// Restart an instance (`incus restart <name>` — starts it if stopped).
+    pub fn restart_instance(&self, name: &str) -> Result<()> {
+        let o = self.incus_run(&["restart", name])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("restart {name}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Stop an instance (`incus stop <name>`). Idempotent: an already-stopped instance is fine.
+    pub fn stop_instance(&self, name: &str) -> Result<()> {
+        let o = self.incus_run(&["stop", name])?;
+        let already = format!("{} {}", o.stderr, o.stdout)
+            .to_lowercase()
+            .contains("already stopped");
+        if !o.ok() && !already {
+            return Err(Error::Incus(format!("stop {name}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
     /// Live status of a service's container (`svc-<service>`): provisioned & running, provisioned
     /// but stopped, or not provisioned at all.
     pub fn service_status(&self, service: &str) -> ServiceState {
@@ -2373,6 +2394,19 @@ mod tests {
         let c = CliIncus::new("llmsc", &r);
         // "already exists" is swallowed; a real failure would propagate.
         c.network_acl_create("llmsc-egress-x").unwrap();
+    }
+
+    #[test]
+    fn restart_and_stop_instance() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.restart_instance("svc-litellm").unwrap();
+        c.stop_instance("svc-litellm").unwrap();
+        assert!(r.called_with("restart"));
+        assert!(r.called_with("stop"));
+        // already-stopped is tolerated.
+        let r2 = FakeRunner::new(|_, _| out(1, "Error: The instance is already stopped"));
+        CliIncus::new("llmsc", &r2).stop_instance("svc-x").unwrap();
     }
 
     #[test]

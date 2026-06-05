@@ -494,6 +494,20 @@ export async function provisionService(name: string): Promise<void> {
   ]);
 }
 
+export async function restartService(name: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("service_restart", { name });
+  await delay(150);
+}
+export async function stopService(name: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("service_stop", { name });
+  await delay(150);
+}
+
+// Well-known service ports (for the service detail view). Empty = no single port.
+export const SERVICE_PORTS: Record<string, string> = {
+  litellm: "4000", mitmproxy: "8080", phoenix: "6006", grafana: "3000", seaweedfs: "8333", zeek: "",
+};
+
 // Display metadata for the Services screen cards (icon initials + brand color + placement).
 export interface ServiceMeta {
   initials: string;

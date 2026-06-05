@@ -1,9 +1,10 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
+  import Modal from "../lib/Modal.svelte";
   import { bump } from "../lib/store.svelte";
   import {
     listServices, setService, provisionService, listVirtualKeys, syncVirtualKeys, setProviderKey,
-    serviceStates, DEPLOYABLE_SERVICES, SERVICE_META,
+    serviceStates, restartService, stopService, SERVICE_PORTS, DEPLOYABLE_SERVICES, SERVICE_META,
   } from "../lib/core";
   import { ui, showToast } from "../lib/store.svelte";
   import type { ServiceEntry, ServiceState, VirtualKey } from "../lib/types";
@@ -36,9 +37,24 @@
   async function provision(s: ServiceEntry) {
     error = null;
     busyName = s.name;
-    try { await provisionService(s.name); }
+    try { await provisionService(s.name); await refresh(); }
     catch (e) { error = `${s.name}: ${e}`; }
     finally { busyName = null; }
+  }
+
+  // Service detail drawer + lifecycle actions.
+  let detail = $state<ServiceEntry | null>(null);
+  let detailBusy = $state(false);
+  async function lifecycle(name: string, fn: () => Promise<void>, msg: string) {
+    detailBusy = true;
+    showToast(`$ ${msg}`);
+    try {
+      await fn();
+      showToast("Done", "ok");
+      await refresh();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { detailBusy = false; }
   }
 
   async function syncKeys() {
@@ -107,6 +123,9 @@
               <Icon name="play" size={14} /><span>Provision</span>
             </button>
           {/if}
+          {#if DEPLOYABLE_SERVICES.has(s.name)}
+            <button class="btn sm" onclick={() => (detail = s)} title="Service detail + lifecycle"><Icon name="cog" size={14} /></button>
+          {/if}
           <button class="btn sm right" class:primary={!s.enabled} onclick={() => toggle(s)} disabled={busyName !== null}>
             {s.enabled ? "Disable" : "Enable"}
           </button>
@@ -165,3 +184,30 @@
     <p class="xsmall muted" style="padding:0 14px 12px">Usage metering is not instrumented yet; keys show as <span class="mono">planned</span> until synced to a running proxy.</p>
   </div>
 </div>
+
+{#if detail}
+  <Modal title={`Service · ${detail.name}`} maxWidth={460} onclose={() => (detail = null)}>
+    {#snippet body()}
+      <div class="kv"><span class="k">Container</span><span class="v mono">svc-{detail!.name}</span></div>
+      <div class="kv"><span class="k">State</span><span class="v">
+        {#if states[detail!.name] === "running"}<span class="pill ok"><span class="dot ok"></span> running</span>
+        {:else if states[detail!.name] === "stopped"}<span class="pill warn"><span class="dot warn"></span> stopped</span>
+        {:else}<span class="pill"><span class="dot muted"></span> not provisioned</span>{/if}
+      </span></div>
+      <div class="kv"><span class="k">Port</span><span class="v mono">{SERVICE_PORTS[detail!.name] || "—"}</span></div>
+      <div class="kv"><span class="k">Placement</span><span class="v">{meta(detail!.name).placement}</span></div>
+      <p class="hint mt12">{detail!.description}</p>
+    {/snippet}
+    {#snippet foot()}
+      <button class="btn" onclick={() => (detail = null)}>Close</button>
+      {#if states[detail!.name] === "not-provisioned"}
+        <button class="btn primary" disabled={detailBusy} onclick={() => detail && lifecycle(detail.name, () => provisionService(detail!.name), `llmsctl services up ${detail!.name}`)}>
+          <Icon name="play" size={15} /><span>Provision</span></button>
+      {:else}
+        <button class="btn" disabled={detailBusy} onclick={() => detail && lifecycle(detail.name, () => stopService(detail!.name), `incus stop svc-${detail!.name}`)}>Stop</button>
+        <button class="btn primary" disabled={detailBusy} onclick={() => detail && lifecycle(detail.name, () => restartService(detail!.name), `incus restart svc-${detail!.name}`)}>
+          <Icon name="play" size={15} /><span>Restart</span></button>
+      {/if}
+    {/snippet}
+  </Modal>
+{/if}

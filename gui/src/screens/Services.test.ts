@@ -2,10 +2,12 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { provisionService, syncVirtualKeys, setProviderKey } = vi.hoisted(() => ({
+const { provisionService, syncVirtualKeys, setProviderKey, restartService, stopService } = vi.hoisted(() => ({
   provisionService: vi.fn(async () => {}),
   syncVirtualKeys: vi.fn(async () => 1),
   setProviderKey: vi.fn(async () => {}),
+  restartService: vi.fn(async () => {}),
+  stopService: vi.fn(async () => {}),
 }));
 vi.mock("../lib/core", () => ({
   listServices: vi.fn(async () => [
@@ -16,7 +18,10 @@ vi.mock("../lib/core", () => ({
   provisionService,
   syncVirtualKeys,
   setProviderKey,
+  restartService,
+  stopService,
   serviceStates: vi.fn(async () => ({ litellm: "running" })),
+  SERVICE_PORTS: { litellm: "4000" },
   listVirtualKeys: vi.fn(async () => [
     { key: "llmsc-web-agent-01-agent-claude", assignedTo: "agent-claude @ web-agent-01", models: "all", budget: "$100 / 30d", used: "—", status: "planned" },
   ]),
@@ -42,6 +47,15 @@ describe("Services", () => {
     expect(await screen.findByText("llmsc-web-agent-01-agent-claude")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: /Sync keys/ }));
     expect(syncVirtualKeys).toHaveBeenCalled();
+  });
+
+  it("opens the service detail and restarts it", async () => {
+    render(Services);
+    await screen.findByText("Provision"); // litellm is enabled+deployable
+    await fireEvent.click(screen.getByTitle("Service detail + lifecycle"));
+    expect(await screen.findByText("Service · litellm")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: /Restart/ }));
+    expect(restartService).toHaveBeenCalledWith("litellm");
   });
 
   it("sets the upstream provider key", async () => {

@@ -1827,6 +1827,22 @@ fn service_up(app: AppHandle, name: String) -> Result<(), String> {
     deploy_one(&vm_name(), &name, &reporter)
 }
 
+/// Restart a provisioned service's container.
+#[tauri::command]
+fn service_restart(name: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .restart_instance(&service::container_name(&name))
+        .map_err(|e| e.to_string())
+}
+
+/// Stop a provisioned service's container.
+#[tauri::command]
+fn service_stop(name: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .stop_instance(&service::container_name(&name))
+        .map_err(|e| e.to_string())
+}
+
 #[derive(Deserialize)]
 struct SetupCfg {
     #[serde(default)]
@@ -1959,6 +1975,8 @@ pub fn run() {
             service_enable,
             service_disable,
             service_up,
+            service_restart,
+            service_stop,
             platform_init
         ])
         .run(tauri::generate_context!())
