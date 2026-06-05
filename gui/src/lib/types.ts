@@ -39,6 +39,14 @@ export interface ProfileInfo {
   controlPlane: string;
 }
 
+export interface IncusProfileInfo {
+  name: string;
+  description: string;
+  usedBy: number;
+  config: Record<string, string>;
+  devices: Record<string, Record<string, string>>;
+}
+
 export interface AgentInfo {
   id: string;
   name: string;

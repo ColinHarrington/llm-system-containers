@@ -286,6 +286,33 @@ struct ProfileDto {
     control_plane: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IncusProfileDto {
+    name: String,
+    description: String,
+    used_by: usize,
+    config: std::collections::BTreeMap<String, String>,
+    devices: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+}
+
+/// The Incus profiles (config+devices composition bundles) in the project.
+#[tauri::command]
+fn incus_profiles() -> Result<Vec<IncusProfileDto>, String> {
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let ps = incus.incus_profiles().map_err(|e| e.to_string())?;
+    Ok(ps
+        .into_iter()
+        .map(|p| IncusProfileDto {
+            name: p.name,
+            description: p.description,
+            used_by: p.used_by,
+            config: p.config,
+            devices: p.devices,
+        })
+        .collect())
+}
+
 /// The shipped agent-profile archetypes (the definition layer; enforcement is later).
 #[tauri::command]
 fn profiles() -> Vec<ProfileDto> {
@@ -808,6 +835,7 @@ pub fn run() {
             add_agent,
             remove_agent,
             profiles,
+            incus_profiles,
             topology,
             host_resources,
             images,

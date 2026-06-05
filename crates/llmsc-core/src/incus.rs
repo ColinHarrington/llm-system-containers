@@ -250,6 +250,45 @@ pub fn parse_instance(list_json: &str, name: &str) -> Result<InstanceConfig> {
     })
 }
 
+/// An Incus profile (a reusable bundle of `config` + `devices`) in the project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncusProfileRecord {
+    pub name: String,
+    pub description: String,
+    /// Number of instances using this profile.
+    pub used_by: usize,
+    pub config: BTreeMap<String, String>,
+    pub devices: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+/// Parse `incus profile list --format json` into profile records.
+pub fn parse_incus_profiles(list_json: &str) -> Result<Vec<IncusProfileRecord>> {
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        #[serde(default, deserialize_with = "null_default")]
+        description: String,
+        #[serde(default, deserialize_with = "null_default")]
+        config: BTreeMap<String, String>,
+        #[serde(default, deserialize_with = "null_default")]
+        devices: BTreeMap<String, BTreeMap<String, String>>,
+        #[serde(default, deserialize_with = "null_default")]
+        used_by: Vec<String>,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus profile list` output: {e}")))?;
+    Ok(raw
+        .into_iter()
+        .map(|r| IncusProfileRecord {
+            used_by: r.used_by.len(),
+            name: r.name,
+            description: r.description,
+            config: r.config,
+            devices: r.devices,
+        })
+        .collect())
+}
+
 /// A managed Incus network (bridge) in the VM.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetworkRecord {
@@ -741,6 +780,15 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         parse_instance(&o.stdout, name)
     }
 
+    /// Incus profiles (config+devices composition bundles) in the project.
+    pub fn incus_profiles(&self) -> Result<Vec<IncusProfileRecord>> {
+        let o = self.incus_run(&["profile", "list", "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("profile list: {}", o.stderr.trim())));
+        }
+        parse_incus_profiles(&o.stdout)
+    }
+
     /// Managed Incus networks (bridges) in the VM.
     pub fn networks(&self) -> Result<Vec<NetworkRecord>> {
         let o = self.incus_run(&["network", "list", "--format", "json"])?;
@@ -1142,6 +1190,22 @@ mod tests {
         for needle in ["set", "unset", "device", "add", "remove", "profile", "limits.processes", "net-isolated", "source=/h/p"] {
             assert!(r.called_with(needle), "expected an incus call containing {needle:?}");
         }
+    }
+
+    #[test]
+    fn parse_incus_profiles_reads_config_devices_and_usage() {
+        let json = r#"[
+          {"name":"default","description":"Default Incus profile",
+           "config":{},"devices":{"eth0":{"type":"nic","network":"incusbr0"},"root":{"type":"disk","path":"/","pool":"default"}},
+           "used_by":["/1.0/instances/web-agent-01","/1.0/instances/ci-runner"]},
+          {"name":"nesting","description":"L3","config":{"security.nesting":"true"},"devices":{},"used_by":[]}
+        ]"#;
+        let p = parse_incus_profiles(json).unwrap();
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].name, "default");
+        assert_eq!(p[0].used_by, 2);
+        assert_eq!(p[0].devices["eth0"]["network"], "incusbr0");
+        assert_eq!(p[1].config["security.nesting"], "true");
     }
 
     #[test]

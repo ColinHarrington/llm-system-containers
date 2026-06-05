@@ -5,7 +5,7 @@ import type { AgentInfo } from "./types";
 
 export type Screen =
   | "dashboard" | "sandboxes" | "sandbox-detail" | "topology" | "agent"
-  | "networking" | "services" | "profiles" | "images" | "wizard";
+  | "networking" | "services" | "profiles" | "incus-profiles" | "images" | "wizard";
 
 function initialTheme(): "light" | "dark" {
   if (typeof localStorage !== "undefined") {
@@ -68,6 +68,7 @@ export const SCREEN_TITLES: Record<Screen, [string, string]> = {
   networking: ["Networking", "VM networks · attachments · egress & inspection"],
   services: ["Services", "Shared infrastructure for your sandboxes"],
   profiles: ["Agent profiles", "Reusable permission profiles assigned to agents"],
+  "incus-profiles": ["Incus profiles", "Config + device bundles composed onto sandboxes"],
   images: ["Images", "Base and custom sandbox images"],
   wizard: ["Set up your environment", "First-run configuration"],
 };

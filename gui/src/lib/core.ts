@@ -10,6 +10,7 @@ import type {
   AgentInfo,
   HostResources,
   ImageInfo,
+  IncusProfileInfo,
   InstanceConfig,
   NetworkingData,
   ProfileInfo,
@@ -215,6 +216,22 @@ export async function instanceRemoveProfile(name: string, profile: string): Prom
 export async function removeAgent(sandbox: string, name: string): Promise<void> {
   if (inTauri()) return invokeCmd<void>("remove_agent", { sandbox, name });
   await mockSteps([`Removing agent '${name}' from ${sandbox}`, `Agent '${name}' removed`], 200);
+}
+
+// The Incus profiles (config+devices composition bundles) in the project.
+export async function listIncusProfiles(): Promise<IncusProfileInfo[]> {
+  if (inTauri()) return invokeCmd<IncusProfileInfo[]>("incus_profiles");
+  await delay(100);
+  return [
+    { name: "default", description: "Default Incus profile", usedBy: 3,
+      config: {}, devices: { eth0: { type: "nic", network: "incusbr0" }, root: { type: "disk", path: "/", pool: "default" } } },
+    { name: "sandbox", description: "LLMSC sandbox base", usedBy: 3,
+      config: { "security.privileged": "false" }, devices: {} },
+    { name: "nesting", description: "L3 rootless containers", usedBy: 2,
+      config: { "security.nesting": "true" }, devices: {} },
+    { name: "net-egress-filtered", description: "Inspected egress", usedBy: 1,
+      config: {}, devices: { eth0: { type: "nic", network: "egress-net" } } },
+  ];
 }
 
 // The shipped agent-profile archetypes (definition layer).

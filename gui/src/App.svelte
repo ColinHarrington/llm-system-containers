@@ -7,6 +7,7 @@
   import Services from "./screens/Services.svelte";
   import Agent from "./screens/Agent.svelte";
   import Profiles from "./screens/Profiles.svelte";
+  import IncusProfiles from "./screens/IncusProfiles.svelte";
   import Images from "./screens/Images.svelte";
   import Wizard from "./screens/Wizard.svelte";
   import Progress from "./lib/Progress.svelte";
@@ -36,6 +37,7 @@
     { id: "networking", label: "Networking", icon: "net" },
     { id: "services", label: "Services", icon: "store" },
     { id: "profiles", label: "Agent profiles", icon: "shield" },
+    { id: "incus-profiles", label: "Incus profiles", icon: "layers" },
     { id: "images", label: "Images", icon: "image" },
     { id: "wizard", label: "Setup wizard", icon: "cog" },
   ];
@@ -270,6 +272,8 @@
       <Services />
     {:else if ui.screen === "profiles"}
       <Profiles />
+    {:else if ui.screen === "incus-profiles"}
+      <IncusProfiles />
     {:else if ui.screen === "images"}
       <Images />
     {:else if ui.screen === "wizard"}
