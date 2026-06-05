@@ -1,10 +1,10 @@
 <script lang="ts">
-  import Icon from "../lib/Icon.svelte";
   import { ui, type IncusTab } from "../lib/store.svelte";
   import IncusProfiles from "./IncusProfiles.svelte";
   import Networking from "./Networking.svelte";
   import Images from "./Images.svelte";
   import Storage from "./Storage.svelte";
+  import Project from "./Project.svelte";
 
   const tabs: { id: IncusTab; label: string }[] = [
     { id: "profiles", label: "Profiles" },
@@ -32,10 +32,7 @@
 {:else if ui.incusTab === "storage"}
   <Storage />
 {:else if ui.incusTab === "project"}
-  <div class="content">
-    <div class="card"><div class="empty"><div class="icon"><Icon name="layers" size={24} /></div>
-      Managed project info &amp; limits — coming soon (<span class="mono">incus project</span>).</div></div>
-  </div>
+  <Project />
 {/if}
 
 <style>

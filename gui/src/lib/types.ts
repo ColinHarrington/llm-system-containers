@@ -39,6 +39,13 @@ export interface ProfileInfo {
   controlPlane: string;
 }
 
+export interface ProjectInfo {
+  name: string;
+  description: string;
+  usedBy: number;
+  config: Record<string, string>;
+}
+
 export interface StorageVolumeInfo {
   name: string;
   vtype: string;

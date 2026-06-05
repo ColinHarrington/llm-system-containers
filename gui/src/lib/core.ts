@@ -14,6 +14,7 @@ import type {
   InstanceConfig,
   NetworkingData,
   ProfileInfo,
+  ProjectInfo,
   Sandbox,
   ServiceEntry,
   StoragePoolInfo,
@@ -239,6 +240,18 @@ export async function listIncusProfiles(): Promise<IncusProfileInfo[]> {
       config: { "security.nesting": "true" }, devices: {} },
     { name: "net-egress-filtered", description: "Inspected egress", usedBy: 1,
       config: {}, devices: { eth0: { type: "nic", network: "egress-net" } } },
+  ];
+}
+
+// Incus projects (features / limits / restrictions).
+export async function listProjects(): Promise<ProjectInfo[]> {
+  if (inTauri()) return invokeCmd<ProjectInfo[]>("projects");
+  await delay(100);
+  return [
+    {
+      name: "default", description: "Default Incus project", usedBy: 5,
+      config: { "features.images": "true", "features.profiles": "true", "features.networks": "true", "features.storage.volumes": "true" },
+    },
   ];
 }
 

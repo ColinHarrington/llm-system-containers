@@ -344,6 +344,26 @@ fn reconcile_incus_profiles(app: AppHandle) -> Result<usize, String> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ProjectDto {
+    name: String,
+    description: String,
+    used_by: usize,
+    config: std::collections::BTreeMap<String, String>,
+}
+
+/// Incus projects (features / limits / restrictions).
+#[tauri::command]
+fn projects() -> Result<Vec<ProjectDto>, String> {
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let ps = incus.projects().map_err(|e| e.to_string())?;
+    Ok(ps
+        .into_iter()
+        .map(|p| ProjectDto { name: p.name, description: p.description, used_by: p.used_by, config: p.config })
+        .collect())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct StorageVolumeDto {
     name: String,
     vtype: String,
@@ -936,6 +956,7 @@ pub fn run() {
             profiles,
             incus_profiles,
             storage,
+            projects,
             starter_incus_profiles,
             incus_profile_apply,
             reconcile_incus_profiles,

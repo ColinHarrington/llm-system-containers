@@ -250,6 +250,40 @@ pub fn parse_instance(list_json: &str, name: &str) -> Result<InstanceConfig> {
     })
 }
 
+/// An Incus project (its config: features / limits / restrictions).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectRecord {
+    pub name: String,
+    pub description: String,
+    pub used_by: usize,
+    pub config: BTreeMap<String, String>,
+}
+
+/// Parse `incus project list --format json` into project records.
+pub fn parse_projects(list_json: &str) -> Result<Vec<ProjectRecord>> {
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        #[serde(default, deserialize_with = "null_default")]
+        description: String,
+        #[serde(default, deserialize_with = "null_default")]
+        config: BTreeMap<String, String>,
+        #[serde(default, deserialize_with = "null_default")]
+        used_by: Vec<String>,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus project list` output: {e}")))?;
+    Ok(raw
+        .into_iter()
+        .map(|r| ProjectRecord {
+            used_by: r.used_by.len(),
+            name: r.name,
+            description: r.description,
+            config: r.config,
+        })
+        .collect())
+}
+
 /// A custom storage volume in a pool.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageVolume {
@@ -914,6 +948,15 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         Ok(())
     }
 
+    /// Incus projects (features / limits / restrictions).
+    pub fn projects(&self) -> Result<Vec<ProjectRecord>> {
+        let o = self.incus_run(&["project", "list", "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("project list: {}", o.stderr.trim())));
+        }
+        parse_projects(&o.stdout)
+    }
+
     /// Storage pools in the project, each with its custom volumes.
     pub fn storage(&self) -> Result<Vec<StoragePool>> {
         let o = self.incus_run(&["storage", "list", "--format", "json"])?;
@@ -1341,6 +1384,20 @@ mod tests {
         for needle in ["set", "unset", "device", "add", "remove", "profile", "limits.processes", "net-isolated", "source=/h/p"] {
             assert!(r.called_with(needle), "expected an incus call containing {needle:?}");
         }
+    }
+
+    #[test]
+    fn parse_projects_reads_config_and_usage() {
+        let json = r#"[
+          {"name":"default","description":"Default Incus project",
+           "config":{"features.images":"true","features.profiles":"true"},
+           "used_by":["/1.0/instances/web-agent-01","/1.0/profiles/default"]}
+        ]"#;
+        let p = parse_projects(json).unwrap();
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].name, "default");
+        assert_eq!(p[0].used_by, 2);
+        assert_eq!(p[0].config["features.images"], "true");
     }
 
     #[test]
