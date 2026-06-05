@@ -494,6 +494,49 @@ fn instance_yaml(name: String) -> Result<String, String> {
         .ok_or_else(|| format!("'{name}' is not config-managed"))
 }
 
+#[derive(Serialize)]
+struct SnapshotDto {
+    name: String,
+    created: String,
+    stateful: bool,
+}
+
+#[tauri::command]
+fn snapshots(name: String) -> Result<Vec<SnapshotDto>, String> {
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    Ok(incus
+        .snapshots(&name)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|s| SnapshotDto { name: s.name, created: s.created, stateful: s.stateful })
+        .collect())
+}
+
+#[tauri::command]
+fn snapshot_create(app: AppHandle, name: String, snapshot: String) -> Result<(), String> {
+    let reporter = EventReporter { app };
+    reporter.step(&format!("Snapshotting {name} → {snapshot}"));
+    CliIncus::new(vm_name(), &SystemRunner)
+        .snapshot_create(&name, &snapshot)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn snapshot_restore(app: AppHandle, name: String, snapshot: String) -> Result<(), String> {
+    let reporter = EventReporter { app };
+    reporter.step(&format!("Restoring {name} to {snapshot}"));
+    CliIncus::new(vm_name(), &SystemRunner)
+        .snapshot_restore(&name, &snapshot)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn snapshot_delete(name: String, snapshot: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .snapshot_delete(&name, &snapshot)
+        .map_err(|e| e.to_string())
+}
+
 /// Converge a running instance toward its declared intent (config/devices/profiles). Returns the
 /// number of changes applied (0 = already in sync). Streams each step to the GUI.
 #[tauri::command]
@@ -950,6 +993,10 @@ pub fn run() {
             instance_remove_profile,
             apply_sandbox,
             instance_yaml,
+            snapshots,
+            snapshot_create,
+            snapshot_restore,
+            snapshot_delete,
             operator_default,
             add_agent,
             remove_agent,

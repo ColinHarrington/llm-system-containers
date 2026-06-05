@@ -17,6 +17,7 @@ import type {
   ProjectInfo,
   Sandbox,
   ServiceEntry,
+  SnapshotInfo,
   StoragePoolInfo,
   TopoSandbox,
   VirtualKey,
@@ -179,6 +180,25 @@ export async function instanceConfig(name: string): Promise<InstanceConfig> {
     },
     localDevices: ["work"],
   };
+}
+
+// Snapshots — per-sandbox checkpoint/restore.
+export async function listSnapshots(name: string): Promise<SnapshotInfo[]> {
+  if (inTauri()) return invokeCmd<SnapshotInfo[]>("snapshots", { name });
+  await delay(60);
+  return [{ name: "before-deploy", created: "2026-06-04", stateful: false }];
+}
+export async function snapshotCreate(name: string, snapshot: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("snapshot_create", { name, snapshot });
+  await mockSteps([`Snapshotting ${name} → ${snapshot}`], 150);
+}
+export async function snapshotRestore(name: string, snapshot: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("snapshot_restore", { name, snapshot });
+  await mockSteps([`Restoring ${name} to ${snapshot}`], 150);
+}
+export async function snapshotDelete(name: string, snapshot: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("snapshot_delete", { name, snapshot });
+  await delay(80);
 }
 
 // Render a sandbox's declared intent as the Incus instance YAML (InstancePut).

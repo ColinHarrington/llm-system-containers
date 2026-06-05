@@ -23,6 +23,10 @@ vi.mock("../lib/core", () => ({
   instanceRemoveProfile,
   applySandbox: vi.fn(async () => 0),
   instanceYaml: vi.fn(async () => "profiles:\n- default\n"),
+  listSnapshots: vi.fn(async () => []),
+  snapshotCreate: vi.fn(async () => {}),
+  snapshotRestore: vi.fn(async () => {}),
+  snapshotDelete: vi.fn(async () => {}),
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",

@@ -177,6 +177,48 @@ pub fn builder_name(alias: &str) -> String {
     format!("build-{s}")
 }
 
+/// An instance snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Snapshot {
+    pub name: String,
+    pub created: String,
+    pub stateful: bool,
+}
+
+/// Parse the named instance's snapshots from `incus list <name> --format json`.
+pub fn parse_snapshots(list_json: &str, instance: &str) -> Result<Vec<Snapshot>> {
+    #[derive(serde::Deserialize)]
+    struct RawSnap {
+        name: String,
+        #[serde(default, deserialize_with = "null_default")]
+        created_at: String,
+        #[serde(default, deserialize_with = "null_default")]
+        stateful: bool,
+    }
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        #[serde(default, deserialize_with = "null_default")]
+        snapshots: Vec<RawSnap>,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus list` output: {e}")))?;
+    let inst = raw
+        .into_iter()
+        .find(|r| r.name == instance)
+        .ok_or_else(|| Error::NotFound(format!("instance '{instance}'")))?;
+    Ok(inst
+        .snapshots
+        .into_iter()
+        .map(|s| Snapshot {
+            // snapshot names may be "<instance>/<snap>" — keep the short name for commands.
+            name: s.name.rsplit('/').next().unwrap_or(&s.name).to_string(),
+            created: s.created_at.chars().take(10).collect(),
+            stateful: s.stateful,
+        })
+        .collect())
+}
+
 /// One step in converging a live instance toward its declared intent (see `reconcile::converge_plan`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConvergeOp {
@@ -881,6 +923,42 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         Ok(())
     }
 
+    /// List an instance's snapshots.
+    pub fn snapshots(&self, instance: &str) -> Result<Vec<Snapshot>> {
+        let o = self.incus_run(&["list", instance, "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("list {instance}: {}", o.stderr.trim())));
+        }
+        parse_snapshots(&o.stdout, instance)
+    }
+
+    /// Take a snapshot of an instance.
+    pub fn snapshot_create(&self, instance: &str, name: &str) -> Result<()> {
+        let o = self.incus_run(&["snapshot", "create", instance, name])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("snapshot create {name}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Restore an instance to a snapshot.
+    pub fn snapshot_restore(&self, instance: &str, name: &str) -> Result<()> {
+        let o = self.incus_run(&["snapshot", "restore", instance, name])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("snapshot restore {name}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Delete a snapshot.
+    pub fn snapshot_delete(&self, instance: &str, name: &str) -> Result<()> {
+        let o = self.incus_run(&["snapshot", "delete", instance, name])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("snapshot delete {name}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
     /// Read a live instance's Incus surface back from the server (config/devices/profiles).
     pub fn instance(&self, name: &str) -> Result<InstanceConfig> {
         let o = self.incus_run(&["list", name, "--format", "json"])?;
@@ -1341,6 +1419,34 @@ mod tests {
         assert_eq!(imgs[0].name, "abc123def456"); // fingerprint fallback (null aliases)
         assert_eq!(imgs[0].base, "Debian 12");
         assert_eq!(imgs[0].used_by, 0);
+    }
+
+    #[test]
+    fn parse_snapshots_reads_and_shortens_names() {
+        let json = r#"[
+          {"name":"web-agent-01","snapshots":[
+            {"name":"web-agent-01/before-deploy","created_at":"2026-06-04T10:00:00Z","stateful":false},
+            {"name":"snap0","created_at":"2026-06-03T09:00:00Z","stateful":true}]},
+          {"name":"other","snapshots":[]}
+        ]"#;
+        let s = parse_snapshots(json, "web-agent-01").unwrap();
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0].name, "before-deploy"); // "<instance>/" prefix stripped
+        assert_eq!(s[0].created, "2026-06-04");
+        assert!(s[1].stateful);
+        assert!(matches!(parse_snapshots(json, "missing"), Err(Error::NotFound(_))));
+    }
+
+    #[test]
+    fn snapshot_ops_call_incus() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.snapshot_create("web-agent-01", "before-deploy").unwrap();
+        c.snapshot_restore("web-agent-01", "before-deploy").unwrap();
+        c.snapshot_delete("web-agent-01", "before-deploy").unwrap();
+        for needle in ["snapshot", "create", "restore", "delete", "before-deploy"] {
+            assert!(r.called_with(needle));
+        }
     }
 
     #[test]

@@ -5,8 +5,9 @@
     topology, removeSandbox, removeAgent, instanceConfig,
     instanceSetConfig, instanceUnsetConfig, instanceAddMount, instanceRemoveDevice,
     instanceAddProfile, instanceRemoveProfile, applySandbox, instanceYaml,
+    listSnapshots, snapshotCreate, snapshotRestore, snapshotDelete,
   } from "../lib/core";
-  import type { InstanceConfig, TopoSandbox } from "../lib/types";
+  import type { InstanceConfig, SnapshotInfo, TopoSandbox } from "../lib/types";
 
   let all = $state<TopoSandbox[]>([]);
   let inst = $state<InstanceConfig | null>(null);
@@ -49,6 +50,27 @@
 
   const deviceEntries = $derived(inst ? Object.entries(inst.devices) : []);
   const configEntries = $derived(inst ? Object.entries(inst.config) : []);
+
+  let snaps = $state<SnapshotInfo[]>([]);
+  let newSnap = $state("");
+  let snapBusy = $state<string | null>(null);
+  $effect(() => {
+    ui.dataVersion;
+    const sel = ui.selectedSandbox;
+    snaps = [];
+    if (sel) void listSnapshots(sel).then((s) => (snaps = s)).catch(() => (snaps = []));
+  });
+  async function snapEdit(key: string, fn: () => Promise<void>, msg: string) {
+    if (!sb) return;
+    snapBusy = key;
+    try {
+      await fn();
+      showToast(msg, "ok");
+      bump();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { snapBusy = null; }
+  }
 
   async function removeUser(agent: string) {
     if (!sb) return;
@@ -256,6 +278,41 @@
         </div>
       </div>
     {/if}
+
+    <!-- Snapshots -->
+    <div class="card mt16">
+      <div class="card-head"><h3>Snapshots</h3><span class="sub">checkpoint &amp; restore · <span class="mono">incus snapshot</span></span></div>
+      <div class="pad">
+        <div class="flex gap8 mb12">
+          <input class="input mono" style="max-width:280px" bind:value={newSnap} placeholder="snapshot name (e.g. before-deploy)" />
+          <button class="btn sm primary" disabled={snapBusy !== null || !newSnap.trim()}
+            onclick={() => { const n = newSnap.trim(); newSnap = ""; void snapEdit("create", () => snapshotCreate(sb.name, n), `Snapshot '${n}' created`); }}>
+            <Icon name="plus" size={13} /><span>Snapshot</span></button>
+        </div>
+        {#if snaps.length === 0}
+          <div class="muted small">No snapshots yet.</div>
+        {:else}
+          <table class="tbl">
+            <thead><tr><th>Name</th><th>Created</th><th>Mode</th><th></th></tr></thead>
+            <tbody>
+              {#each snaps as s (s.name)}
+                <tr>
+                  <td class="mono small strong" style="color:var(--text)">{s.name}</td>
+                  <td class="small t2">{s.created}</td>
+                  <td>{#if s.stateful}<span class="tag">stateful</span>{:else}<span class="muted small">stateless</span>{/if}</td>
+                  <td style="text-align:right; white-space:nowrap">
+                    <button class="btn sm" disabled={snapBusy !== null} title="Restore"
+                      onclick={() => snapEdit(`r-${s.name}`, () => snapshotRestore(sb.name, s.name), `Restored to '${s.name}'`)}><Icon name="arrow" size={13} /></button>
+                    <button class="btn sm danger" disabled={snapBusy !== null} title="Delete"
+                      onclick={() => snapEdit(`d-${s.name}`, () => snapshotDelete(sb.name, s.name), `Deleted '${s.name}'`)}><Icon name="x" size={13} /></button>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </div>
+    </div>
 
     <p class="xsmall muted mt12">Live per-agent activity (sessions, trace, tokens) is not instrumented yet.</p>
   {/if}

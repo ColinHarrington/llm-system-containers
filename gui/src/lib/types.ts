@@ -111,6 +111,12 @@ export interface HostResources {
   diskTotal: number;
 }
 
+export interface SnapshotInfo {
+  name: string;
+  created: string;
+  stateful: boolean;
+}
+
 // --- Live Incus instance surface (read back from the server) ---
 export interface InstanceConfig {
   name: string;
