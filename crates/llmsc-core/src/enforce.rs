@@ -277,6 +277,48 @@ pub fn agent_can(guardrails: Option<&crate::config::Guardrails>, cap: ControlCap
     }
 }
 
+// --- Sandbox enforcement summary (configured intent, for diagnostics) ---
+
+/// A one-line summary of a sandbox's *configured* enforcement intent (not live state). Used by
+/// `llmsctl doctor` and any fleet overview.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxEnforcement {
+    /// Egress posture id, or `"unmanaged"` when no policy is set.
+    pub egress_posture: &'static str,
+    pub domains: usize,
+    pub agents: usize,
+    pub read_only_agents: usize,
+    pub control_plane_agents: usize,
+}
+
+/// Summarize a sandbox's configured enforcement intent.
+pub fn sandbox_enforcement(sb: &Sandbox) -> SandboxEnforcement {
+    let egress = sb.egress.as_ref();
+    let agents = sb.users.iter().filter(|u| u.role == UserRole::Agent);
+    SandboxEnforcement {
+        egress_posture: egress.map(|e| e.posture.id()).unwrap_or("unmanaged"),
+        domains: egress.map(|e| e.domains.len()).unwrap_or(0),
+        agents: agents.clone().count(),
+        read_only_agents: agents
+            .clone()
+            .filter(|u| {
+                u.guardrails
+                    .as_ref()
+                    .map(|g| is_read_only(&g.filesystem))
+                    .unwrap_or(false)
+            })
+            .count(),
+        control_plane_agents: agents
+            .filter(|u| {
+                u.guardrails
+                    .as_ref()
+                    .map(|g| !control_capabilities(&g.control_plane).is_empty())
+                    .unwrap_or(false)
+            })
+            .count(),
+    }
+}
+
 // --- mitmproxy L7 domain allowlist (the HTTP(S) egress ring) ---
 //
 // Incus ACLs are L3/L4 only. HTTP(S) domain allowlists ("github.com only") are enforced by the
@@ -456,6 +498,49 @@ mod tests {
         c.llm_dest = Some("10.21.32.7".to_string());
         let acl = egress_acl(&sb_with(Some(EgressPolicy::default_managed())), &c).unwrap();
         assert_eq!(acl.egress[0].destination, "10.21.32.7/32");
+    }
+
+    #[test]
+    fn sandbox_enforcement_summarizes_config_intent() {
+        use crate::config::{Config, EgressPolicy, EgressPosture, Guardrails, User, UserRole};
+        let mut cfg = Config::default();
+        cfg.upsert_sandbox("sb", "images:alpine/3.21", false);
+        cfg.set_sandbox_egress(
+            "sb",
+            EgressPolicy {
+                posture: EgressPosture::Allowlist,
+                allow: vec!["llm".into()],
+                domains: vec!["github.com".into()],
+            },
+        );
+        cfg.set_sandbox_user(
+            "sb",
+            User {
+                name: "colin".into(),
+                role: UserRole::Human,
+                profile: None,
+                guardrails: None,
+            },
+        );
+        cfg.set_sandbox_user(
+            "sb",
+            User {
+                name: "agent-claude".into(),
+                role: UserRole::Agent,
+                profile: Some("validation".into()),
+                guardrails: Some(Guardrails {
+                    filesystem: "Read-only everything".into(),
+                    control_plane: "launch/stop sandboxes".into(),
+                    ..Default::default()
+                }),
+            },
+        );
+        let s = sandbox_enforcement(cfg.sandbox("sb").unwrap());
+        assert_eq!(s.egress_posture, "allowlist");
+        assert_eq!(s.domains, 1);
+        assert_eq!(s.agents, 1); // human excluded
+        assert_eq!(s.read_only_agents, 1);
+        assert_eq!(s.control_plane_agents, 1);
     }
 
     #[test]

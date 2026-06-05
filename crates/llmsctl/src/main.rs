@@ -62,6 +62,8 @@ enum Command {
         #[arg(long)]
         apply: bool,
     },
+    /// One-shot platform health report: VM, services, config, per-sandbox enforcement.
+    Doctor,
 }
 
 #[derive(Subcommand)]
@@ -231,7 +233,68 @@ fn run() -> Result<(), String> {
         Command::Services { action } => services(action)?,
         Command::Keys { action } => keys(action)?,
         Command::Tetragon { sandbox, apply } => tetragon(sandbox, apply)?,
+        Command::Doctor => doctor()?,
     }
+    Ok(())
+}
+
+fn doctor() -> Result<(), String> {
+    use llmsc_core::incus::CliIncus;
+    let cfg = Config::load_effective().unwrap_or_default();
+    let vm_name = cfg.vm.name.clone();
+
+    println!("llmsc doctor");
+    println!("============");
+
+    let vm_state = LimaVmDriver::new(cfg.vm.clone(), SystemRunner)
+        .status()
+        .map(|s| format!("{s:?}"))
+        .unwrap_or_else(|e| format!("error: {e}"));
+    let running = vm_state == "Running";
+    println!("\nVM '{vm_name}': {vm_state}");
+
+    println!("\nConfig ({}):", user_config_path().display());
+    println!("  operator:         {}", cfg.operator);
+    println!("  sandboxes:        {}", cfg.sandboxes.len());
+    println!("  services enabled: {}", cfg.services.len());
+    println!("  incus profiles:   {}", cfg.incus_profiles.len());
+
+    println!("\nServices:");
+    if running {
+        let incus = CliIncus::new(vm_name.clone(), &SystemRunner);
+        for e in catalog() {
+            let enabled = if cfg.service_enabled(e.name) {
+                "enabled"
+            } else {
+                "disabled"
+            };
+            println!(
+                "  {:<11} {:<16} {enabled}",
+                e.name,
+                incus.service_status(e.name).id()
+            );
+        }
+    } else {
+        println!("  (VM not running — skipping live service checks)");
+    }
+
+    println!("\nSandboxes (configured enforcement intent):");
+    if cfg.sandboxes.is_empty() {
+        println!("  (none)");
+    }
+    for sb in &cfg.sandboxes {
+        let s = llmsc_core::enforce::sandbox_enforcement(sb);
+        println!(
+            "  {:<20} egress={} domains={} agents={} ro-fs={} control-plane={}",
+            sb.name,
+            s.egress_posture,
+            s.domains,
+            s.agents,
+            s.read_only_agents,
+            s.control_plane_agents
+        );
+    }
+    println!("\n(run `llmsc egress <name>` for live ACL state; the GUI Enforcement panel shows live rings)");
     Ok(())
 }
 

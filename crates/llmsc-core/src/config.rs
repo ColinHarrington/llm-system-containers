@@ -196,6 +196,17 @@ pub enum EgressPosture {
     Open,
 }
 
+impl EgressPosture {
+    /// Stable kebab-case id (`deny-all` / `allowlist` / `open`).
+    pub fn id(&self) -> &'static str {
+        match self {
+            EgressPosture::DenyAll => "deny-all",
+            EgressPosture::Allowlist => "allowlist",
+            EgressPosture::Open => "open",
+        }
+    }
+}
+
 impl EgressPolicy {
     /// The default policy for a newly-created managed sandbox: agents may reach the LLM proxy and
     /// nothing else (the headline default-deny posture from `planning/security-model.md`).
