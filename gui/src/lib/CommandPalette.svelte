@@ -1,19 +1,36 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
-  import { ui, navigate, openTerminal, toggleTheme, type Screen, type IncusTab } from "./store.svelte";
+  import { ui, navigate, openSandbox, openTerminal, toggleTheme, bump, showToast, type Screen, type IncusTab } from "./store.svelte";
+  import { listSandboxes, vmStatus, vmUp, vmDown, syncVirtualKeys } from "./core";
+  import type { Sandbox, VmStatus } from "./types";
 
-  // ⌘K / Ctrl-K command palette (direction A). Fuzzy-ish filter over a flat command list;
-  // ↑/↓ to move, Enter to run, Esc to close.
-  type Cmd = { id: string; label: string; hint: string; icon: string; keywords: string; run: () => void };
+  // ⌘K / Ctrl-K command palette (direction A): a real launcher — navigate, jump to any sandbox,
+  // and run actions. Fuzzy filter over a flat list; ↑/↓ to move, Enter to run, Esc to close.
+  type Cmd = { id: string; label: string; hint: string; icon: string; keywords: string; group: string; run: () => void };
 
   function gotoCmd(id: string, label: string, icon: string, key?: string): Cmd {
-    return { id: `go-${id}`, label: `Go to ${label}`, hint: key ?? "", icon, keywords: label, run: () => navigate(id as Screen) };
+    return { id: `go-${id}`, label: `Go to ${label}`, hint: key ?? "", icon, keywords: label, group: "Navigate", run: () => navigate(id as Screen) };
   }
   function incusCmd(tab: IncusTab, label: string, icon: string): Cmd {
-    return { id: `incus-${tab}`, label: `Incus · ${label}`, hint: "", icon, keywords: `incus ${tab} ${label}`, run: () => { ui.incusTab = tab; navigate("incus"); } };
+    return { id: `incus-${tab}`, label: `Incus · ${label}`, hint: "", icon, keywords: `incus ${tab} ${label}`, group: "Navigate", run: () => { ui.incusTab = tab; navigate("incus"); } };
   }
 
-  const commands: Cmd[] = [
+  // Live data loaded when the palette opens (sandbox jumps + VM toggle label).
+  let sandboxes = $state<Sandbox[]>([]);
+  let vm = $state<VmStatus | null>(null);
+
+  async function vmToggle() {
+    showToast(vm === "Running" ? "$ llmsctl down" : "$ llmsctl up");
+    try { if (vm === "Running") await vmDown(); else await vmUp(); showToast(vm === "Running" ? "VM stopped" : "VM is up", "ok"); bump(); }
+    catch (e) { showToast(String(e), "danger"); }
+  }
+  async function doSyncKeys() {
+    showToast("$ llmsctl keys sync");
+    try { const n = await syncVirtualKeys(); showToast(n === 0 ? "No agent keys to sync" : `Synced ${n} virtual key(s)`, "ok"); }
+    catch (e) { showToast(String(e), "danger"); }
+  }
+
+  const navCmds: Cmd[] = [
     gotoCmd("dashboard", "Dashboard", "home", "1"),
     gotoCmd("sandboxes", "Sandboxes", "box", "2"),
     gotoCmd("topology", "Topology", "layers", "3"),
@@ -22,14 +39,27 @@
     incusCmd("profiles", "Profiles", "layers"),
     incusCmd("networks", "Networks", "net"),
     incusCmd("images", "Images", "image"),
-    gotoCmd("services", "Services", "store", "6"),
+    gotoCmd("services", "Services", "cog", "6"),
     gotoCmd("profiles", "Agent profiles", "shield", ""),
     gotoCmd("wizard", "Setup wizard", "cog", ""),
-    { id: "new-sandbox", label: "New sandbox", hint: "llmsc launch", icon: "plus", keywords: "create launch sandbox", run: () => (ui.newSandboxOpen = true) },
-    { id: "build-image", label: "Build image", hint: "incus publish", icon: "layers", keywords: "build custom image distro", run: () => (ui.buildImageOpen = true) },
-    { id: "open-shell", label: "Open shell · operator@web-agent-01", hint: "llmsc shell", icon: "terminal", keywords: "shell terminal ssh", run: () => openTerminal("operator@web-agent-01") },
-    { id: "toggle-theme", label: "Toggle light / dark theme", hint: "", icon: "moon", keywords: "theme dark light appearance", run: () => toggleTheme() },
   ];
+
+  const actionCmds = $derived<Cmd[]>([
+    { id: "new-sandbox", label: "New sandbox", hint: "llmsc launch", icon: "plus", keywords: "create launch sandbox", group: "Actions", run: () => (ui.newSandboxOpen = true) },
+    { id: "build-image", label: "Build image", hint: "incus publish", icon: "image", keywords: "build custom image distro", group: "Actions", run: () => (ui.buildImageOpen = true) },
+    { id: "vm-toggle", label: vm === "Running" ? "Stop the VM" : "Start the VM", hint: "llmsctl", icon: vm === "Running" ? "stop" : "play", keywords: "vm up down start stop lima", group: "Actions", run: () => void vmToggle() },
+    { id: "sync-keys", label: "Sync virtual keys", hint: "llmsctl keys sync", icon: "key", keywords: "litellm keys budget sync", group: "Actions", run: () => void doSyncKeys() },
+    { id: "toggle-theme", label: "Toggle light / dark theme", hint: "", icon: "moon", keywords: "theme dark light appearance", group: "Actions", run: () => toggleTheme() },
+  ]);
+
+  const sandboxCmds = $derived<Cmd[]>(
+    sandboxes.map((s) => ({
+      id: `sb-${s.name}`, label: `Open ${s.name}`, hint: s.status, icon: "box",
+      keywords: `sandbox ${s.name} ${s.image ?? ""}`, group: "Sandboxes", run: () => openSandbox(s.name),
+    })),
+  );
+
+  const commands = $derived([...navCmds, ...sandboxCmds, ...actionCmds]);
 
   let query = $state("");
   let selected = $state(0);
@@ -41,12 +71,14 @@
       : commands.filter((c) => (c.label + " " + c.keywords).toLowerCase().includes(query.toLowerCase())),
   );
 
-  // Reset + focus when opened.
+  // Reset + focus + load live data when opened.
   $effect(() => {
     if (ui.paletteOpen) {
       query = "";
       selected = 0;
       queueMicrotask(() => inputEl?.focus());
+      void listSandboxes().then((s) => (sandboxes = s)).catch(() => (sandboxes = []));
+      void vmStatus().then((s) => (vm = s)).catch(() => (vm = null));
     }
   });
 
@@ -83,6 +115,9 @@
       </div>
       <div class="pal-list">
         {#each filtered as c, i (c.id)}
+          {#if i === 0 || filtered[i - 1].group !== c.group}
+            <div class="pal-group">{c.group}</div>
+          {/if}
           <button class="pal-item" class:sel={i === selected} onmouseenter={() => (selected = i)} onclick={() => run(c)}>
             <span class="pal-ic"><Icon name={c.icon} size={15} /></span>
             <span class="pal-label">{c.label}</span>
@@ -111,4 +146,5 @@
   .pal-label { flex: 1; font-size: 13px; }
   .pal-hint { font-size: 10.5px; color: var(--text-3); }
   .pal-empty { padding: 20px; text-align: center; color: var(--text-3); font-size: 12px; }
+  .pal-group { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); padding: 8px 10px 4px; }
 </style>

@@ -20,4 +20,15 @@ describe("CommandPalette", () => {
     expect(ui.screen).toBe("topology");
     expect(ui.paletteOpen).toBe(false);
   });
+
+  it("jumps to a sandbox loaded from the backend", async () => {
+    ui.paletteOpen = true;
+    ui.selectedSandbox = null;
+    render(CommandPalette);
+    // Sandboxes load async from listSandboxes (mock data includes web-agent-01).
+    const item = await screen.findByText("Open web-agent-01");
+    await fireEvent.click(item);
+    expect(ui.selectedSandbox).toBe("web-agent-01");
+    expect(ui.screen).toBe("sandbox-detail");
+  });
 });
