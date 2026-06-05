@@ -621,6 +621,56 @@ fn seaweedfs_unit_script() -> String {
         .to_string()
 }
 
+/// Provisions **Zeek** in its own L2 container — passive packet-level network audit. Complements
+/// mitmproxy (active L7 proxy) with passive monitoring/logging.
+///
+/// **Honest scope:** in a container Zeek sees only that container's interface. Auditing *all*
+/// sandbox traffic needs Zeek on the bridge (L1 VM) or a port mirror — a follow-up. This wires the
+/// install + monitor so it is ready once that capture path lands.
+pub struct ZeekDeployer<'a, R: CommandRunner> {
+    svc: ServiceContainer<'a, R>,
+}
+
+impl<'a, R: CommandRunner> ZeekDeployer<'a, R> {
+    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+        Self {
+            svc: ServiceContainer::new(vm, "zeek", "images:debian/12", runner),
+        }
+    }
+
+    /// Provision and start Zeek monitoring its nic.
+    pub fn deploy(&self, reporter: &dyn Reporter) -> Result<()> {
+        reporter.step("Creating Zeek service container");
+        self.svc.launch_if_absent()?;
+        reporter.step("Installing Zeek (apt repo)");
+        // Zeek is not in the base Debian repos — use the official OBS apt repo.
+        self.svc.check(
+            "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y wget gpg ca-certificates && \
+             wget -qO- https://download.opensuse.org/repositories/security:zeek/Debian_12/Release.key | gpg --dearmor > /usr/share/keyrings/zeek.gpg && \
+             echo 'deb [signed-by=/usr/share/keyrings/zeek.gpg] http://download.opensuse.org/repositories/security:/zeek/Debian_12/ /' > /etc/apt/sources.list.d/zeek.list && \
+             apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y zeek",
+            "apt install zeek",
+        )?;
+        reporter.step("Writing systemd unit");
+        self.svc.check(&zeek_unit_script(), "write unit")?;
+        reporter.step("Starting Zeek");
+        self.svc.start("zeek")?;
+        reporter.step("Zeek deployed — passive audit logs in /var/log/zeek (container nic; bridge capture is a follow-up)");
+        Ok(())
+    }
+}
+
+fn zeek_unit_script() -> String {
+    "mkdir -p /var/log/zeek && cat > /etc/systemd/system/zeek.service <<'EOF'\n\
+     [Unit]\nDescription=Zeek passive network audit\nAfter=network.target\n\
+     [Service]\n\
+     WorkingDirectory=/var/log/zeek\n\
+     ExecStart=/opt/zeek/bin/zeek -i eth0\n\
+     Restart=on-failure\n\
+     [Install]\nWantedBy=multi-user.target\nEOF"
+        .to_string()
+}
+
 /// The mitmproxy egress proxy port (HTTP(S) interception).
 pub const MITMPROXY_PORT: u16 = 8080;
 
@@ -853,6 +903,24 @@ mod tests {
         assert_eq!(u[0].spend, 1.25);
         let wrap = r#"{"keys":[{"key_alias":"llmsc-b-y","spend":0.5}]}"#;
         assert_eq!(parse_key_usage(wrap).unwrap()[0].spend, 0.5);
+    }
+
+    #[test]
+    fn zeek_deploy_installs_and_monitors() {
+        let r = FakeRunner::new(|_, args| {
+            if args.contains(&"info") {
+                out(1, "")
+            } else {
+                out(0, "")
+            }
+        });
+        ZeekDeployer::new("llmsc", &r)
+            .deploy(&SilentReporter)
+            .unwrap();
+        assert!(r.called_with("svc-zeek"));
+        assert!(r.called_with("zeek"));
+        assert!(r.called_with("zeek.service"));
+        assert!(r.called_with("eth0")); // monitoring the nic
     }
 
     #[test]

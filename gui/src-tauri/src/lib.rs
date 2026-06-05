@@ -1779,6 +1779,9 @@ fn deploy_one(vm: &str, name: &str, reporter: &EventReporter) -> Result<(), Stri
         "seaweedfs" => llmsc_core::deploy::SeaweedFsDeployer::new(vm.to_string(), &SystemRunner)
             .deploy(reporter)
             .map_err(|e| e.to_string()),
+        "zeek" => llmsc_core::deploy::ZeekDeployer::new(vm.to_string(), &SystemRunner)
+            .deploy(reporter)
+            .map_err(|e| e.to_string()),
         other => Err(format!("no deployer yet for '{other}'")),
     }
 }

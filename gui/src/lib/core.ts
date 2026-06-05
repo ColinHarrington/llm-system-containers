@@ -468,7 +468,7 @@ export async function serviceStates(): Promise<Record<string, ServiceState>> {
 }
 
 // Services that have a deployer in src-tauri (can be provisioned, not just toggled in config).
-export const DEPLOYABLE_SERVICES = new Set(["litellm", "mitmproxy", "phoenix", "grafana", "seaweedfs"]);
+export const DEPLOYABLE_SERVICES = new Set(["litellm", "mitmproxy", "phoenix", "grafana", "seaweedfs", "zeek"]);
 
 export async function provisionService(name: string): Promise<void> {
   if (inTauri()) return invokeCmd<void>("service_up", { name });

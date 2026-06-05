@@ -69,6 +69,12 @@ pub fn catalog() -> &'static [CatalogEntry] {
             priority: "Core",
         },
         CatalogEntry {
+            name: "zeek",
+            description: "Passive packet-level network audit",
+            default_placement: Placement::Container,
+            priority: "Core",
+        },
+        CatalogEntry {
             name: "forgejo",
             description: "Internal git platform",
             default_placement: Placement::Container,

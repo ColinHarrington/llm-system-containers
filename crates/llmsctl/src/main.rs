@@ -188,6 +188,11 @@ fn services(action: ServiceAction) -> Result<(), String> {
                             .deploy(&ConsoleReporter)
                             .map_err(|e| e.to_string())?;
                     }
+                    "zeek" => {
+                        llmsc_core::deploy::ZeekDeployer::new(vm.clone(), &SystemRunner)
+                            .deploy(&ConsoleReporter)
+                            .map_err(|e| e.to_string())?;
+                    }
                     other => eprintln!("→ no deployer yet for '{other}' (M5 follow-up)"),
                 }
             }
