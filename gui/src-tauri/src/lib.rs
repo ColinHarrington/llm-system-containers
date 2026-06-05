@@ -1535,6 +1535,39 @@ fn enforce_all(app: AppHandle, sandbox: String) -> Result<Vec<RingStatusDto>, St
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FleetEnforcementDto {
+    sandbox: String,
+    egress_posture: String,
+    domains: usize,
+    agents: usize,
+    read_only_agents: usize,
+    control_plane_agents: usize,
+}
+
+/// Configured enforcement intent for every config-managed sandbox (fast — config only, no live
+/// Incus calls). Powers the dashboard summary and the fleet security view.
+#[tauri::command]
+fn fleet_enforcement() -> Result<Vec<FleetEnforcementDto>, String> {
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    Ok(cfg
+        .sandboxes
+        .iter()
+        .map(|sb| {
+            let s = llmsc_core::enforce::sandbox_enforcement(sb);
+            FleetEnforcementDto {
+                sandbox: sb.name.clone(),
+                egress_posture: s.egress_posture.to_string(),
+                domains: s.domains,
+                agents: s.agents,
+                read_only_agents: s.read_only_agents,
+                control_plane_agents: s.control_plane_agents,
+            }
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
 struct SandboxNetDto {
     name: String,
     status: String,
@@ -1912,6 +1945,7 @@ pub fn run() {
             mount_shared,
             enforcement_overview,
             enforce_all,
+            fleet_enforcement,
             agent_pause,
             agent_resume,
             agent_stop,

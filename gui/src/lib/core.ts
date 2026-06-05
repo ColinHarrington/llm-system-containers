@@ -10,6 +10,7 @@ import type {
   AgentInfo,
   EgressPolicy,
   EgressStatus,
+  FleetEnforcement,
   HostResources,
   Guardrails,
   ImageInfo,
@@ -455,6 +456,16 @@ export async function setService(name: string, enabled: boolean): Promise<void> 
   if (inTauri()) return invokeCmd<void>(enabled ? "service_enable" : "service_disable", { name });
   await delay(120);
   mockServices = mockServices.map((s) => (s.name === name ? { ...s, enabled } : s));
+}
+
+// Configured enforcement intent for every config-managed sandbox (fast, config-only).
+export async function fleetEnforcement(): Promise<FleetEnforcement[]> {
+  if (inTauri()) return invokeCmd<FleetEnforcement[]>("fleet_enforcement");
+  await delay(60);
+  return [
+    { sandbox: "web-agent-01", egressPosture: "allowlist", domains: 1, agents: 1, readOnlyAgents: 0, controlPlaneAgents: 0 },
+    { sandbox: "ci-runner", egressPosture: "deny-all", domains: 0, agents: 2, readOnlyAgents: 1, controlPlaneAgents: 0 },
+  ];
 }
 
 // Live container state for each service (running / stopped / not-provisioned).

@@ -31,6 +31,15 @@ export interface ServiceEntry {
 
 export type ServiceState = "running" | "stopped" | "not-provisioned";
 
+export interface FleetEnforcement {
+  sandbox: string;
+  egressPosture: string; // "unmanaged" | "deny-all" | "allowlist" | "open"
+  domains: number;
+  agents: number;
+  readOnlyAgents: number;
+  controlPlaneAgents: number;
+}
+
 export interface ProfileInfo {
   name: string;
   summary: string;

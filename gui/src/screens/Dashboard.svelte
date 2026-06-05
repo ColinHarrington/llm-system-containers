@@ -1,13 +1,20 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui, navigate, bump, openTerminal } from "../lib/store.svelte";
-  import { vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, hostResources } from "../lib/core";
-  import type { AgentInfo, HostResources, Sandbox, ServiceEntry, VmStatus } from "../lib/types";
+  import { ui, navigate, openSandbox, bump, openTerminal, showToast } from "../lib/store.svelte";
+  import {
+    vmStatus, vmUp, vmDown, listSandboxes, listServices, topology, hostResources,
+    serviceStates, fleetEnforcement,
+  } from "../lib/core";
+  import type {
+    FleetEnforcement, HostResources, Sandbox, ServiceEntry, ServiceState, TopoSandbox, VmStatus,
+  } from "../lib/types";
 
   let vm = $state<VmStatus | null>(null);
   let sandboxes = $state<Sandbox[]>([]);
   let services = $state<ServiceEntry[]>([]);
-  let agents = $state<AgentInfo[]>([]);
+  let topo = $state<TopoSandbox[]>([]);
+  let states = $state<Record<string, ServiceState>>({});
+  let fleet = $state<FleetEnforcement[]>([]);
   let res = $state<HostResources | null>(null);
   let vmBusy = $state(false);
 
@@ -17,30 +24,43 @@
   });
 
   async function refresh() {
-    [vm, sandboxes, services, agents, res] = await Promise.all([
-      vmStatus(), listSandboxes(), listServices(), listAgents(), hostResources(),
+    [vm, sandboxes, services, topo, res] = await Promise.all([
+      vmStatus(), listSandboxes(), listServices(), topology().catch(() => []), hostResources().catch(() => null),
     ]);
+    void serviceStates().then((s) => (states = s)).catch(() => (states = {}));
+    void fleetEnforcement().then((f) => (fleet = f)).catch(() => (fleet = []));
   }
 
   async function toggleVm() {
     vmBusy = true;
+    showToast(vm === "Running" ? "$ llmsctl down" : "$ llmsctl up");
     try {
       if (vm === "Running") await vmDown(); else await vmUp();
+      showToast(vm === "Running" ? "VM stopped" : "VM is up", "ok");
       bump();
-    } finally { vmBusy = false; }
+    } catch (e) { showToast(String(e), "danger"); } finally { vmBusy = false; }
   }
 
   const running = $derived(sandboxes.filter((s) => s.status === "Running").length);
   const stopped = $derived(sandboxes.length - running);
-  const activeAgents = $derived(agents.filter((a) => a.status !== "idle").length);
-  const pausedAgents = $derived(agents.filter((a) => a.status === "paused").length);
-  const nested = $derived(sandboxes.reduce((n, s) => n + (s.nested ?? 0), 0));
-  const enabledServices = $derived(services.filter((s) => s.enabled).length);
+  // Real agent count from the topology tree (one Linux user per agent; humans excluded).
+  const agentCount = $derived(topo.reduce((n, s) => n + s.agents.filter((a) => a.kind === "agent").length, 0));
+  const servicesRunning = $derived(Object.values(states).filter((s) => s === "running").length);
+  const knownServices = $derived(Object.keys(states).length || services.length);
+  const managed = $derived(fleet.filter((f) => f.egressPosture !== "unmanaged" && f.egressPosture !== "open").length);
+  const totalAgents = $derived(fleet.reduce((n, f) => n + f.agents, 0));
+  const roAgents = $derived(fleet.reduce((n, f) => n + f.readOnlyAgents, 0));
+  const cpAgents = $derived(fleet.reduce((n, f) => n + f.controlPlaneAgents, 0));
+
   const pct = (used: number, total: number) => (total ? Math.round((used / total) * 100) : 0);
-  // Bytes → MB under a GiB, else GB with one decimal — granular without losing readability.
   const humanBytes = (n: number) =>
     n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : `${Math.round(n / 1024 ** 2)} MB`;
   const recent = $derived(sandboxes.slice(0, 4));
+  // Services to show health for: those with a known live state (deployable), sorted running-first.
+  const healthServices = $derived(
+    Object.entries(states).sort((a, b) => (a[1] === "running" ? -1 : 1) - (b[1] === "running" ? -1 : 1)),
+  );
+  const statePill = (s: ServiceState) => (s === "running" ? "ok" : s === "not-provisioned" ? "" : "warn");
 </script>
 
 <div class="content">
@@ -53,7 +73,7 @@
       <div class="flex gap10">
         <span class="strong" style="font-size:16px">llmsc-vm</span>
         {#if vm === "Running"}
-          <span class="pill ok"><span class="dot ok"></span> Running</span>
+          <span class="pill ok"><span class="dot ok pulse"></span> Running</span>
         {:else if vm === "Starting"}
           <span class="pill warn"><span class="dot warn pulse"></span> Starting</span>
         {:else}
@@ -67,33 +87,33 @@
       <button class="btn" onclick={() => (ui.newSandboxOpen = true)}><Icon name="plus" /><span>New sandbox</span></button>
       <button class="btn" onclick={toggleVm} disabled={vmBusy}>
         <Icon name={vm === "Running" ? "stop" : "play"} size={15} />
-        <span>{vm === "Running" ? "Stop" : "Start"}</span>
+        <span>{vmBusy ? "…" : vm === "Running" ? "Stop" : "Start"}</span>
       </button>
     </div>
   </div>
 
   <!-- Stat tiles -->
   <div class="grid g-4 mb16">
-    <div class="card pad stat">
+    <button class="card pad stat clickable" onclick={() => navigate("sandboxes")}>
       <div class="label">Sandboxes</div>
       <div class="num">{sandboxes.length}</div>
       <div class="delta" style="color:var(--ok)">{running} running · {stopped} stopped</div>
-    </div>
-    <div class="card pad stat">
-      <div class="label">Active agents</div>
-      <div class="num">{activeAgents} <small>working</small></div>
-      <div class="delta t2">{pausedAgents} paused by operator</div>
-    </div>
-    <div class="card pad stat">
-      <div class="label">Nested containers <span class="muted">(L3)</span></div>
-      <div class="num">{nested} <small>rootless</small></div>
-      <div class="delta t2">across {sandboxes.filter((s) => (s.nested ?? 0) > 0).length} sandboxes</div>
-    </div>
-    <div class="card pad stat">
-      <div class="label">Services</div>
-      <div class="num">{enabledServices} <small>/ {services.length}</small></div>
-      <div class="delta" style="color:var(--ok)">enabled</div>
-    </div>
+    </button>
+    <button class="card pad stat clickable" onclick={() => navigate("topology")}>
+      <div class="label">Agents</div>
+      <div class="num">{agentCount}</div>
+      <div class="delta t2">one Linux user each · across {topo.length} sandboxes</div>
+    </button>
+    <button class="card pad stat clickable" onclick={() => navigate("services")}>
+      <div class="label">Services running</div>
+      <div class="num">{servicesRunning} <small>/ {knownServices}</small></div>
+      <div class="delta t2">{services.filter((s) => s.enabled).length} enabled in config</div>
+    </button>
+    <button class="card pad stat clickable" onclick={() => navigate("topology")}>
+      <div class="label">Managed egress</div>
+      <div class="num">{managed} <small>/ {sandboxes.length}</small></div>
+      <div class="delta" style="color:var(--ok)">sandboxes with an egress policy</div>
+    </button>
   </div>
 
   <div class="grid g-2 mb16">
@@ -114,12 +134,46 @@
             <div class="flex"><span class="small strong">Disk</span><span class="right small mono t2">{humanBytes(res.diskUsed)} / {humanBytes(res.diskTotal)}</span></div>
             <div class="meter mt8"><i class="ok" style="width:{pct(res.diskUsed, res.diskTotal)}%"></i></div>
           </div>
+        {:else}
+          <div class="muted small">Host metrics unavailable (VM not running?).</div>
         {/if}
-        <div class="divider"></div>
-        <div class="flex gap8 small t2">
-          <Icon name="shield" size={16} />
-          Tetragon eBPF enforcement active · network policy applied to all sandboxes
+      </div>
+    </div>
+
+    <!-- Service health -->
+    <div class="card">
+      <div class="card-head"><h3>Service health</h3><span class="sub">live container state</span>
+        <button class="btn sm right" onclick={() => navigate("services")}>Manage</button>
+      </div>
+      <div class="pad">
+        {#if healthServices.length === 0}
+          <div class="muted small">No live service state (VM not running, or nothing provisioned).</div>
+        {:else}
+          {#each healthServices as [name, st]}
+            <div class="flex svc-row">
+              <span class="mono small strong" style="color:var(--text)">{name}</span>
+              <span class="right pill {statePill(st)}">{st}</span>
+            </div>
+          {/each}
+        {/if}
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g-2 mb16">
+    <!-- Security posture -->
+    <div class="card">
+      <div class="card-head"><h3>Security posture</h3><span class="sub">configured enforcement intent</span>
+        <button class="btn sm right" onclick={() => navigate("topology")}>Fleet view</button>
+      </div>
+      <div class="pad">
+        <div class="flex gap8 wrap">
+          <div class="posture"><div class="pnum">{managed}</div><div class="muted xsmall">managed egress</div></div>
+          <div class="posture"><div class="pnum">{totalAgents}</div><div class="muted xsmall">agents</div></div>
+          <div class="posture"><div class="pnum">{roAgents}</div><div class="muted xsmall">read-only fs</div></div>
+          <div class="posture"><div class="pnum">{cpAgents}</div><div class="muted xsmall">control-plane caps</div></div>
         </div>
+        <p class="xsmall muted mt12">Per-container egress ACLs + per-UID Tetragon policies compile from each agent's guardrails. Open the fleet view for the per-sandbox matrix; a sandbox's detail page shows live ring status.</p>
       </div>
     </div>
 
@@ -131,13 +185,13 @@
           <span class="qa-ico"><Icon name="plus" size={18} /></span>
           <span><span class="strong small">New sandbox</span><span class="muted xsmall">Spin up a fresh LLMSC workspace</span></span>
         </button>
-        <button class="qa" onclick={() => openTerminal("operator@web-agent-01")}>
-          <span class="qa-ico"><Icon name="terminal" size={18} /></span>
-          <span><span class="strong small">Open a shell</span><span class="muted xsmall mono">llmsc shell operator@web-agent-01</span></span>
+        <button class="qa" onclick={() => navigate("services")}>
+          <span class="qa-ico"><Icon name="cog" size={18} /></span>
+          <span><span class="strong small">Manage services</span><span class="muted xsmall">Provision LiteLLM, Phoenix, storage…</span></span>
         </button>
-        <button class="qa" onclick={() => navigate("agent")}>
-          <span class="qa-ico"><Icon name="steer" size={18} /></span>
-          <span><span class="strong small">Steer an agent</span><span class="muted xsmall">Observe, pause or inject a message</span></span>
+        <button class="qa" onclick={() => (ui.paletteOpen = true)}>
+          <span class="qa-ico"><Icon name="search" size={18} /></span>
+          <span><span class="strong small">Command palette</span><span class="muted xsmall mono">⌘K — jump anywhere, run anything</span></span>
         </button>
       </div>
     </div>
@@ -152,23 +206,18 @@
       <div class="empty"><div class="icon"><Icon name="box" size={26} /></div>No sandboxes yet.</div>
     {:else}
       <table class="tbl">
-        <thead><tr><th>Name</th><th>Image</th><th>Users</th><th>L3</th><th>Mem</th><th>Status</th></tr></thead>
+        <thead><tr><th>Name</th><th>Image</th><th>Status</th><th></th></tr></thead>
         <tbody>
           {#each recent as s (s.name)}
-            <tr class="clickable" onclick={() => navigate("sandboxes")}>
+            <tr class="clickable" onclick={() => openSandbox(s.name)}>
               <td><div class="strong">{s.name}</div></td>
               <td><span class="tag mono">{s.image ?? "—"}</span></td>
               <td>
-                <div class="flex gap6">
-                  {#each s.users ?? [] as u}<div class="avatar {u.kind} sm">{u.initials}</div>{/each}
-                  {#if !s.users}<span class="muted small">—</span>{/if}
-                </div>
-              </td>
-              <td><span class="mono small">{s.nested ?? "—"}</span></td>
-              <td class="mono small t2">{s.memTotal ? `${s.memUsed} / ${s.memTotal} GB` : "—"}</td>
-              <td>
                 {#if s.status === "Running"}<span class="pill ok"><span class="dot ok"></span> Running</span>
                 {:else}<span class="pill"><span class="dot muted"></span> Stopped</span>{/if}
+              </td>
+              <td style="text-align:right">
+                <button class="btn sm" onclick={(e) => { e.stopPropagation(); openTerminal(`operator@${s.name}`); }}><Icon name="terminal" size={13} /></button>
               </td>
             </tr>
           {/each}
@@ -179,6 +228,12 @@
 </div>
 
 <style>
+  .stat.clickable { text-align: left; cursor: pointer; font-family: inherit; }
+  .stat.clickable:hover { border-color: var(--border-strong); }
+  .svc-row { padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .svc-row:last-child { border-bottom: none; }
+  .posture { flex: 1; min-width: 90px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--card-2); text-align: center; }
+  .posture .pnum { font-size: 22px; font-weight: 700; color: var(--text); }
   .qa {
     display: flex; gap: 12px; align-items: center; text-align: left;
     padding: 14px; border: 1px solid var(--border); border-radius: 12px;
