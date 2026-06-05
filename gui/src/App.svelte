@@ -14,14 +14,14 @@
   import Terminal from "./lib/Terminal.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
   import BuildImage from "./lib/BuildImage.svelte";
+  import NewSandbox from "./lib/NewSandbox.svelte";
   import Icon from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
   import {
     ui, navigate, openSandbox, bump, toggleTheme, showToast, SCREEN_TITLES, type Screen,
   } from "./lib/store.svelte";
   import {
-    vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, launchSandbox, operatorDefault,
-    addAgent, listProfiles,
+    vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, addAgent, listProfiles,
   } from "./lib/core";
   import type { ProfileInfo, Sandbox, VmStatus } from "./lib/types";
 
@@ -113,39 +113,6 @@
       showToast(wasRunning ? "VM stopped" : "VM is up", "ok");
     } finally {
       vmBusy = false;
-    }
-  }
-
-  // New-sandbox modal form
-  let sbName = $state("");
-  let sbImage = $state("dev-ubuntu-24.04");
-  let sbNesting = $state(true);
-  let sbOperator = $state("");
-  let sbDescription = $state("");
-  let sbEphemeral = $state(false);
-  let sbBusy = $state(false);
-
-  // Prefill the human username with the operator default when the modal opens.
-  $effect(() => {
-    if (ui.newSandboxOpen && !sbOperator) {
-      void operatorDefault().then((o) => (sbOperator = o));
-    }
-  });
-
-  async function createSandbox() {
-    if (!sbName.trim() || !sbOperator.trim()) return;
-    const name = sbName.trim();
-    sbBusy = true;
-    showToast(`$ llmsc launch ${name} --image ${sbImage}`);
-    try {
-      await launchSandbox(name, sbImage.trim(), sbNesting, sbOperator.trim(), sbDescription.trim(), sbEphemeral);
-      ui.newSandboxOpen = false;
-      sbName = "";
-      navigate("sandboxes");
-      bump();
-      showToast(`Launched ${name}`, "ok");
-    } finally {
-      sbBusy = false;
     }
   }
 
@@ -316,41 +283,7 @@
 </div>
 
 {#if ui.newSandboxOpen}
-  <Modal title="New sandbox" onclose={() => (ui.newSandboxOpen = false)}>
-    {#snippet body()}
-      <div class="field mb16"><label for="sb-name">Name</label>
-        <input id="sb-name" class="input mono" bind:value={sbName} placeholder="web-agent-02" /></div>
-      <div class="field mb16"><label for="sb-operator">Your username <span class="hint">(the human operator — the default Linux user)</span></label>
-        <input id="sb-operator" class="input mono" bind:value={sbOperator} placeholder="operator" /></div>
-      <div class="field mb16"><label for="sb-image">Image</label>
-        <select id="sb-image" class="input" bind:value={sbImage}>
-          <option value="dev-ubuntu-24.04">dev-ubuntu-24.04 — general dev workspace</option>
-          <option value="browser-tools">browser-tools — headed browser automation</option>
-          <option value="data-tools">data-tools — data pipelines</option>
-          <option value="images:alpine/3.21">images:alpine/3.21 — minimal sandbox</option>
-          <option value="base-debian-12">base-debian-12 — minimal</option>
-        </select></div>
-      <div class="field mb16"><label for="sb-desc">Description <span class="hint">(optional)</span></label>
-        <input id="sb-desc" class="input" bind:value={sbDescription} placeholder="what this sandbox is for" /></div>
-      <div class="flex gap12 mb16" style="align-items:flex-start">
-        <label class="switch"><input type="checkbox" bind:checked={sbNesting} /><span class="track"></span></label>
-        <div><div class="strong small">Enable nested containers (L3)</div>
-          <div class="hint">Rootless Docker/Podman inside the sandbox — no privileged DinD.</div></div>
-      </div>
-      <div class="flex gap12" style="align-items:flex-start">
-        <label class="switch"><input type="checkbox" bind:checked={sbEphemeral} /><span class="track"></span></label>
-        <div><div class="strong small">Ephemeral</div>
-          <div class="hint">Delete the sandbox automatically when it stops.</div></div>
-      </div>
-    {/snippet}
-    {#snippet foot()}
-      <span class="code-chip mono" style="margin-right:auto">llmsc launch {sbName || "name"} --image {sbImage}</span>
-      <button class="btn" onclick={() => (ui.newSandboxOpen = false)}>Cancel</button>
-      <button class="btn primary" onclick={createSandbox} disabled={sbBusy || !sbName.trim() || !sbOperator.trim()}>
-        <Icon name="play" size={15} /><span>{sbBusy ? "Launching…" : "Launch sandbox"}</span>
-      </button>
-    {/snippet}
-  </Modal>
+  <NewSandbox />
 {/if}
 
 {#if ui.buildImageOpen}

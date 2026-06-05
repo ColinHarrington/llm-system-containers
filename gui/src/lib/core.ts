@@ -115,19 +115,34 @@ export async function listSandboxes(): Promise<Sandbox[]> {
   await delay(120);
   return [...mockSandboxes];
 }
-export async function launchSandbox(
-  name: string, image: string, nesting: boolean, operator: string,
-  description = "", ephemeral = false,
-): Promise<void> {
-  if (inTauri()) return invokeCmd<void>("sandbox_launch", { name, image, nesting, operator, description, ephemeral });
-  await mockSteps([`Launching ${name}`, `Pulling ${image}`, `Creating human user '${operator}'`, "Sandbox ready"]);
+export interface SandboxMount {
+  source: string;
+  path: string;
+  readonly: boolean;
+}
+export interface NewSandboxInput {
+  name: string;
+  image: string;
+  operator: string;
+  description: string;
+  ephemeral: boolean;
+  nesting: boolean;
+  profiles: string[];
+  mounts: SandboxMount[];
+  cloudInit: string;
+  network: string;
+}
+
+export async function launchSandbox(input: NewSandboxInput): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("sandbox_launch", { spec: input });
+  await mockSteps([`Launching ${input.name}`, `Pulling ${input.image}`, `Creating human user '${input.operator}'`, "Sandbox ready"]);
   mockSandboxes = [
     ...mockSandboxes,
     {
-      name, status: "Running", image, role: "workspace",
-      tags: nesting ? ["unprivileged", "nesting on"] : ["unprivileged"],
-      nested: nesting ? 0 : null, cpuCores: 2, memUsed: 0.4, memTotal: 4,
-      users: [{ initials: operator.slice(0, 2), kind: "human" }],
+      name: input.name, status: "Running", image: input.image, role: "workspace",
+      tags: input.nesting ? ["unprivileged", "nesting on"] : ["unprivileged"],
+      nested: input.nesting ? 0 : null, cpuCores: 2, memUsed: 0.4, memTotal: 4,
+      users: [{ initials: input.operator.slice(0, 2), kind: "human" }],
     },
   ];
 }

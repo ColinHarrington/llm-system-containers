@@ -199,6 +199,14 @@ impl Config {
         self.sandboxes.last_mut().unwrap()
     }
 
+    /// Insert a sandbox, or replace the existing one with the same name (declarative intent).
+    pub fn put_sandbox(&mut self, sandbox: Sandbox) {
+        match self.sandboxes.iter().position(|s| s.name == sandbox.name) {
+            Some(i) => self.sandboxes[i] = sandbox,
+            None => self.sandboxes.push(sandbox),
+        }
+    }
+
     /// Add or replace a user in a declared sandbox. Returns false if the sandbox isn't declared.
     pub fn set_sandbox_user(&mut self, sandbox: &str, user: User) -> bool {
         match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
@@ -410,6 +418,14 @@ mod tests {
         assert_eq!(sb.users[1].profile.as_deref(), Some("tester"));
         // Unknown sandbox -> no-op false.
         assert!(!c.set_sandbox_user("nope", User { name: "x".into(), role: UserRole::Agent, profile: None }));
+        // put_sandbox replaces by name (no dup).
+        c.put_sandbox(Sandbox { name: "web-agent-01".into(), image: "images:alpine/3.21".into(), ..Default::default() });
+        assert_eq!(c.sandboxes.len(), 1);
+        assert_eq!(c.sandbox("web-agent-01").unwrap().image, "images:alpine/3.21");
+        assert!(c.sandbox("web-agent-01").unwrap().users.is_empty()); // replaced wholesale
+        // Re-establish users for the remove test below (operator + one agent).
+        c.set_sandbox_user("web-agent-01", User { name: "colin".into(), role: UserRole::Human, profile: None });
+        c.set_sandbox_user("web-agent-01", User { name: "agent-claude".into(), role: UserRole::Agent, profile: None });
         // Remove an agent user.
         assert!(c.remove_sandbox_user("web-agent-01", "agent-claude"));
         assert_eq!(c.sandbox("web-agent-01").unwrap().users.len(), 1);

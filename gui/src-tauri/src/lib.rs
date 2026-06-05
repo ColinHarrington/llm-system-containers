@@ -132,38 +132,99 @@ fn sandbox_list() -> Result<Vec<SandboxDto>, String> {
         .collect())
 }
 
-#[tauri::command]
-fn sandbox_launch(
-    app: AppHandle,
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MountSpec {
+    source: String,
+    path: String,
+    #[serde(default)]
+    readonly: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NewSandboxSpec {
     name: String,
     image: String,
-    nesting: bool,
     operator: String,
+    #[serde(default)]
     description: String,
+    #[serde(default)]
     ephemeral: bool,
-) -> Result<(), String> {
+    #[serde(default)]
+    nesting: bool,
+    #[serde(default)]
+    profiles: Vec<String>,
+    #[serde(default)]
+    mounts: Vec<MountSpec>,
+    #[serde(default)]
+    cloud_init: String,
+    #[serde(default)]
+    network: String,
+}
+
+/// Sanitize a mount path into an Incus device name (`/work/src` → `work-src`).
+fn device_name(path: &str, i: usize) -> String {
+    let s: String = path
+        .trim_matches('/')
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect();
+    let s = s.trim_matches('-');
+    if s.is_empty() { format!("mount{i}") } else { s.to_string() }
+}
+
+#[tauri::command]
+fn sandbox_launch(app: AppHandle, spec: NewSandboxSpec) -> Result<(), String> {
     let reporter = EventReporter { app };
     let incus = CliIncus::new(vm_name(), &SystemRunner);
-    let desc = if description.trim().is_empty() { None } else { Some(description.trim().to_string()) };
-    // Every sandbox gets exactly one human user (the operator) by default; agents are added later.
-    let spec = Sandbox {
-        name: name.clone(),
-        image: image.clone(),
-        nesting,
-        ephemeral,
-        description: desc.clone(),
-        users: vec![User { name: operator.clone(), role: UserRole::Human, profile: None }],
-        ..Default::default()
+
+    let mut devices: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>> =
+        Default::default();
+    for (i, m) in spec.mounts.iter().enumerate() {
+        if m.source.trim().is_empty() || m.path.trim().is_empty() {
+            continue;
+        }
+        let mut d = std::collections::BTreeMap::new();
+        d.insert("type".into(), "disk".into());
+        d.insert("source".into(), m.source.trim().to_string());
+        d.insert("path".into(), m.path.trim().to_string());
+        d.insert("shift".into(), "true".into()); // idmapped mount → usable in an unprivileged container
+        if m.readonly {
+            d.insert("readonly".into(), "true".into());
+        }
+        devices.insert(device_name(&m.path, i), d);
+    }
+    if !spec.network.trim().is_empty() {
+        let mut nic = std::collections::BTreeMap::new();
+        nic.insert("type".into(), "nic".into());
+        nic.insert("network".into(), spec.network.trim().to_string());
+        devices.insert("eth0".into(), nic);
+    }
+
+    let mut config: std::collections::BTreeMap<String, String> = Default::default();
+    if !spec.cloud_init.trim().is_empty() {
+        config.insert("cloud-init.user-data".into(), spec.cloud_init.clone());
+    }
+
+    let desc = if spec.description.trim().is_empty() { None } else { Some(spec.description.trim().to_string()) };
+    let sandbox = Sandbox {
+        name: spec.name.clone(),
+        image: spec.image.clone(),
+        description: desc,
+        nesting: spec.nesting,
+        ephemeral: spec.ephemeral,
+        profiles: spec.profiles.iter().map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect(),
+        config,
+        devices,
+        // Every sandbox gets exactly one human user (the operator); agents are added later.
+        users: vec![User { name: spec.operator.clone(), role: UserRole::Human, profile: None }],
     };
-    incus.launch(&spec, &reporter).map_err(|e| e.to_string())?;
+
+    incus.launch(&sandbox, &reporter).map_err(|e| e.to_string())?;
     // Persist the full intent into config (best-effort; the sandbox is already created).
     let mut cfg = load_user_config().unwrap_or_default();
-    {
-        let sb = cfg.upsert_sandbox(&name, &image, nesting);
-        sb.ephemeral = ephemeral;
-        sb.description = desc;
-    }
-    cfg.set_sandbox_user(&name, User { name: operator, role: UserRole::Human, profile: None });
+    cfg.put_sandbox(sandbox);
     let _ = cfg.save(&config::user_config_path());
     Ok(())
 }
