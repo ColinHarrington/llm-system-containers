@@ -133,6 +133,14 @@ export interface InstanceConfig {
 // --- Topology (nested VM -> sandboxes -> agents) ---
 export type AgentState = "active" | "thinking" | "waiting" | "idle";
 
+export interface Guardrails {
+  filesystem: string;
+  network: string;
+  l3: boolean;
+  llmBudget: string;
+  controlPlane: string;
+}
+
 export interface TopoAgent {
   name: string;
   kind: "agent" | "human";
@@ -140,7 +148,8 @@ export interface TopoAgent {
   action: string;
   tools: string[];
   active: string | null; // currently-active tool id
-  profile?: string | null; // assigned agent profile (from config)
+  profile?: string | null; // profile the guardrails were seeded from (provenance)
+  guardrails?: Guardrails | null; // the agent's own (refinable) guardrails
 }
 
 export interface TopoSandbox {

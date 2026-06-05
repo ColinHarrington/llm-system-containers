@@ -86,7 +86,16 @@ mod tests {
     #[test]
     fn catalog_has_the_five_archetypes() {
         let names: Vec<_> = catalog().iter().map(|p| p.name).collect();
-        assert_eq!(names, ["researcher", "tester", "builder", "validation", "orchestrator"]);
+        assert_eq!(
+            names,
+            [
+                "researcher",
+                "tester",
+                "builder",
+                "validation",
+                "orchestrator"
+            ]
+        );
     }
 
     #[test]

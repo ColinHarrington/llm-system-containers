@@ -86,12 +86,12 @@ pub fn parse_topology(list_json: &str) -> Result<Vec<SandboxTopology>> {
                 .config
                 .get("image.description")
                 .cloned()
-                .or_else(|| {
-                    match (r.config.get("image.os"), r.config.get("image.release")) {
+                .or_else(
+                    || match (r.config.get("image.os"), r.config.get("image.release")) {
                         (Some(os), Some(rel)) => Some(format!("{os} {rel}")),
                         _ => None,
-                    }
-                })
+                    },
+                )
                 .unwrap_or_else(|| "—".to_string());
             SandboxTopology {
                 status: if r.status == "Running" {
@@ -99,7 +99,11 @@ pub fn parse_topology(list_json: &str) -> Result<Vec<SandboxTopology>> {
                 } else {
                     InstanceStatus::Stopped
                 },
-                nesting: r.config.get("security.nesting").map(|v| v == "true").unwrap_or(false),
+                nesting: r
+                    .config
+                    .get("security.nesting")
+                    .map(|v| v == "true")
+                    .unwrap_or(false),
                 mem_bytes: r.state.and_then(|s| s.memory).map(|m| m.usage).unwrap_or(0),
                 image,
                 name: r.name,
@@ -169,7 +173,13 @@ pub fn useradd_script(name: &str) -> String {
 pub fn builder_name(alias: &str) -> String {
     let mut s: String = alias
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     s.truncate(48);
     let s = s.trim_matches('-');
@@ -222,12 +232,26 @@ pub fn parse_snapshots(list_json: &str, instance: &str) -> Result<Vec<Snapshot>>
 /// One step in converging a live instance toward its declared intent (see `reconcile::converge_plan`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConvergeOp {
-    SetConfig { key: String, value: String },
-    UnsetConfig { key: String },
-    AddDevice { name: String, keys: BTreeMap<String, String> },
-    RemoveDevice { name: String },
-    AddProfile { name: String },
-    RemoveProfile { name: String },
+    SetConfig {
+        key: String,
+        value: String,
+    },
+    UnsetConfig {
+        key: String,
+    },
+    AddDevice {
+        name: String,
+        keys: BTreeMap<String, String>,
+    },
+    RemoveDevice {
+        name: String,
+    },
+    AddProfile {
+        name: String,
+    },
+    RemoveProfile {
+        name: String,
+    },
 }
 
 /// A live instance's Incus surface, read back from the server (the round-trip view).
@@ -555,9 +579,21 @@ pub fn parse_networks(list_json: &str) -> Result<Vec<NetworkRecord>> {
         .into_iter()
         .filter(|r| r.managed) // unmanaged = host physical NICs, not llmsc networks
         .map(|r| NetworkRecord {
-            ipv4: r.config.get("ipv4.address").cloned().unwrap_or_else(|| "—".to_string()),
-            nat: r.config.get("ipv4.nat").map(|v| v == "true").unwrap_or(false),
-            used_by: r.used_by.iter().filter(|u| u.contains("/instances/")).count(),
+            ipv4: r
+                .config
+                .get("ipv4.address")
+                .cloned()
+                .unwrap_or_else(|| "—".to_string()),
+            nat: r
+                .config
+                .get("ipv4.nat")
+                .map(|v| v == "true")
+                .unwrap_or(false),
+            used_by: r
+                .used_by
+                .iter()
+                .filter(|u| u.contains("/instances/"))
+                .count(),
             kind: r.net_type,
             name: r.name,
         })
@@ -612,7 +648,13 @@ pub fn parse_sandbox_networks(list_json: &str) -> Result<Vec<SandboxNetwork>> {
                 .expanded_devices
                 .values()
                 .filter(|d| d.dev_type == "nic")
-                .map(|d| if d.network.is_empty() { d.parent.clone() } else { d.network.clone() })
+                .map(|d| {
+                    if d.network.is_empty() {
+                        d.parent.clone()
+                    } else {
+                        d.network.clone()
+                    }
+                })
                 .filter(|n| !n.is_empty())
                 .collect();
             networks.sort();
@@ -723,10 +765,22 @@ pub fn parse_images(list_json: &str) -> Result<Vec<ImageRecord>> {
                 } else {
                     r.properties.description
                 },
-                flavor: if os.is_empty() { "Other".to_string() } else { os },
+                flavor: if os.is_empty() {
+                    "Other".to_string()
+                } else {
+                    os
+                },
                 base,
-                arch: if arch.is_empty() { "—".to_string() } else { arch },
-                kind: if r.kind.is_empty() { "container".to_string() } else { r.kind },
+                arch: if arch.is_empty() {
+                    "—".to_string()
+                } else {
+                    arch
+                },
+                kind: if r.kind.is_empty() {
+                    "container".to_string()
+                } else {
+                    r.kind
+                },
                 size_bytes: r.size,
                 used_by: r.used_by.len(),
                 uploaded: r.uploaded_at.chars().take(10).collect(), // YYYY-MM-DD
@@ -894,7 +948,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         let target = format!("{remote}:");
         let o = self.incus_run(&["image", "list", &target, "--format", "json"])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("image list {target}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "image list {target}: {}",
+                o.stderr.trim()
+            )));
         }
         parse_images(&o.stdout)
     }
@@ -903,7 +960,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn set_config(&self, name: &str, key: &str, value: &str) -> Result<()> {
         let o = self.incus_run(&["config", "set", name, key, value])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("config set {key}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "config set {key}: {}",
+                o.stderr.trim()
+            )));
         }
         Ok(())
     }
@@ -912,7 +972,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn unset_config(&self, name: &str, key: &str) -> Result<()> {
         let o = self.incus_run(&["config", "unset", name, key])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("config unset {key}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "config unset {key}: {}",
+                o.stderr.trim()
+            )));
         }
         Ok(())
     }
@@ -920,8 +983,14 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     /// Add a device to an instance (`incus config device add <name> <dev> <type> key=value…`).
     pub fn add_device(&self, name: &str, dev: &str, keys: &BTreeMap<String, String>) -> Result<()> {
         let dtype = keys.get("type").cloned().unwrap_or_else(|| "disk".into());
-        let mut args: Vec<String> =
-            vec!["config".into(), "device".into(), "add".into(), name.into(), dev.into(), dtype];
+        let mut args: Vec<String> = vec![
+            "config".into(),
+            "device".into(),
+            "add".into(),
+            name.into(),
+            dev.into(),
+            dtype,
+        ];
         for (k, v) in keys {
             if k != "type" {
                 args.push(format!("{k}={v}"));
@@ -930,7 +999,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         let argv: Vec<&str> = args.iter().map(String::as_str).collect();
         let o = self.incus_run(&argv)?;
         if !o.ok() {
-            return Err(Error::Incus(format!("device add {dev}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "device add {dev}: {}",
+                o.stderr.trim()
+            )));
         }
         Ok(())
     }
@@ -939,7 +1011,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn remove_device(&self, name: &str, dev: &str) -> Result<()> {
         let o = self.incus_run(&["config", "device", "remove", name, dev])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("device remove {dev}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "device remove {dev}: {}",
+                o.stderr.trim()
+            )));
         }
         Ok(())
     }
@@ -948,7 +1023,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn add_profile(&self, name: &str, profile: &str) -> Result<()> {
         let o = self.incus_run(&["profile", "add", name, profile])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("profile add {profile}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "profile add {profile}: {}",
+                o.stderr.trim()
+            )));
         }
         Ok(())
     }
@@ -957,7 +1035,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn remove_profile(&self, name: &str, profile: &str) -> Result<()> {
         let o = self.incus_run(&["profile", "remove", name, profile])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("profile remove {profile}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "profile remove {profile}: {}",
+                o.stderr.trim()
+            )));
         }
         Ok(())
     }
@@ -999,7 +1080,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn snapshots(&self, instance: &str) -> Result<Vec<Snapshot>> {
         let o = self.incus_run(&["list", instance, "--format", "json"])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("list {instance}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "list {instance}: {}",
+                o.stderr.trim()
+            )));
         }
         parse_snapshots(&o.stdout, instance)
     }
@@ -1008,7 +1092,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn snapshot_create(&self, instance: &str, name: &str) -> Result<()> {
         let o = self.incus_run(&["snapshot", "create", instance, name])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("snapshot create {name}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "snapshot create {name}: {}",
+                o.stderr.trim()
+            )));
         }
         Ok(())
     }
@@ -1017,7 +1104,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn snapshot_restore(&self, instance: &str, name: &str) -> Result<()> {
         let o = self.incus_run(&["snapshot", "restore", instance, name])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("snapshot restore {name}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "snapshot restore {name}: {}",
+                o.stderr.trim()
+            )));
         }
         Ok(())
     }
@@ -1026,7 +1116,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn snapshot_delete(&self, instance: &str, name: &str) -> Result<()> {
         let o = self.incus_run(&["snapshot", "delete", instance, name])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("snapshot delete {name}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "snapshot delete {name}: {}",
+                o.stderr.trim()
+            )));
         }
         Ok(())
     }
@@ -1053,7 +1146,11 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
             reporter.step(&format!("Creating Incus profile '{}'", desired.name));
             let o = self.incus_run(&["profile", "create", &desired.name])?;
             if !o.ok() {
-                return Err(Error::Incus(format!("profile create {}: {}", desired.name, o.stderr.trim())));
+                return Err(Error::Incus(format!(
+                    "profile create {}: {}",
+                    desired.name,
+                    o.stderr.trim()
+                )));
             }
         }
         let plan = crate::reconcile::profile_converge_plan(desired, existing);
@@ -1063,7 +1160,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
                     reporter.step(&format!("{}: set {key}={value}", desired.name));
                     let o = self.incus_run(&["profile", "set", &desired.name, key, value])?;
                     if !o.ok() {
-                        return Err(Error::Incus(format!("profile set {key}: {}", o.stderr.trim())));
+                        return Err(Error::Incus(format!(
+                            "profile set {key}: {}",
+                            o.stderr.trim()
+                        )));
                     }
                 }
                 ConvergeOp::UnsetConfig { key } => {
@@ -1074,8 +1174,12 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
                     reporter.step(&format!("{}: add device {dev}", desired.name));
                     let dtype = keys.get("type").cloned().unwrap_or_else(|| "disk".into());
                     let mut args: Vec<String> = vec![
-                        "profile".into(), "device".into(), "add".into(),
-                        desired.name.clone(), dev.clone(), dtype,
+                        "profile".into(),
+                        "device".into(),
+                        "add".into(),
+                        desired.name.clone(),
+                        dev.clone(),
+                        dtype,
                     ];
                     for (k, v) in keys {
                         if k != "type" {
@@ -1085,7 +1189,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
                     let argv: Vec<&str> = args.iter().map(String::as_str).collect();
                     let o = self.incus_run(&argv)?;
                     if !o.ok() {
-                        return Err(Error::Incus(format!("profile device add {dev}: {}", o.stderr.trim())));
+                        return Err(Error::Incus(format!(
+                            "profile device add {dev}: {}",
+                            o.stderr.trim()
+                        )));
                     }
                 }
                 ConvergeOp::RemoveDevice { name: dev } => {
@@ -1115,7 +1222,9 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         }
         let mut pools = parse_storage_pools(&o.stdout)?;
         for pool in pools.iter_mut() {
-            if let Ok(v) = self.incus_run(&["storage", "volume", "list", &pool.name, "--format", "json"]) {
+            if let Ok(v) =
+                self.incus_run(&["storage", "volume", "list", &pool.name, "--format", "json"])
+            {
                 if v.ok() {
                     pool.volumes = parse_storage_volumes(&v.stdout).unwrap_or_default();
                 }
@@ -1146,7 +1255,10 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn network_acls(&self) -> Result<Vec<NetworkAcl>> {
         let o = self.incus_run(&["network", "acl", "list", "--format", "json"])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("network acl list: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "network acl list: {}",
+                o.stderr.trim()
+            )));
         }
         parse_network_acls(&o.stdout)
     }
@@ -1165,10 +1277,14 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     pub fn add_user(&self, sandbox: &str, name: &str, human: bool) -> Result<()> {
         let o = self.incus_run(&["exec", sandbox, "--", "sh", "-c", &useradd_script(name)])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("creating user {name}: {}", o.stderr.trim())));
+            return Err(Error::Incus(format!(
+                "creating user {name}: {}",
+                o.stderr.trim()
+            )));
         }
         if human {
-            let sudo = format!("(usermod -aG sudo {name} || addgroup {name} wheel) 2>/dev/null || true");
+            let sudo =
+                format!("(usermod -aG sudo {name} || addgroup {name} wheel) 2>/dev/null || true");
             let _ = self.incus_run(&["exec", sandbox, "--", "sh", "-c", &sudo]);
         }
         Ok(())
@@ -1182,7 +1298,9 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         );
         let o = self.incus_run(&["exec", sandbox, "--", "sh", "-c", &script])?;
         if !o.ok() {
-            return Err(Error::Incus(format!("removing user {name} (still present?)")));
+            return Err(Error::Incus(format!(
+                "removing user {name} (still present?)"
+            )));
         }
         Ok(())
     }
@@ -1203,7 +1321,9 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
 
         reporter.step(&format!("Launching builder from {base}"));
         if self.incus_streamed(&["launch", base, &tmp])? != 0 {
-            return Err(Error::Incus(format!("launching builder from '{base}' failed")));
+            return Err(Error::Incus(format!(
+                "launching builder from '{base}' failed"
+            )));
         }
 
         if !setup.trim().is_empty() {
@@ -1227,7 +1347,9 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         let code = self.incus_streamed(&args)?;
         if code != 0 {
             let _ = self.incus_run(&["delete", "--force", &tmp]);
-            return Err(Error::Incus(format!("publishing image '{alias}' failed (exit {code})")));
+            return Err(Error::Incus(format!(
+                "publishing image '{alias}' failed (exit {code})"
+            )));
         }
 
         reporter.step("Removing builder");
@@ -1321,8 +1443,14 @@ mod tests {
     fn build_image_launches_sets_up_publishes_and_cleans_up() {
         let r = FakeRunner::new(|_, _| out(0, ""));
         let c = CliIncus::new("llmsc", &r);
-        c.build_image("images:debian/12", "my-img", "apt-get install -y git", "desc", &SilentReporter)
-            .unwrap();
+        c.build_image(
+            "images:debian/12",
+            "my-img",
+            "apt-get install -y git",
+            "desc",
+            &SilentReporter,
+        )
+        .unwrap();
         assert!(r.called_with("launch"));
         assert!(r.called_with("images:debian/12"));
         assert!(r.called_with("publish"));
@@ -1362,7 +1490,13 @@ mod tests {
     #[test]
     fn build_image_errors_when_publish_fails() {
         // launch/exec ok (exit 0); publish fails (exit 1).
-        let r = FakeRunner::new(|_, args| if args.contains(&"publish") { out(1, "") } else { out(0, "") });
+        let r = FakeRunner::new(|_, args| {
+            if args.contains(&"publish") {
+                out(1, "")
+            } else {
+                out(0, "")
+            }
+        });
         let c = CliIncus::new("llmsc", &r);
         assert!(c
             .build_image("images:debian/12", "x", "", "", &SilentReporter)
@@ -1396,7 +1530,8 @@ mod tests {
         spec.ephemeral = true;
         spec.description = Some("dev box".into());
         spec.profiles = vec!["sandbox".into(), "net-egress-filtered".into()];
-        spec.config.insert("cloud-init.user-data".into(), "#cloud-config".into());
+        spec.config
+            .insert("cloud-init.user-data".into(), "#cloud-config".into());
         let mut work = std::collections::BTreeMap::new();
         work.insert("type".into(), "disk".into());
         work.insert("source".into(), "/home/colin/proj".into());
@@ -1421,7 +1556,13 @@ mod tests {
     #[test]
     fn launch_via_cli_uses_rendered_args() {
         // `info` (the exists check) non-zero so launch proceeds; everything else ok.
-        let r = FakeRunner::new(|_, args| if args.contains(&"info") { out(1, "") } else { out(0, "") });
+        let r = FakeRunner::new(|_, args| {
+            if args.contains(&"info") {
+                out(1, "")
+            } else {
+                out(0, "")
+            }
+        });
         let c = CliIncus::new("llmsc", &r);
         c.launch(&sb("web-agent-01"), &SilentReporter).unwrap();
         assert!(r.called_with("launch"));
@@ -1515,7 +1656,10 @@ mod tests {
         assert_eq!(s[0].name, "before-deploy"); // "<instance>/" prefix stripped
         assert_eq!(s[0].created, "2026-06-04");
         assert!(s[1].stateful);
-        assert!(matches!(parse_snapshots(json, "missing"), Err(Error::NotFound(_))));
+        assert!(matches!(
+            parse_snapshots(json, "missing"),
+            Err(Error::NotFound(_))
+        ));
     }
 
     #[test]
@@ -1548,17 +1692,24 @@ mod tests {
         assert_eq!(i.status, InstanceStatus::Running);
         assert!(i.ephemeral);
         assert_eq!(i.profiles, vec!["default", "sandbox"]);
-        assert_eq!(i.config.get("security.nesting").map(String::as_str), Some("true"));
+        assert_eq!(
+            i.config.get("security.nesting").map(String::as_str),
+            Some("true")
+        );
         assert!(!i.config.contains_key("volatile.eth0.hwaddr")); // volatile filtered out
         assert_eq!(i.devices["work"]["source"], "/home/colin/proj");
-        assert!(matches!(parse_instance(json, "missing"), Err(Error::NotFound(_))));
+        assert!(matches!(
+            parse_instance(json, "missing"),
+            Err(Error::NotFound(_))
+        ));
     }
 
     #[test]
     fn instance_mutations_call_the_right_incus_commands() {
         let r = FakeRunner::new(|_, _| out(0, ""));
         let c = CliIncus::new("llmsc", &r);
-        c.set_config("web-agent-01", "limits.processes", "512").unwrap();
+        c.set_config("web-agent-01", "limits.processes", "512")
+            .unwrap();
         c.unset_config("web-agent-01", "limits.processes").unwrap();
         let mut keys = std::collections::BTreeMap::new();
         keys.insert("type".into(), "disk".into());
@@ -1568,8 +1719,21 @@ mod tests {
         c.remove_device("web-agent-01", "work").unwrap();
         c.add_profile("web-agent-01", "net-isolated").unwrap();
         c.remove_profile("web-agent-01", "net-isolated").unwrap();
-        for needle in ["set", "unset", "device", "add", "remove", "profile", "limits.processes", "net-isolated", "source=/h/p"] {
-            assert!(r.called_with(needle), "expected an incus call containing {needle:?}");
+        for needle in [
+            "set",
+            "unset",
+            "device",
+            "add",
+            "remove",
+            "profile",
+            "limits.processes",
+            "net-isolated",
+            "source=/h/p",
+        ] {
+            assert!(
+                r.called_with(needle),
+                "expected an incus call containing {needle:?}"
+            );
         }
     }
 
@@ -1715,11 +1879,13 @@ mod cli_tests {
                     name: "agent-claude".into(),
                     role: UserRole::Agent,
                     profile: Some("researcher".into()),
+                    guardrails: None,
                 },
                 User {
                     name: "operator".into(),
                     role: UserRole::Human,
                     profile: None,
+                    guardrails: None,
                 },
             ],
             ..Default::default()

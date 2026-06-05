@@ -56,7 +56,12 @@ struct EventReporter {
 
 impl Reporter for EventReporter {
     fn step(&self, msg: &str) {
-        let _ = self.app.emit("progress", ProgressPayload { msg: msg.to_string() });
+        let _ = self.app.emit(
+            "progress",
+            ProgressPayload {
+                msg: msg.to_string(),
+            },
+        );
     }
 }
 
@@ -80,7 +85,10 @@ fn status_str(s: VmStatus) -> String {
 
 #[tauri::command]
 fn vm_status() -> Result<String, String> {
-    vm_driver().status().map(status_str).map_err(|e| e.to_string())
+    vm_driver()
+        .status()
+        .map(status_str)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -168,10 +176,20 @@ fn device_name(path: &str, i: usize) -> String {
     let s: String = path
         .trim_matches('/')
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     let s = s.trim_matches('-');
-    if s.is_empty() { format!("mount{i}") } else { s.to_string() }
+    if s.is_empty() {
+        format!("mount{i}")
+    } else {
+        s.to_string()
+    }
 }
 
 #[tauri::command]
@@ -179,8 +197,10 @@ fn sandbox_launch(app: AppHandle, spec: NewSandboxSpec) -> Result<(), String> {
     let reporter = EventReporter { app };
     let incus = CliIncus::new(vm_name(), &SystemRunner);
 
-    let mut devices: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>> =
-        Default::default();
+    let mut devices: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, String>,
+    > = Default::default();
     for (i, m) in spec.mounts.iter().enumerate() {
         if m.source.trim().is_empty() || m.path.trim().is_empty() {
             continue;
@@ -213,21 +233,37 @@ fn sandbox_launch(app: AppHandle, spec: NewSandboxSpec) -> Result<(), String> {
         config.insert("limits.memory".into(), spec.memory_limit.trim().to_string());
     }
 
-    let desc = if spec.description.trim().is_empty() { None } else { Some(spec.description.trim().to_string()) };
+    let desc = if spec.description.trim().is_empty() {
+        None
+    } else {
+        Some(spec.description.trim().to_string())
+    };
     let sandbox = Sandbox {
         name: spec.name.clone(),
         image: spec.image.clone(),
         description: desc,
         nesting: spec.nesting,
         ephemeral: spec.ephemeral,
-        profiles: spec.profiles.iter().map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect(),
+        profiles: spec
+            .profiles
+            .iter()
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect(),
         config,
         devices,
         // Every sandbox gets exactly one human user (the operator); agents are added later.
-        users: vec![User { name: spec.operator.clone(), role: UserRole::Human, profile: None }],
+        users: vec![User {
+            name: spec.operator.clone(),
+            role: UserRole::Human,
+            profile: None,
+            guardrails: None,
+        }],
     };
 
-    incus.launch(&sandbox, &reporter).map_err(|e| e.to_string())?;
+    incus
+        .launch(&sandbox, &reporter)
+        .map_err(|e| e.to_string())?;
     // Persist the full intent into config (best-effort; the sandbox is already created).
     let mut cfg = load_user_config().unwrap_or_default();
     cfg.put_sandbox(sandbox);
@@ -247,16 +283,32 @@ fn operator_default() -> String {
 #[tauri::command]
 fn add_agent(app: AppHandle, sandbox: String, name: String, profile: String) -> Result<(), String> {
     let reporter = EventReporter { app };
-    let suffix = if profile.is_empty() { String::new() } else { format!(" ({profile})") };
+    let suffix = if profile.is_empty() {
+        String::new()
+    } else {
+        format!(" ({profile})")
+    };
     reporter.step(&format!("Adding agent '{name}' to {sandbox}{suffix}"));
     let incus = CliIncus::new(vm_name(), &SystemRunner);
-    incus.add_user(&sandbox, &name, false).map_err(|e| e.to_string())?;
-    // Persist the agent + its profile into config when the sandbox is config-managed.
+    incus
+        .add_user(&sandbox, &name, false)
+        .map_err(|e| e.to_string())?;
+    // Persist the agent + its profile-seeded guardrails into config (sandbox must be config-managed).
     let mut cfg = load_user_config().unwrap_or_default();
+    let guardrails = if profile.is_empty() {
+        None
+    } else {
+        llmsc_core::config::Guardrails::from_profile(&profile)
+    };
     let user = User {
         name: name.clone(),
         role: UserRole::Agent,
-        profile: if profile.is_empty() { None } else { Some(profile) },
+        profile: if profile.is_empty() {
+            None
+        } else {
+            Some(profile)
+        },
+        guardrails,
     };
     if cfg.set_sandbox_user(&sandbox, user) {
         let _ = cfg.save(&config::user_config_path());
@@ -271,7 +323,9 @@ fn remove_agent(app: AppHandle, sandbox: String, name: String) -> Result<(), Str
     let reporter = EventReporter { app };
     reporter.step(&format!("Removing agent '{name}' from {sandbox}"));
     let incus = CliIncus::new(vm_name(), &SystemRunner);
-    incus.remove_user(&sandbox, &name).map_err(|e| e.to_string())?;
+    incus
+        .remove_user(&sandbox, &name)
+        .map_err(|e| e.to_string())?;
     let mut cfg = load_user_config().unwrap_or_default();
     if cfg.remove_sandbox_user(&sandbox, &name) {
         let _ = cfg.save(&config::user_config_path());
@@ -325,7 +379,11 @@ fn incus_profile_apply(app: AppHandle, name: String) -> Result<(), String> {
     let desired = cfg
         .incus_profile(&name)
         .cloned()
-        .or_else(|| llmsc_core::config::starter_incus_profiles().into_iter().find(|p| p.name == name))
+        .or_else(|| {
+            llmsc_core::config::starter_incus_profiles()
+                .into_iter()
+                .find(|p| p.name == name)
+        })
         .ok_or_else(|| format!("unknown profile '{name}'"))?;
     CliIncus::new(vm_name(), &SystemRunner)
         .reconcile_profile(&desired, &reporter)
@@ -343,7 +401,9 @@ fn reconcile_incus_profiles(app: AppHandle) -> Result<usize, String> {
     let cfg = Config::load_effective().map_err(|e| e.to_string())?;
     let incus = CliIncus::new(vm_name(), &SystemRunner);
     for p in &cfg.incus_profiles {
-        incus.reconcile_profile(p, &reporter).map_err(|e| e.to_string())?;
+        incus
+            .reconcile_profile(p, &reporter)
+            .map_err(|e| e.to_string())?;
     }
     Ok(cfg.incus_profiles.len())
 }
@@ -364,7 +424,12 @@ fn projects() -> Result<Vec<ProjectDto>, String> {
     let ps = incus.projects().map_err(|e| e.to_string())?;
     Ok(ps
         .into_iter()
-        .map(|p| ProjectDto { name: p.name, description: p.description, used_by: p.used_by, config: p.config })
+        .map(|p| ProjectDto {
+            name: p.name,
+            description: p.description,
+            used_by: p.used_by,
+            config: p.config,
+        })
         .collect())
 }
 
@@ -404,7 +469,12 @@ fn storage() -> Result<Vec<StoragePoolDto>, String> {
             volumes: p
                 .volumes
                 .into_iter()
-                .map(|v| StorageVolumeDto { name: v.name, vtype: v.vtype, used_by: v.used_by, config: v.config })
+                .map(|v| StorageVolumeDto {
+                    name: v.name,
+                    vtype: v.vtype,
+                    used_by: v.used_by,
+                    config: v.config,
+                })
                 .collect(),
         })
         .collect())
@@ -476,7 +546,12 @@ fn instance_config(name: String) -> Result<InstanceConfigDto, String> {
     let i = incus.instance(&name).map_err(|e| e.to_string())?;
     Ok(InstanceConfigDto {
         name: i.name,
-        status: if i.status == InstanceStatus::Running { "running" } else { "stopped" }.to_string(),
+        status: if i.status == InstanceStatus::Running {
+            "running"
+        } else {
+            "stopped"
+        }
+        .to_string(),
         description: i.description,
         ephemeral: i.ephemeral,
         profiles: i.profiles,
@@ -514,7 +589,11 @@ fn snapshots(name: String) -> Result<Vec<SnapshotDto>, String> {
         .snapshots(&name)
         .map_err(|e| e.to_string())?
         .into_iter()
-        .map(|s| SnapshotDto { name: s.name, created: s.created, stateful: s.stateful })
+        .map(|s| SnapshotDto {
+            name: s.name,
+            created: s.created,
+            stateful: s.stateful,
+        })
         .collect())
 }
 
@@ -561,7 +640,9 @@ fn apply_sandbox(app: AppHandle, name: String) -> Result<usize, String> {
         return Ok(0);
     }
     reporter.step(&format!("Converging {name} — {n} change(s)"));
-    incus.converge(&name, &plan, &reporter).map_err(|e| e.to_string())?;
+    incus
+        .converge(&name, &plan, &reporter)
+        .map_err(|e| e.to_string())?;
     Ok(n)
 }
 
@@ -593,7 +674,12 @@ fn instance_unset_config(name: String, key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn instance_add_mount(name: String, source: String, path: String, readonly: bool) -> Result<(), String> {
+fn instance_add_mount(
+    name: String,
+    source: String,
+    path: String,
+    readonly: bool,
+) -> Result<(), String> {
     let mut keys: std::collections::BTreeMap<String, String> = Default::default();
     keys.insert("type".into(), "disk".into());
     keys.insert("source".into(), source);
@@ -655,6 +741,31 @@ fn instance_remove_profile(name: String, profile: String) -> Result<(), String> 
     Ok(())
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GuardrailsDto {
+    #[serde(default)]
+    filesystem: String,
+    #[serde(default)]
+    network: String,
+    #[serde(default)]
+    l3: bool,
+    #[serde(default)]
+    llm_budget: String,
+    #[serde(default)]
+    control_plane: String,
+}
+
+fn to_guardrails_dto(g: llmsc_core::config::Guardrails) -> GuardrailsDto {
+    GuardrailsDto {
+        filesystem: g.filesystem,
+        network: g.network,
+        l3: g.l3,
+        llm_budget: g.llm_budget,
+        control_plane: g.control_plane,
+    }
+}
+
 #[derive(Serialize)]
 struct TopoAgentDto {
     name: String,
@@ -664,6 +775,32 @@ struct TopoAgentDto {
     tools: Vec<String>,
     active: Option<String>,
     profile: Option<String>,
+    guardrails: Option<GuardrailsDto>,
+}
+
+/// Refine an agent's guardrails (config only — guardrails are presets, not yet enforced).
+#[tauri::command]
+fn set_agent_guardrails(
+    sandbox: String,
+    name: String,
+    guardrails: GuardrailsDto,
+) -> Result<(), String> {
+    let mut cfg = load_user_config().unwrap_or_default();
+    let g = llmsc_core::config::Guardrails {
+        filesystem: guardrails.filesystem,
+        network: guardrails.network,
+        l3: guardrails.l3,
+        llm_budget: guardrails.llm_budget,
+        control_plane: guardrails.control_plane,
+    };
+    if cfg.set_user_guardrails(&sandbox, &name, g) {
+        cfg.save(&config::user_config_path())
+            .map_err(|e| e.to_string())
+    } else {
+        Err(format!(
+            "agent '{name}' not found in config-managed sandbox '{sandbox}'"
+        ))
+    }
 }
 
 #[derive(Serialize)]
@@ -709,7 +846,11 @@ fn topology() -> Result<Vec<TopoSandboxDto>, String> {
                 status: if running { "running" } else { "stopped" }.to_string(),
                 l3: s.nesting,
                 cpu: "—".to_string(),
-                mem: if running { fmt_mem(s.mem_bytes) } else { "—".to_string() },
+                mem: if running {
+                    fmt_mem(s.mem_bytes)
+                } else {
+                    "—".to_string()
+                },
                 image: s.image,
                 agents: s
                     .users
@@ -723,6 +864,9 @@ fn topology() -> Result<Vec<TopoSandboxDto>, String> {
                         TopoAgentDto {
                             kind: if human { "human" } else { "agent" }.to_string(),
                             profile: cu.and_then(|c| c.profile.clone()),
+                            guardrails: cu
+                                .and_then(|c| c.guardrails.clone())
+                                .map(to_guardrails_dto),
                             name: u.name,
                             state: "idle".to_string(),
                             action: String::new(),
@@ -821,12 +965,23 @@ fn networking() -> Result<NetworkingDto, String> {
     Ok(NetworkingDto {
         networks: networks
             .into_iter()
-            .map(|n| NetworkDto { name: n.name, kind: n.kind, ipv4: n.ipv4, nat: n.nat, used_by: n.used_by })
+            .map(|n| NetworkDto {
+                name: n.name,
+                kind: n.kind,
+                ipv4: n.ipv4,
+                nat: n.nat,
+                used_by: n.used_by,
+            })
             .collect(),
         sandboxes: sandboxes
             .into_iter()
             .map(|s| SandboxNetDto {
-                status: if s.status == InstanceStatus::Running { "running" } else { "stopped" }.to_string(),
+                status: if s.status == InstanceStatus::Running {
+                    "running"
+                } else {
+                    "stopped"
+                }
+                .to_string(),
                 networks: s.networks,
                 ipv4: s.ipv4,
                 name: s.name,
@@ -861,7 +1016,11 @@ fn to_image_dto(i: llmsc_core::incus::ImageRecord) -> ImageDto {
             1 => "1 sandbox".to_string(),
             n => format!("{n} sandboxes"),
         },
-        updated: if i.uploaded.is_empty() { "—".to_string() } else { i.uploaded },
+        updated: if i.uploaded.is_empty() {
+            "—".to_string()
+        } else {
+            i.uploaded
+        },
     }
 }
 
@@ -878,7 +1037,11 @@ fn build_image(
 ) -> Result<(), String> {
     let reporter = EventReporter { app };
     let mut setup = String::new();
-    let pkgs: Vec<&str> = packages.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+    let pkgs: Vec<&str> = packages
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|s| !s.is_empty())
+        .collect();
     if !pkgs.is_empty() {
         let list = pkgs.join(" ");
         setup.push_str(&format!(
@@ -914,7 +1077,9 @@ fn images() -> Result<Vec<ImageDto>, String> {
 fn images_available() -> Result<Vec<ImageDto>, String> {
     let runner = SystemRunner;
     let incus = CliIncus::new(vm_name(), &runner);
-    Ok(container_images(incus.images_remote("images").map_err(|e| e.to_string())?))
+    Ok(container_images(
+        incus.images_remote("images").map_err(|e| e.to_string())?,
+    ))
 }
 
 #[derive(Serialize)]
@@ -953,14 +1118,16 @@ fn service_enable(name: String) -> Result<(), String> {
     let entry = service::lookup(&name).ok_or_else(|| format!("unknown service '{name}'"))?;
     let mut cfg = load_user_config()?;
     cfg.enable_service(&name, entry.default_placement);
-    cfg.save(&config::user_config_path()).map_err(|e| e.to_string())
+    cfg.save(&config::user_config_path())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn service_disable(name: String) -> Result<(), String> {
     let mut cfg = load_user_config()?;
     cfg.disable_service(&name);
-    cfg.save(&config::user_config_path()).map_err(|e| e.to_string())
+    cfg.save(&config::user_config_path())
+        .map_err(|e| e.to_string())
 }
 
 /// Provision (stand up) a single enabled service in the VM. Only services with a deployer are
@@ -1007,7 +1174,8 @@ fn platform_init(app: AppHandle, cfg: SetupCfg) -> Result<(), String> {
             c.enable_service(s, entry.default_placement);
         }
     }
-    c.save(&config::user_config_path()).map_err(|e| e.to_string())?;
+    c.save(&config::user_config_path())
+        .map_err(|e| e.to_string())?;
     reporter.step("Wrote configuration");
     let name = c.vm.name.clone();
     LimaVmDriver::new(c.vm, SystemRunner)
@@ -1054,6 +1222,7 @@ pub fn run() {
             operator_default,
             add_agent,
             remove_agent,
+            set_agent_guardrails,
             profiles,
             incus_profiles,
             storage,

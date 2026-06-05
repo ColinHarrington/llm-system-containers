@@ -132,11 +132,15 @@ impl<R: CommandRunner> LimaVmDriver<R> {
 
     /// Read live CPU/memory/disk usage from inside the VM. Requires the VM to be running.
     pub fn resources(&self) -> Result<VmResources> {
-        let o = self
-            .runner
-            .run("limactl", &["shell", &self.cfg.name, "sh", "-c", RESOURCES_SCRIPT])?;
+        let o = self.runner.run(
+            "limactl",
+            &["shell", &self.cfg.name, "sh", "-c", RESOURCES_SCRIPT],
+        )?;
         if !o.ok() {
-            return Err(Error::Vm(format!("reading VM resources: {}", o.stderr.trim())));
+            return Err(Error::Vm(format!(
+                "reading VM resources: {}",
+                o.stderr.trim()
+            )));
         }
         parse_resources(&o.stdout)
     }

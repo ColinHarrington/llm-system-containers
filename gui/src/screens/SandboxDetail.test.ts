@@ -2,9 +2,10 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { removeAgent, instanceRemoveProfile } = vi.hoisted(() => ({
+const { removeAgent, instanceRemoveProfile, setAgentGuardrails } = vi.hoisted(() => ({
   removeAgent: vi.fn(async () => {}),
   instanceRemoveProfile: vi.fn(async () => {}),
+  setAgentGuardrails: vi.fn(async () => {}),
 }));
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
@@ -27,6 +28,7 @@ vi.mock("../lib/core", () => ({
   snapshotCreate: vi.fn(async () => {}),
   snapshotRestore: vi.fn(async () => {}),
   snapshotDelete: vi.fn(async () => {}),
+  setAgentGuardrails,
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",
@@ -63,6 +65,16 @@ describe("SandboxDetail", () => {
     // Remove agent (the human has no remove button, so there's exactly one).
     await fireEvent.click(screen.getByTitle("Remove agent"));
     expect(removeAgent).toHaveBeenCalledWith("web-agent-01", "agent-claude");
+  });
+
+  it("refines an agent's guardrails", async () => {
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    await screen.findByText("agent-claude");
+    // The agent row has a Guardrails button (the human operator does not).
+    await fireEvent.click(screen.getByTitle("Guardrails"));
+    await fireEvent.click(screen.getByRole("button", { name: /Save guardrails/ }));
+    expect(setAgentGuardrails).toHaveBeenCalledWith("web-agent-01", "agent-claude", expect.any(Object));
   });
 
   it("edits the live Incus surface (remove a profile)", async () => {

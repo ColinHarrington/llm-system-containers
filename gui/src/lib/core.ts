@@ -9,6 +9,7 @@
 import type {
   AgentInfo,
   HostResources,
+  Guardrails,
   ImageInfo,
   IncusProfileInfo,
   InstanceConfig,
@@ -304,6 +305,12 @@ export async function starterIncusProfiles(): Promise<IncusProfileInfo[]> {
 export async function applyIncusProfile(name: string): Promise<void> {
   if (inTauri()) return invokeCmd<void>("incus_profile_apply", { name });
   await mockSteps([`Creating Incus profile '${name}'`, `${name}: set …`], 180);
+}
+
+// Refine an agent's guardrails (config-only; not yet enforced).
+export async function setAgentGuardrails(sandbox: string, name: string, guardrails: Guardrails): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("set_agent_guardrails", { sandbox, name, guardrails });
+  await delay(80);
 }
 
 // The shipped agent-profile archetypes (definition layer).

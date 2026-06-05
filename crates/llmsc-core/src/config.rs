@@ -48,7 +48,11 @@ pub struct Config {
     #[serde(default, rename = "service", skip_serializing_if = "Vec::is_empty")]
     pub services: Vec<Service>,
     /// TOML-owned Incus profiles (config+device composition bundles) reconciled into the project.
-    #[serde(default, rename = "incus_profile", skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        rename = "incus_profile",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub incus_profiles: Vec<IncusProfile>,
 }
 
@@ -227,20 +231,56 @@ impl Sandbox {
 }
 
 /// A Linux user inside a sandbox (one per agent, plus a human operator).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     pub name: String,
     pub role: UserRole,
-    /// The agent profile assigned to this user (archetype name). None for the human operator.
+    /// The agent profile this user's guardrails were *seeded from* (provenance). None for the
+    /// human operator. The profile is a seed, not a live link — guardrails diverge once refined.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// The agent's own guardrails — concrete, per-agent, editable. Seeded from `profile` at
+    /// creation, then refined independently. None for the human operator (unrestricted).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guardrails: Option<Guardrails>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UserRole {
+    #[default]
     Agent,
     Human,
+}
+
+/// An agent's guardrails — the legible permission bundle (the axes of an agent profile), held
+/// per-agent so it can be refined after being seeded from a profile. Presets, not enforcement:
+/// compiling these to Tetragon / Incus ACLs / LiteLLM is later work (see `planning/agent-profiles.md`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Guardrails {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub filesystem: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub network: String,
+    #[serde(default)]
+    pub l3: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub llm_budget: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub control_plane: String,
+}
+
+impl Guardrails {
+    /// Seed guardrails from an agent-profile archetype (its axes). None if the profile is unknown.
+    pub fn from_profile(name: &str) -> Option<Self> {
+        crate::profile::lookup(name).map(|p| Guardrails {
+            filesystem: p.filesystem.to_string(),
+            network: p.network.to_string(),
+            l3: p.l3,
+            llm_budget: p.llm_budget.to_string(),
+            control_plane: p.control_plane.to_string(),
+        })
+    }
 }
 
 impl Config {
@@ -311,7 +351,11 @@ impl Config {
 
     /// Insert/replace a TOML-owned Incus profile by name.
     pub fn put_incus_profile(&mut self, profile: IncusProfile) {
-        match self.incus_profiles.iter().position(|p| p.name == profile.name) {
+        match self
+            .incus_profiles
+            .iter()
+            .position(|p| p.name == profile.name)
+        {
             Some(i) => self.incus_profiles[i] = profile,
             None => self.incus_profiles.push(profile),
         }
@@ -332,6 +376,20 @@ impl Config {
                 s.set_user(user);
                 true
             }
+            None => false,
+        }
+    }
+
+    /// Set an agent's guardrails in a declared sandbox. Returns false if the user isn't found.
+    pub fn set_user_guardrails(&mut self, sandbox: &str, user: &str, g: Guardrails) -> bool {
+        match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
+            Some(s) => match s.users.iter_mut().find(|u| u.name == user) {
+                Some(u) => {
+                    u.guardrails = Some(g);
+                    true
+                }
+                None => false,
+            },
             None => false,
         }
     }
@@ -443,11 +501,13 @@ mod tests {
                         name: "agent-claude".into(),
                         role: UserRole::Agent,
                         profile: None,
+                        guardrails: None,
                     },
                     User {
                         name: "operator".into(),
                         role: UserRole::Human,
                         profile: None,
+                        guardrails: None,
                     },
                 ],
                 ..Default::default()
@@ -523,7 +583,10 @@ mod tests {
             profiles: vec!["sandbox".into(), "net-egress-filtered".into()],
             ..Default::default()
         };
-        sb.config.insert("cloud-init.user-data".into(), "#cloud-config\npackages:\n- git".into());
+        sb.config.insert(
+            "cloud-init.user-data".into(),
+            "#cloud-config\npackages:\n- git".into(),
+        );
         let mut work = BTreeMap::new();
         work.insert("type".into(), "disk".into());
         work.insert("source".into(), "/h/p".into());
@@ -548,11 +611,21 @@ mod tests {
         c.upsert_sandbox("web-agent-01", "images:debian/12", true);
         assert!(c.set_sandbox_user(
             "web-agent-01",
-            User { name: "colin".into(), role: UserRole::Human, profile: None },
+            User {
+                name: "colin".into(),
+                role: UserRole::Human,
+                profile: None,
+                guardrails: None
+            },
         ));
         assert!(c.set_sandbox_user(
             "web-agent-01",
-            User { name: "agent-claude".into(), role: UserRole::Agent, profile: Some("builder".into()) },
+            User {
+                name: "agent-claude".into(),
+                role: UserRole::Agent,
+                profile: Some("builder".into()),
+                guardrails: None
+            },
         ));
         let sb = c.sandbox("web-agent-01").unwrap();
         assert_eq!(sb.image, "images:debian/12");
@@ -560,27 +633,96 @@ mod tests {
         // Re-assigning a user replaces (no dup), and updates the profile.
         c.set_sandbox_user(
             "web-agent-01",
-            User { name: "agent-claude".into(), role: UserRole::Agent, profile: Some("tester".into()) },
+            User {
+                name: "agent-claude".into(),
+                role: UserRole::Agent,
+                profile: Some("tester".into()),
+                guardrails: None,
+            },
         );
         let sb = c.sandbox("web-agent-01").unwrap();
         assert_eq!(sb.users.len(), 2);
         assert_eq!(sb.users[1].profile.as_deref(), Some("tester"));
         // Unknown sandbox -> no-op false.
-        assert!(!c.set_sandbox_user("nope", User { name: "x".into(), role: UserRole::Agent, profile: None }));
+        assert!(!c.set_sandbox_user(
+            "nope",
+            User {
+                name: "x".into(),
+                role: UserRole::Agent,
+                profile: None,
+                guardrails: None
+            }
+        ));
         // put_sandbox replaces by name (no dup).
-        c.put_sandbox(Sandbox { name: "web-agent-01".into(), image: "images:alpine/3.21".into(), ..Default::default() });
+        c.put_sandbox(Sandbox {
+            name: "web-agent-01".into(),
+            image: "images:alpine/3.21".into(),
+            ..Default::default()
+        });
         assert_eq!(c.sandboxes.len(), 1);
-        assert_eq!(c.sandbox("web-agent-01").unwrap().image, "images:alpine/3.21");
+        assert_eq!(
+            c.sandbox("web-agent-01").unwrap().image,
+            "images:alpine/3.21"
+        );
         assert!(c.sandbox("web-agent-01").unwrap().users.is_empty()); // replaced wholesale
-        // Re-establish users for the remove test below (operator + one agent).
-        c.set_sandbox_user("web-agent-01", User { name: "colin".into(), role: UserRole::Human, profile: None });
-        c.set_sandbox_user("web-agent-01", User { name: "agent-claude".into(), role: UserRole::Agent, profile: None });
+                                                                      // Re-establish users for the remove test below (operator + one agent).
+        c.set_sandbox_user(
+            "web-agent-01",
+            User {
+                name: "colin".into(),
+                role: UserRole::Human,
+                profile: None,
+                guardrails: None,
+            },
+        );
+        c.set_sandbox_user(
+            "web-agent-01",
+            User {
+                name: "agent-claude".into(),
+                role: UserRole::Agent,
+                profile: None,
+                guardrails: None,
+            },
+        );
         // Remove an agent user.
         assert!(c.remove_sandbox_user("web-agent-01", "agent-claude"));
         assert_eq!(c.sandbox("web-agent-01").unwrap().users.len(), 1);
         assert!(!c.remove_sandbox_user("web-agent-01", "agent-claude")); // already gone
         assert!(c.remove_sandbox("web-agent-01"));
         assert!(c.sandbox("web-agent-01").is_none());
+    }
+
+    #[test]
+    fn guardrails_seed_from_profile_then_refine() {
+        // Seed from an agent-profile archetype.
+        let g = Guardrails::from_profile("researcher").unwrap();
+        assert!(!g.network.is_empty());
+        assert!(!g.l3); // researcher: nesting off
+        assert!(Guardrails::from_profile("nope").is_none());
+
+        let mut c = Config::default();
+        c.upsert_sandbox("sb", "images:alpine/3.21", false);
+        c.set_sandbox_user(
+            "sb",
+            User {
+                name: "agent-claude".into(),
+                role: UserRole::Agent,
+                profile: Some("researcher".into()),
+                guardrails: Guardrails::from_profile("researcher"),
+            },
+        );
+        // Refine the agent's own guardrails (diverges from the seed profile).
+        assert!(c.set_user_guardrails(
+            "sb",
+            "agent-claude",
+            Guardrails {
+                network: "none".into(),
+                ..Default::default()
+            }
+        ));
+        let u = &c.sandbox("sb").unwrap().users[0];
+        assert_eq!(u.guardrails.as_ref().unwrap().network, "none");
+        assert!(!c.set_user_guardrails("sb", "missing", Guardrails::default()));
     }
 
     #[test]
@@ -637,7 +779,12 @@ mod tests {
             prop_oneof![Just(UserRole::Agent), Just(UserRole::Human)],
             prop_oneof![Just(None), arb_name().prop_map(Some)],
         )
-            .prop_map(|(name, role, profile)| User { name, role, profile })
+            .prop_map(|(name, role, profile)| User {
+                name,
+                role,
+                profile,
+                guardrails: None,
+            })
     }
 
     fn arb_sandbox() -> impl Strategy<Value = Sandbox> {
@@ -671,15 +818,18 @@ mod tests {
                 disk_gib,
                 driver,
             });
-        (arb_name(), vm, proptest::collection::vec(arb_sandbox(), 0..3)).prop_map(
-            |(operator, vm, sandboxes)| Config {
+        (
+            arb_name(),
+            vm,
+            proptest::collection::vec(arb_sandbox(), 0..3),
+        )
+            .prop_map(|(operator, vm, sandboxes)| Config {
                 operator,
                 vm,
                 sandboxes,
                 services: vec![],
                 incus_profiles: vec![],
-            },
-        )
+            })
     }
 
     proptest! {

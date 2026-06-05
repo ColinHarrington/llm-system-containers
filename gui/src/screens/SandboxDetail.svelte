@@ -1,13 +1,14 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
+  import Modal from "../lib/Modal.svelte";
   import { ui, navigate, bump, openTerminal, showToast } from "../lib/store.svelte";
   import {
     topology, removeSandbox, removeAgent, instanceConfig,
     instanceSetConfig, instanceUnsetConfig, instanceAddMount, instanceRemoveDevice,
     instanceAddProfile, instanceRemoveProfile, applySandbox, instanceYaml,
-    listSnapshots, snapshotCreate, snapshotRestore, snapshotDelete,
+    listSnapshots, snapshotCreate, snapshotRestore, snapshotDelete, setAgentGuardrails,
   } from "../lib/core";
-  import type { InstanceConfig, SnapshotInfo, TopoSandbox } from "../lib/types";
+  import type { Guardrails, InstanceConfig, SnapshotInfo, TopoAgent, TopoSandbox } from "../lib/types";
 
   let all = $state<TopoSandbox[]>([]);
   let inst = $state<InstanceConfig | null>(null);
@@ -70,6 +71,29 @@
     } catch (e) {
       showToast(String(e), "danger");
     } finally { snapBusy = null; }
+  }
+
+  // Guardrails editor
+  let gAgent = $state<string | null>(null);
+  let gForm = $state<Guardrails>({ filesystem: "", network: "", l3: false, llmBudget: "", controlPlane: "" });
+  let gBusy = $state(false);
+  function openGuardrails(u: TopoAgent) {
+    gAgent = u.name;
+    gForm = u.guardrails
+      ? { ...u.guardrails }
+      : { filesystem: "", network: "", l3: false, llmBudget: "", controlPlane: "" };
+  }
+  async function saveGuardrails() {
+    if (!sb || !gAgent) return;
+    gBusy = true;
+    try {
+      await setAgentGuardrails(sb.name, gAgent, gForm);
+      showToast(`Guardrails updated for ${gAgent}`, "ok");
+      gAgent = null;
+      bump();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { gBusy = false; }
   }
 
   async function removeUser(agent: string) {
@@ -195,6 +219,7 @@
                   <td style="text-align:right; white-space:nowrap">
                     <button class="btn sm" title="Open shell" onclick={() => openTerminal(`${u.name}@${sb.name}`)}><Icon name="terminal" size={13} /></button>
                     {#if u.kind !== "human"}
+                      <button class="btn sm" title="Guardrails" onclick={() => openGuardrails(u)}><Icon name="shield" size={13} /></button>
                       <button class="btn sm danger" title="Remove agent" onclick={() => removeUser(u.name)} disabled={userBusy === u.name}><Icon name="x" size={13} /></button>
                     {/if}
                   </td>
@@ -317,6 +342,32 @@
     <p class="xsmall muted mt12">Live per-agent activity (sessions, trace, tokens) is not instrumented yet.</p>
   {/if}
 </div>
+
+{#if gAgent}
+  <Modal title={`Guardrails · ${gAgent}`} maxWidth={520} onclose={() => (gAgent = null)}>
+    {#snippet body()}
+      <p class="hint mb16">An agent's permission bundle — seeded from a profile, refined here. Presets, not yet enforced (Tetragon / Incus ACLs / LiteLLM are the backstops).</p>
+      <div class="field mb12"><label for="g-fs">Filesystem</label>
+        <input id="g-fs" class="input" bind:value={gForm.filesystem} placeholder="RO repo + docs, RW scratch" /></div>
+      <div class="field mb12"><label for="g-net">Network egress</label>
+        <input id="g-net" class="input" bind:value={gForm.network} placeholder="Web/docs allowlist via mitmproxy" /></div>
+      <div class="field mb12"><label for="g-llm">LLM budget</label>
+        <input id="g-llm" class="input mono" bind:value={gForm.llmBudget} placeholder="generous / medium / small" /></div>
+      <div class="field mb12"><label for="g-cp">Control-plane</label>
+        <input id="g-cp" class="input" bind:value={gForm.controlPlane} placeholder="none" /></div>
+      <div class="flex gap12" style="align-items:flex-start">
+        <label class="switch"><input type="checkbox" bind:checked={gForm.l3} /><span class="track"></span></label>
+        <div><div class="strong small">Nested containers (L3)</div><div class="hint">Allow rootless Docker/Podman.</div></div>
+      </div>
+    {/snippet}
+    {#snippet foot()}
+      <button class="btn" onclick={() => (gAgent = null)}>Cancel</button>
+      <button class="btn primary" onclick={saveGuardrails} disabled={gBusy}>
+        <Icon name="shield" size={15} /><span>{gBusy ? "Saving…" : "Save guardrails"}</span>
+      </button>
+    {/snippet}
+  </Modal>
+{/if}
 
 <style>
   .hico { width: 44px; height: 44px; border-radius: 11px; background: var(--accent-dim); color: var(--accent-text); display: grid; place-items: center; flex: none; }
