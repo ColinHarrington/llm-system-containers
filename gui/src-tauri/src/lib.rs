@@ -1699,6 +1699,27 @@ fn service_list() -> Result<Vec<ServiceDto>, String> {
         .collect())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServiceStateDto {
+    name: String,
+    /// "running" | "stopped" | "not-provisioned"
+    state: String,
+}
+
+/// Live container state for each catalog service (running / stopped / not-provisioned).
+#[tauri::command]
+fn service_states() -> Result<Vec<ServiceStateDto>, String> {
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    Ok(service::catalog()
+        .iter()
+        .map(|e| ServiceStateDto {
+            name: e.name.to_string(),
+            state: incus.service_status(e.name).id().to_string(),
+        })
+        .collect())
+}
+
 fn load_user_config() -> Result<Config, String> {
     let path = config::user_config_path();
     if path.exists() {
@@ -1877,6 +1898,7 @@ pub fn run() {
             build_image,
             networking,
             service_list,
+            service_states,
             service_enable,
             service_disable,
             service_up,

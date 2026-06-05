@@ -29,6 +29,8 @@ export interface ServiceEntry {
   enabled: boolean;
 }
 
+export type ServiceState = "running" | "stopped" | "not-provisioned";
+
 export interface ProfileInfo {
   name: string;
   summary: string;

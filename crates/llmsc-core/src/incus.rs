@@ -17,6 +17,28 @@ pub enum InstanceStatus {
     Stopped,
 }
 
+/// Live state of a service's container.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceState {
+    /// The `svc-<name>` container does not exist.
+    NotProvisioned,
+    /// Provisioned but the container is stopped.
+    Stopped,
+    /// Provisioned and running.
+    Running,
+}
+
+impl ServiceState {
+    /// Stable kebab-case id for DTOs / display.
+    pub fn id(&self) -> &'static str {
+        match self {
+            ServiceState::NotProvisioned => "not-provisioned",
+            ServiceState::Stopped => "stopped",
+            ServiceState::Running => "running",
+        }
+    }
+}
+
 /// Deserialize a field that may be `null` (or absent) as `T::default()`. Incus `--format json`
 /// emits `null` rather than `[]`/`{}` for empty collections in places (notably remote image
 /// `aliases`/`used_by`), which plain `#[serde(default)]` does not tolerate.
@@ -1185,6 +1207,17 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         parse_instance(&o.stdout, name)
     }
 
+    /// Live status of a service's container (`svc-<service>`): provisioned & running, provisioned
+    /// but stopped, or not provisioned at all.
+    pub fn service_status(&self, service: &str) -> ServiceState {
+        let container = crate::service::container_name(service);
+        match self.instance(&container) {
+            Ok(i) if i.status == InstanceStatus::Running => ServiceState::Running,
+            Ok(_) => ServiceState::Stopped,
+            Err(_) => ServiceState::NotProvisioned,
+        }
+    }
+
     /// Reconcile a TOML-owned Incus profile into the project: create it if missing, then converge
     /// its config + devices toward the declared intent.
     pub fn reconcile_profile(
@@ -2340,6 +2373,30 @@ mod tests {
         let c = CliIncus::new("llmsc", &r);
         // "already exists" is swallowed; a real failure would propagate.
         c.network_acl_create("llmsc-egress-x").unwrap();
+    }
+
+    #[test]
+    fn service_status_reflects_container_state() {
+        // Not provisioned: `incus list svc-litellm` → empty.
+        let r = FakeRunner::new(|_, _| out(0, "[]"));
+        assert_eq!(
+            CliIncus::new("llmsc", &r).service_status("litellm"),
+            ServiceState::NotProvisioned
+        );
+        // Running.
+        let running = r#"[{"name":"svc-litellm","status":"Running","config":{},"expanded_devices":{},"devices":{}}]"#;
+        let r2 = FakeRunner::new(move |_, _| out(0, running));
+        assert_eq!(
+            CliIncus::new("llmsc", &r2).service_status("litellm"),
+            ServiceState::Running
+        );
+        // Stopped.
+        let stopped = r#"[{"name":"svc-litellm","status":"Stopped","config":{},"expanded_devices":{},"devices":{}}]"#;
+        let r3 = FakeRunner::new(move |_, _| out(0, stopped));
+        assert_eq!(
+            CliIncus::new("llmsc", &r3).service_status("litellm"),
+            ServiceState::Stopped
+        );
     }
 
     #[test]

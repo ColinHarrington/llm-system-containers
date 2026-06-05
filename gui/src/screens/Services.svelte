@@ -3,13 +3,14 @@
   import { bump } from "../lib/store.svelte";
   import {
     listServices, setService, provisionService, listVirtualKeys, syncVirtualKeys, setProviderKey,
-    DEPLOYABLE_SERVICES, SERVICE_META,
+    serviceStates, DEPLOYABLE_SERVICES, SERVICE_META,
   } from "../lib/core";
   import { ui, showToast } from "../lib/store.svelte";
-  import type { ServiceEntry, VirtualKey } from "../lib/types";
+  import type { ServiceEntry, ServiceState, VirtualKey } from "../lib/types";
 
   let services = $state<ServiceEntry[]>([]);
   let keys = $state<VirtualKey[]>([]);
+  let states = $state<Record<string, ServiceState>>({});
   let busyName = $state<string | null>(null);
   let keysBusy = $state(false);
   let error = $state<string | null>(null);
@@ -21,6 +22,7 @@
 
   async function refresh() {
     [services, keys] = await Promise.all([listServices(), listVirtualKeys()]);
+    void serviceStates().then((s) => (states = s)).catch(() => (states = {}));
   }
 
   async function toggle(s: ServiceEntry) {
@@ -91,6 +93,13 @@
           <span class="tag">{meta(s.name).placement}</span>
           <span class="tag mono">svc-{s.name}</span>
           <span class="tag">{s.priority}</span>
+          {#if states[s.name] === "running"}
+            <span class="pill ok"><span class="dot ok pulse"></span> running</span>
+          {:else if states[s.name] === "stopped"}
+            <span class="pill warn"><span class="dot warn"></span> stopped</span>
+          {:else if states[s.name] === "not-provisioned"}
+            <span class="pill"><span class="dot muted"></span> not provisioned</span>
+          {/if}
         </div>
         <div class="flex gap8">
           {#if s.enabled && DEPLOYABLE_SERVICES.has(s.name)}

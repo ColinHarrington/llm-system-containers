@@ -22,6 +22,7 @@ import type {
   RingStatus,
   Sandbox,
   ServiceEntry,
+  ServiceState,
   SnapshotInfo,
   StoragePoolInfo,
   TetragonPolicy,
@@ -454,6 +455,16 @@ export async function setService(name: string, enabled: boolean): Promise<void> 
   if (inTauri()) return invokeCmd<void>(enabled ? "service_enable" : "service_disable", { name });
   await delay(120);
   mockServices = mockServices.map((s) => (s.name === name ? { ...s, enabled } : s));
+}
+
+// Live container state for each service (running / stopped / not-provisioned).
+export async function serviceStates(): Promise<Record<string, ServiceState>> {
+  if (inTauri()) {
+    const list = await invokeCmd<{ name: string; state: ServiceState }[]>("service_states");
+    return Object.fromEntries(list.map((s) => [s.name, s.state]));
+  }
+  await delay(80);
+  return { litellm: "running", phoenix: "not-provisioned", grafana: "not-provisioned" };
 }
 
 // Services that have a deployer in src-tauri (can be provisioned, not just toggled in config).

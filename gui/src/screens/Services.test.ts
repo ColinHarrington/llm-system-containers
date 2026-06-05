@@ -16,6 +16,7 @@ vi.mock("../lib/core", () => ({
   provisionService,
   syncVirtualKeys,
   setProviderKey,
+  serviceStates: vi.fn(async () => ({ litellm: "running" })),
   listVirtualKeys: vi.fn(async () => [
     { key: "llmsc-web-agent-01-agent-claude", assignedTo: "agent-claude @ web-agent-01", models: "all", budget: "$100 / 30d", used: "—", status: "planned" },
   ]),

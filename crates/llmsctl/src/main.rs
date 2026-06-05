@@ -83,6 +83,8 @@ enum KeysAction {
 enum ServiceAction {
     /// List available services and whether they're enabled.
     List,
+    /// Show the live container state of each service (running / stopped / not-provisioned).
+    Status,
     /// Enable a service (records it in the user config).
     Enable { name: String },
     /// Disable a service.
@@ -105,6 +107,13 @@ fn services(action: ServiceAction) -> Result<(), String> {
                     "[{mark}] {:<11} {:<9} {}",
                     e.name, e.priority, e.description
                 );
+            }
+        }
+        ServiceAction::Status => {
+            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+            let incus = llmsc_core::incus::CliIncus::new(cfg.vm.name.clone(), &SystemRunner);
+            for e in catalog() {
+                println!("{:<11} {}", e.name, incus.service_status(e.name).id());
             }
         }
         ServiceAction::Enable { name } => {
