@@ -19,6 +19,7 @@ import type {
   NetworkingData,
   ProfileInfo,
   ProjectInfo,
+  RingStatus,
   Sandbox,
   ServiceEntry,
   SnapshotInfo,
@@ -370,6 +371,25 @@ export async function setWorkspaceReadonly(sandbox: string, readonly: boolean): 
   if (inTauri()) return invokeCmd<number>("set_workspace_readonly", { sandbox, readonly });
   await delay(80);
   return 1;
+}
+
+// --- Unified enforcement overview (all rings) ---
+const MOCK_RINGS: RingStatus[] = [
+  { ring: "Egress (L3/L4)", state: "pending", detail: "allowlist · not bound" },
+  { ring: "Domains (L7)", state: "off", detail: "no domain allowlist" },
+  { ring: "Filesystem", state: "pending", detail: "read-only agent(s) · workspace RW" },
+  { ring: "Kernel (Tetragon)", state: "draft", detail: "1 policy(ies) compiled (load to apply)" },
+  { ring: "LLM keys", state: "pending", detail: "1 key(s) · not synced" },
+];
+export async function enforcementOverview(sandbox: string): Promise<RingStatus[]> {
+  if (inTauri()) return invokeCmd<RingStatus[]>("enforcement_overview", { sandbox });
+  await delay(60);
+  return MOCK_RINGS;
+}
+export async function enforceAll(sandbox: string): Promise<RingStatus[]> {
+  if (inTauri()) return invokeCmd<RingStatus[]>("enforce_all", { sandbox });
+  await mockSteps([`Enforcing egress for ${sandbox} — 2 ACL change(s)`, "Setting workspace read-only"], 160);
+  return MOCK_RINGS.map((r) => (r.state === "pending" ? { ...r, state: "enforced" as const } : r));
 }
 export async function tetragonPolicyYaml(sandbox: string, agent: string): Promise<string> {
   if (inTauri()) return invokeCmd<string>("tetragon_policy_yaml", { sandbox, agent });

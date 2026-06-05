@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly } = vi.hoisted(() => ({
+const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly, enforceAll } = vi.hoisted(() => ({
   removeAgent: vi.fn(async () => {}),
   instanceRemoveProfile: vi.fn(async () => {}),
   setAgentGuardrails: vi.fn(async () => {}),
@@ -10,6 +10,9 @@ const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy,
   applyEgress: vi.fn(async () => 2),
   applyTetragonPolicies: vi.fn(async () => 1),
   setWorkspaceReadonly: vi.fn(async () => 1),
+  enforceAll: vi.fn(async () => [
+    { ring: "Egress (L3/L4)", state: "enforced", detail: "allowlist · bound" },
+  ]),
 }));
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
@@ -49,6 +52,11 @@ vi.mock("../lib/core", () => ({
   tetragonPolicyYaml: vi.fn(async () => "kind: TracingPolicy\n"),
   applyTetragonPolicies,
   setWorkspaceReadonly,
+  enforcementOverview: vi.fn(async () => [
+    { ring: "Egress (L3/L4)", state: "pending", detail: "allowlist · not bound" },
+    { ring: "Kernel (Tetragon)", state: "draft", detail: "1 policy(ies) compiled" },
+  ]),
+  enforceAll,
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",
@@ -95,6 +103,15 @@ describe("SandboxDetail", () => {
     await fireEvent.click(screen.getByTitle("Guardrails"));
     await fireEvent.click(screen.getByRole("button", { name: /Save guardrails/ }));
     expect(setAgentGuardrails).toHaveBeenCalledWith("web-agent-01", "agent-claude", expect.any(Object));
+  });
+
+  it("shows the enforcement overview and runs enforce-all", async () => {
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    await screen.findByText("Enforcement");
+    expect(screen.getByText("Egress (L3/L4)")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: /Enforce all/ }));
+    expect(enforceAll).toHaveBeenCalledWith("web-agent-01");
   });
 
   it("shows the egress policy with its compiled ACL and enforces it", async () => {

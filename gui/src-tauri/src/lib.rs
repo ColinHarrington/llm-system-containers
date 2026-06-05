@@ -1264,6 +1264,196 @@ fn set_workspace_readonly(sandbox: String, readonly: bool) -> Result<usize, Stri
         .map_err(|e| e.to_string())
 }
 
+// --- Unified enforcement overview (all rings) ---
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RingStatusDto {
+    ring: String,
+    /// "enforced" | "pending" | "partial" | "draft" | "off"
+    state: String,
+    detail: String,
+}
+
+fn ring(name: &str, state: &str, detail: String) -> RingStatusDto {
+    RingStatusDto {
+        ring: name.to_string(),
+        state: state.to_string(),
+        detail,
+    }
+}
+
+/// Aggregate the live status of every enforcement ring for a sandbox (read-only).
+#[tauri::command]
+fn enforcement_overview(sandbox: String) -> Result<Vec<RingStatusDto>, String> {
+    use llmsc_core::config::EgressPosture;
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let sb = cfg.sandbox(&sandbox);
+    let inst = incus.instance(&sandbox).ok();
+    let acl_name = llmsc_core::enforce::egress_acl_name(&sandbox);
+    let mut rings = Vec::new();
+
+    // Egress (L3/L4).
+    let policy = sb.and_then(|s| s.egress.as_ref());
+    match policy.map(|p| p.posture) {
+        None | Some(EgressPosture::Open) => {
+            rings.push(ring("Egress (L3/L4)", "off", "unmanaged / open".into()))
+        }
+        Some(p) => {
+            let bound = inst
+                .as_ref()
+                .map(|i| {
+                    i.devices.values().any(|d| {
+                        d.get("security.acls")
+                            .map(|v| v.split(',').any(|x| x.trim() == acl_name))
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false);
+            let exists = incus
+                .network_acls()
+                .unwrap_or_default()
+                .iter()
+                .any(|a| a.name == acl_name);
+            rings.push(ring(
+                "Egress (L3/L4)",
+                if bound && exists {
+                    "enforced"
+                } else {
+                    "pending"
+                },
+                format!(
+                    "{} · {}",
+                    posture_str(p),
+                    if bound { "bound" } else { "not bound" }
+                ),
+            ));
+        }
+    }
+
+    // Domains (L7 / mitmproxy).
+    let domains = policy.map(|e| e.domains.len()).unwrap_or(0);
+    if domains == 0 {
+        rings.push(ring("Domains (L7)", "off", "no domain allowlist".into()));
+    } else {
+        let mitm_up = incus
+            .instance_ipv4(&service::container_name("mitmproxy"))
+            .is_some();
+        let proxied = inst
+            .as_ref()
+            .map(|i| i.config.contains_key("environment.HTTPS_PROXY"))
+            .unwrap_or(false);
+        let state = if mitm_up && proxied {
+            "enforced"
+        } else if proxied {
+            "partial"
+        } else {
+            "pending"
+        };
+        rings.push(ring(
+            "Domains (L7)",
+            state,
+            format!(
+                "{domains} domains · mitmproxy {}",
+                if mitm_up { "up" } else { "down" }
+            ),
+        ));
+    }
+
+    // Filesystem (workspace mount RO).
+    let pols = llmsc_core::tetragon::sandbox_policies(&cfg, &sandbox);
+    let any_ro = pols.iter().any(|p| p.read_only);
+    if !any_ro {
+        rings.push(ring("Filesystem", "off", "no read-only agents".into()));
+    } else {
+        let ws_ro = inst
+            .as_ref()
+            .map(|i| {
+                i.devices.iter().any(|(d, k)| {
+                    i.local_devices.contains(d)
+                        && k.get("type").map(String::as_str) == Some("disk")
+                        && k.get("path")
+                            .map(|p| p != "/" && !p.is_empty())
+                            .unwrap_or(false)
+                        && k.get("readonly").map(|v| v == "true").unwrap_or(false)
+                })
+            })
+            .unwrap_or(false);
+        rings.push(ring(
+            "Filesystem",
+            if ws_ro { "enforced" } else { "pending" },
+            format!(
+                "read-only agent(s) · workspace {}",
+                if ws_ro { "RO" } else { "RW" }
+            ),
+        ));
+    }
+
+    // Kernel (Tetragon) — compiled draft; loading requires Tetragon installed.
+    if pols.is_empty() {
+        rings.push(ring("Kernel (Tetragon)", "off", "no agents".into()));
+    } else {
+        rings.push(ring(
+            "Kernel (Tetragon)",
+            "draft",
+            format!("{} policy(ies) compiled (load to apply)", pols.len()),
+        ));
+    }
+
+    // LLM keys.
+    let keys = llmsc_core::enforce::virtual_key_specs(&cfg)
+        .into_iter()
+        .filter(|s| s.sandbox == sandbox)
+        .count();
+    if keys == 0 {
+        rings.push(ring("LLM keys", "off", "no agents".into()));
+    } else {
+        let synced = !LiteLlmDeployer::new(vm_name(), &SystemRunner)
+            .key_usage()
+            .unwrap_or_default()
+            .is_empty();
+        rings.push(ring(
+            "LLM keys",
+            if synced { "enforced" } else { "pending" },
+            format!(
+                "{keys} key(s) · {}",
+                if synced { "synced" } else { "not synced" }
+            ),
+        ));
+    }
+
+    Ok(rings)
+}
+
+/// Enforce every applicable ring for a sandbox, best-effort, then return the refreshed overview.
+/// Egress (L3/L4 + L7 routing) and workspace RO are applied directly; Tetragon load and key sync
+/// are attempted but tolerate a missing service.
+#[tauri::command]
+fn enforce_all(app: AppHandle, sandbox: String) -> Result<Vec<RingStatusDto>, String> {
+    let reporter = EventReporter { app };
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    if let Some(sb) = cfg.sandbox(&sandbox) {
+        let _ = incus.reconcile_egress(sb, &reporter);
+        let pols = llmsc_core::tetragon::sandbox_policies(&cfg, &sandbox);
+        if pols.iter().any(|p| p.read_only) {
+            reporter.step("Setting workspace read-only");
+            let _ = incus.set_workspace_readonly(&sandbox, true);
+        }
+        if !pols.is_empty() {
+            let _ = llmsc_core::deploy::TetragonDeployer::new(vm_name(), &SystemRunner)
+                .apply_policies(&pols, &reporter);
+        }
+        let specs = llmsc_core::enforce::virtual_key_specs(&cfg);
+        if !specs.is_empty() {
+            let _ =
+                LiteLlmDeployer::new(vm_name(), &SystemRunner).sync_virtual_keys(&specs, &reporter);
+        }
+    }
+    enforcement_overview(sandbox)
+}
+
 #[derive(Serialize)]
 struct SandboxNetDto {
     name: String,
@@ -1578,6 +1768,8 @@ pub fn run() {
             tetragon_policy_yaml,
             apply_tetragon_policies,
             set_workspace_readonly,
+            enforcement_overview,
+            enforce_all,
             images,
             images_available,
             build_image,

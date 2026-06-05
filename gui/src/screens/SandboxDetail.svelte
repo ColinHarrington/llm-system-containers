@@ -9,10 +9,11 @@
     listSnapshots, snapshotCreate, snapshotRestore, snapshotDelete, setAgentGuardrails,
     egressPolicy, setEgressPolicy, egressAclPreview, applyEgress, egressStatus,
     tetragonPolicies, tetragonPolicyYaml, applyTetragonPolicies, setWorkspaceReadonly,
+    enforcementOverview, enforceAll,
   } from "../lib/core";
   import type {
     EgressPolicy, EgressPosture, EgressStatus, Guardrails, InstanceConfig, NetworkAclInfo,
-    SnapshotInfo, TetragonPolicy, TopoAgent, TopoSandbox,
+    RingStatus, SnapshotInfo, TetragonPolicy, TopoAgent, TopoSandbox,
   } from "../lib/types";
 
   let all = $state<TopoSandbox[]>([]);
@@ -114,6 +115,30 @@
 
   const sb = $derived(all.find((s) => s.name === ui.selectedSandbox) ?? null);
   const initials = (name: string) => name.replace(/^agent-/, "").slice(0, 2).toUpperCase();
+
+  // --- Unified enforcement overview (all rings) ---
+  let rings = $state<RingStatus[]>([]);
+  let enforceBusy = $state(false);
+  $effect(() => {
+    ui.dataVersion;
+    const sel = ui.selectedSandbox;
+    rings = [];
+    if (sel) void enforcementOverview(sel).then((r) => (rings = r)).catch(() => (rings = []));
+  });
+  async function doEnforceAll() {
+    if (!sb) return;
+    enforceBusy = true;
+    showToast(`$ llmsctl enforce all ${sb.name}`);
+    try {
+      rings = await enforceAll(sb.name);
+      showToast("Enforcement applied", "ok");
+      bump();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { enforceBusy = false; }
+  }
+  const ringPill = (s: RingStatus["state"]) =>
+    s === "enforced" ? "ok" : s === "off" ? "" : "warn";
 
   // --- Network egress (per-container enforcement ring) ---
   let egress = $state<EgressPolicy | null>(null);
@@ -306,6 +331,29 @@
         <button class="btn danger" onclick={remove} disabled={busy}>{busy ? "Removing…" : "Remove"}</button>
       </div>
     </div>
+
+    <!-- Enforcement overview (all rings) -->
+    {#if rings.length > 0}
+      <div class="card mb16">
+        <div class="card-head"><h3>Enforcement</h3>
+          <span class="sub">defense-in-depth rings · live status</span>
+          <button class="btn sm primary right" disabled={enforceBusy} onclick={doEnforceAll}
+            title="Apply every applicable ring (egress + L7 + workspace RO; loads Tetragon + syncs keys best-effort)">
+            <Icon name="shield" size={13} /><span>{enforceBusy ? "Enforcing…" : "Enforce all"}</span></button>
+        </div>
+        <div class="pad">
+          <div class="rings">
+            {#each rings as r (r.ring)}
+              <div class="ringrow">
+                <span class="rname">{r.ring}</span>
+                <span class="pill {ringPill(r.state)}">{r.state}</span>
+                <span class="muted small">{r.detail}</span>
+              </div>
+            {/each}
+          </div>
+        </div>
+      </div>
+    {/if}
 
     <div class="grid g-2">
       <!-- details -->
@@ -656,4 +704,7 @@
   .addmount { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; align-items: center; }
   .addcfg { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; }
   .yaml { white-space: pre; margin: 0; }
+  .rings { display: flex; flex-direction: column; gap: 6px; }
+  .ringrow { display: grid; grid-template-columns: 150px 90px 1fr; gap: 10px; align-items: center; }
+  .ringrow .rname { font-weight: 600; font-size: 12.5px; color: var(--text); }
 </style>

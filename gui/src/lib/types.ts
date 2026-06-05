@@ -211,6 +211,12 @@ export interface EgressStatus {
 }
 
 // --- Tetragon per-UID kernel policies (the kernel ring) ---
+export interface RingStatus {
+  ring: string;
+  state: "enforced" | "pending" | "partial" | "draft" | "off";
+  detail: string;
+}
+
 export interface TetragonPolicy {
   name: string;
   agent: string;
