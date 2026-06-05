@@ -250,6 +250,82 @@ pub fn parse_instance(list_json: &str, name: &str) -> Result<InstanceConfig> {
     })
 }
 
+/// A custom storage volume in a pool.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageVolume {
+    pub name: String,
+    pub vtype: String,
+    pub used_by: usize,
+    pub config: BTreeMap<String, String>,
+}
+
+/// An Incus storage pool (and its custom volumes).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoragePool {
+    pub name: String,
+    pub driver: String,
+    pub description: String,
+    pub used_by: usize,
+    pub config: BTreeMap<String, String>,
+    pub volumes: Vec<StorageVolume>,
+}
+
+/// Parse `incus storage list --format json` into pools (volumes filled separately).
+pub fn parse_storage_pools(list_json: &str) -> Result<Vec<StoragePool>> {
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        #[serde(default, deserialize_with = "null_default")]
+        driver: String,
+        #[serde(default, deserialize_with = "null_default")]
+        description: String,
+        #[serde(default, deserialize_with = "null_default")]
+        config: BTreeMap<String, String>,
+        #[serde(default, deserialize_with = "null_default")]
+        used_by: Vec<String>,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus storage list` output: {e}")))?;
+    Ok(raw
+        .into_iter()
+        .map(|r| StoragePool {
+            used_by: r.used_by.len(),
+            name: r.name,
+            driver: r.driver,
+            description: r.description,
+            config: r.config,
+            volumes: Vec::new(),
+        })
+        .collect())
+}
+
+/// Parse `incus storage volume list <pool> --format json` into **custom** volumes only
+/// (instance/image-backing volumes are infrastructure, not user data).
+pub fn parse_storage_volumes(list_json: &str) -> Result<Vec<StorageVolume>> {
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        #[serde(rename = "type", default, deserialize_with = "null_default")]
+        vtype: String,
+        #[serde(default, deserialize_with = "null_default")]
+        config: BTreeMap<String, String>,
+        #[serde(default, deserialize_with = "null_default")]
+        used_by: Vec<String>,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus storage volume list` output: {e}")))?;
+    Ok(raw
+        .into_iter()
+        .filter(|r| r.vtype == "custom")
+        .map(|r| StorageVolume {
+            used_by: r.used_by.len(),
+            name: r.name,
+            vtype: r.vtype,
+            config: r.config,
+        })
+        .collect())
+}
+
 /// An Incus profile (a reusable bundle of `config` + `devices`) in the project.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncusProfileRecord {
@@ -838,6 +914,23 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         Ok(())
     }
 
+    /// Storage pools in the project, each with its custom volumes.
+    pub fn storage(&self) -> Result<Vec<StoragePool>> {
+        let o = self.incus_run(&["storage", "list", "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("storage list: {}", o.stderr.trim())));
+        }
+        let mut pools = parse_storage_pools(&o.stdout)?;
+        for pool in pools.iter_mut() {
+            if let Ok(v) = self.incus_run(&["storage", "volume", "list", &pool.name, "--format", "json"]) {
+                if v.ok() {
+                    pool.volumes = parse_storage_volumes(&v.stdout).unwrap_or_default();
+                }
+            }
+        }
+        Ok(pools)
+    }
+
     /// Incus profiles (config+devices composition bundles) in the project.
     pub fn incus_profiles(&self) -> Result<Vec<IncusProfileRecord>> {
         let o = self.incus_run(&["profile", "list", "--format", "json"])?;
@@ -1248,6 +1341,28 @@ mod tests {
         for needle in ["set", "unset", "device", "add", "remove", "profile", "limits.processes", "net-isolated", "source=/h/p"] {
             assert!(r.called_with(needle), "expected an incus call containing {needle:?}");
         }
+    }
+
+    #[test]
+    fn parse_storage_reads_pools_and_custom_volumes() {
+        let pools = r#"[
+          {"name":"default","driver":"dir","description":"","config":{"source":"/var/lib/incus/x"},
+           "used_by":["/1.0/instances/web-agent-01"]}
+        ]"#;
+        let p = parse_storage_pools(pools).unwrap();
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].driver, "dir");
+        assert_eq!(p[0].used_by, 1);
+        assert_eq!(p[0].config["source"], "/var/lib/incus/x");
+
+        let vols = r#"[
+          {"name":"web-agent-01","type":"container","config":{},"used_by":["x"]},
+          {"name":"shared-data","type":"custom","config":{"size":"10GiB"},"used_by":[]}
+        ]"#;
+        let v = parse_storage_volumes(vols).unwrap();
+        assert_eq!(v.len(), 1, "only custom volumes are surfaced");
+        assert_eq!(v[0].name, "shared-data");
+        assert_eq!(v[0].config["size"], "10GiB");
     }
 
     #[test]

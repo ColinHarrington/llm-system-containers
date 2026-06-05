@@ -4,6 +4,7 @@
   import IncusProfiles from "./IncusProfiles.svelte";
   import Networking from "./Networking.svelte";
   import Images from "./Images.svelte";
+  import Storage from "./Storage.svelte";
 
   const tabs: { id: IncusTab; label: string }[] = [
     { id: "profiles", label: "Profiles" },
@@ -29,10 +30,7 @@
 {:else if ui.incusTab === "images"}
   <Images />
 {:else if ui.incusTab === "storage"}
-  <div class="content">
-    <div class="card"><div class="empty"><div class="icon"><Icon name="store" size={24} /></div>
-      Storage pools &amp; volumes — coming soon (<span class="mono">incus storage</span> / <span class="mono">incus storage volume</span>).</div></div>
-  </div>
+  <Storage />
 {:else if ui.incusTab === "project"}
   <div class="content">
     <div class="card"><div class="empty"><div class="icon"><Icon name="layers" size={24} /></div>

@@ -7,6 +7,7 @@ vi.mock("../lib/core", () => ({
   listIncusProfiles: vi.fn(async () => []),
   starterIncusProfiles: vi.fn(async () => []),
   applyIncusProfile: vi.fn(async () => {}),
+  listStorage: vi.fn(async () => []),
 }));
 
 import { ui } from "../lib/store.svelte";
@@ -20,6 +21,6 @@ describe("Incus", () => {
       expect(screen.getByRole("button", { name: t })).toBeInTheDocument();
     }
     await fireEvent.click(screen.getByRole("button", { name: "Storage" }));
-    expect(await screen.findByText(/Storage pools/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/storage pools/i)).length).toBeGreaterThan(0);
   });
 });

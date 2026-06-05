@@ -39,6 +39,22 @@ export interface ProfileInfo {
   controlPlane: string;
 }
 
+export interface StorageVolumeInfo {
+  name: string;
+  vtype: string;
+  usedBy: number;
+  config: Record<string, string>;
+}
+
+export interface StoragePoolInfo {
+  name: string;
+  driver: string;
+  description: string;
+  usedBy: number;
+  config: Record<string, string>;
+  volumes: StorageVolumeInfo[];
+}
+
 export interface IncusProfileInfo {
   name: string;
   description: string;

@@ -342,6 +342,48 @@ fn reconcile_incus_profiles(app: AppHandle) -> Result<usize, String> {
     Ok(cfg.incus_profiles.len())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StorageVolumeDto {
+    name: String,
+    vtype: String,
+    used_by: usize,
+    config: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StoragePoolDto {
+    name: String,
+    driver: String,
+    description: String,
+    used_by: usize,
+    config: std::collections::BTreeMap<String, String>,
+    volumes: Vec<StorageVolumeDto>,
+}
+
+/// Storage pools (and their custom volumes) in the project.
+#[tauri::command]
+fn storage() -> Result<Vec<StoragePoolDto>, String> {
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let pools = incus.storage().map_err(|e| e.to_string())?;
+    Ok(pools
+        .into_iter()
+        .map(|p| StoragePoolDto {
+            name: p.name,
+            driver: p.driver,
+            description: p.description,
+            used_by: p.used_by,
+            config: p.config,
+            volumes: p
+                .volumes
+                .into_iter()
+                .map(|v| StorageVolumeDto { name: v.name, vtype: v.vtype, used_by: v.used_by, config: v.config })
+                .collect(),
+        })
+        .collect())
+}
+
 /// The Incus profiles (config+devices composition bundles) in the project.
 #[tauri::command]
 fn incus_profiles() -> Result<Vec<IncusProfileDto>, String> {
@@ -893,6 +935,7 @@ pub fn run() {
             remove_agent,
             profiles,
             incus_profiles,
+            storage,
             starter_incus_profiles,
             incus_profile_apply,
             reconcile_incus_profiles,

@@ -16,6 +16,7 @@ import type {
   ProfileInfo,
   Sandbox,
   ServiceEntry,
+  StoragePoolInfo,
   TopoSandbox,
   VirtualKey,
   VmStatus,
@@ -238,6 +239,19 @@ export async function listIncusProfiles(): Promise<IncusProfileInfo[]> {
       config: { "security.nesting": "true" }, devices: {} },
     { name: "net-egress-filtered", description: "Inspected egress", usedBy: 1,
       config: {}, devices: { eth0: { type: "nic", network: "egress-net" } } },
+  ];
+}
+
+// Storage pools (and their custom volumes) in the project.
+export async function listStorage(): Promise<StoragePoolInfo[]> {
+  if (inTauri()) return invokeCmd<StoragePoolInfo[]>("storage");
+  await delay(100);
+  return [
+    {
+      name: "default", driver: "dir", description: "", usedBy: 4,
+      config: { source: "/var/lib/incus/storage-pools/default" },
+      volumes: [{ name: "shared-data", vtype: "custom", usedBy: 1, config: { size: "10GiB" } }],
+    },
   ];
 }
 
