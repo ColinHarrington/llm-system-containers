@@ -22,7 +22,9 @@
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, addAgent, listProfiles,
   } from "./lib/core";
-  import type { ProfileInfo, Sandbox, VmStatus } from "./lib/types";
+  import type { Guardrails, ProfileInfo, Sandbox, VmStatus } from "./lib/types";
+
+  const EMPTY_GUARDRAILS: Guardrails = { filesystem: "", network: "", l3: false, llmBudget: "", controlPlane: "" };
 
   const workspaceNav: { id: Screen; label: string; icon: string }[] = [
     { id: "dashboard", label: "Home", icon: "home" },
@@ -118,10 +120,20 @@
   let agentName = $state("");
   let agentProfile = $state("");
   let agentBusy = $state(false);
+  let agentGuardrails = $state<Guardrails>({ ...EMPTY_GUARDRAILS });
+  let agentGuardrailsOpen = $state(false);
   let profileList = $state<ProfileInfo[]>([]);
   $effect(() => {
     void listProfiles().then((p) => (profileList = p));
   });
+  // Picking a profile seeds the agent's guardrails (the operator can then refine them
+  // before creating the agent). Clearing the profile resets to an empty bundle.
+  function seedGuardrailsFromProfile() {
+    const p = profileList.find((x) => x.name === agentProfile);
+    agentGuardrails = p
+      ? { filesystem: p.filesystem, network: p.network, l3: p.l3, llmBudget: p.llmBudget, controlPlane: p.controlPlane }
+      : { ...EMPTY_GUARDRAILS };
+  }
   async function addAgentToSandbox() {
     const sandbox = ui.addAgentSandbox;
     if (!sandbox || !agentName.trim()) return;
@@ -129,9 +141,15 @@
     agentBusy = true;
     showToast(`$ llmsc agent add ${name}@${sandbox}${agentProfile ? ` --profile ${agentProfile}` : ""}`);
     try {
-      await addAgent(sandbox, name, agentProfile);
+      // Send refined guardrails whenever a profile seeded them or the operator opened the editor;
+      // otherwise let the backend decide (no profile, no guardrails).
+      const g = agentProfile || agentGuardrailsOpen ? agentGuardrails : undefined;
+      await addAgent(sandbox, name, agentProfile, g);
       ui.addAgentSandbox = null;
       agentName = "";
+      agentProfile = "";
+      agentGuardrails = { ...EMPTY_GUARDRAILS };
+      agentGuardrailsOpen = false;
       bump();
       showToast(`Agent '${name}' added`, "ok");
     } finally {
@@ -294,11 +312,33 @@
       <p class="hint mb12">An agent is one Linux user in the sandbox (scoped, its own virtual key later). Add a username.</p>
       <div class="field mb16"><label for="ag-name">Agent username</label>
         <input id="ag-name" class="input mono" bind:value={agentName} placeholder="agent-claude" /></div>
-      <div class="field"><label for="ag-profile">Profile <span class="hint">(permission preset)</span></label>
-        <select id="ag-profile" class="input" bind:value={agentProfile}>
+      <div class="field mb16"><label for="ag-profile">Profile <span class="hint">(seeds guardrails)</span></label>
+        <select id="ag-profile" class="input" bind:value={agentProfile} onchange={seedGuardrailsFromProfile}>
           <option value="">none</option>
           {#each profileList as p}<option value={p.name}>{p.name} — {p.summary}</option>{/each}
         </select></div>
+
+      <button type="button" class="disclosure" class:open={agentGuardrailsOpen} onclick={() => (agentGuardrailsOpen = !agentGuardrailsOpen)}>
+        <span class="chev"><Icon name="chevron" size={14} /></span>
+        <span>Guardrails {agentProfile ? `(seeded from ${agentProfile})` : "(custom)"}</span>
+      </button>
+      {#if agentGuardrailsOpen}
+        <div class="guardrails-edit">
+          <p class="hint mb12">Refine the agent's permission bundle before creating it. Presets, not yet enforced (Tetragon / Incus ACLs / LiteLLM are the backstops).</p>
+          <div class="field mb12"><label for="ag-fs">Filesystem</label>
+            <input id="ag-fs" class="input" bind:value={agentGuardrails.filesystem} placeholder="RO repo + docs, RW scratch" /></div>
+          <div class="field mb12"><label for="ag-net">Network egress</label>
+            <input id="ag-net" class="input" bind:value={agentGuardrails.network} placeholder="Web/docs allowlist via mitmproxy" /></div>
+          <div class="field mb12"><label for="ag-llm">LLM budget</label>
+            <input id="ag-llm" class="input mono" bind:value={agentGuardrails.llmBudget} placeholder="generous / medium / small" /></div>
+          <div class="field mb12"><label for="ag-cp">Control-plane</label>
+            <input id="ag-cp" class="input" bind:value={agentGuardrails.controlPlane} placeholder="none" /></div>
+          <div class="flex gap12" style="align-items:flex-start">
+            <label class="switch"><input type="checkbox" bind:checked={agentGuardrails.l3} /><span class="track"></span></label>
+            <div><div class="strong small">Nested containers (L3)</div><div class="hint">Allow rootless Docker/Podman.</div></div>
+          </div>
+        </div>
+      {/if}
     {/snippet}
     {#snippet foot()}
       <button class="btn" onclick={() => (ui.addAgentSandbox = null)}>Cancel</button>
@@ -352,4 +392,17 @@
   .subitem .sname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .subempty { color: var(--text-3); font-size: 11px; padding: 4px 9px 4px 18px; }
   @media (max-width: 820px) { .searchbox { display: none; } }
+
+  .disclosure {
+    display: flex; align-items: center; gap: 7px; width: 100%;
+    background: none; border: none; padding: 4px 0; cursor: pointer;
+    color: var(--text-2); font-size: 13px; font-weight: 500;
+  }
+  .disclosure:hover { color: var(--text); }
+  .disclosure .chev { display: inline-flex; transition: transform 0.12s ease; }
+  .disclosure.open .chev { transform: rotate(90deg); }
+  .guardrails-edit {
+    margin-top: 10px; padding: 12px; border: 1px solid var(--border);
+    border-radius: 9px; background: rgba(255, 255, 255, 0.02);
+  }
 </style>

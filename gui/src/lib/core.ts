@@ -162,9 +162,15 @@ export async function operatorDefault(): Promise<string> {
   return "operator";
 }
 
-// Add an agent (one Linux user) to a running sandbox, with an optional profile.
-export async function addAgent(sandbox: string, name: string, profile: string): Promise<void> {
-  if (inTauri()) return invokeCmd<void>("add_agent", { sandbox, name, profile });
+// Add an agent (one Linux user) to a running sandbox. The profile seeds the agent's
+// guardrails; `guardrails`, when given, are the refined values that override the seed.
+export async function addAgent(
+  sandbox: string,
+  name: string,
+  profile: string,
+  guardrails?: Guardrails,
+): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("add_agent", { sandbox, name, profile, guardrails: guardrails ?? null });
   const suffix = profile ? ` (${profile})` : "";
   await mockSteps([`Adding agent '${name}' to ${sandbox}${suffix}`, `Agent '${name}' added${suffix}`], 200);
 }

@@ -281,7 +281,13 @@ fn operator_default() -> String {
 
 /// Add an agent (one Linux user) to a running sandbox, with an optional profile.
 #[tauri::command]
-fn add_agent(app: AppHandle, sandbox: String, name: String, profile: String) -> Result<(), String> {
+fn add_agent(
+    app: AppHandle,
+    sandbox: String,
+    name: String,
+    profile: String,
+    guardrails: Option<GuardrailsDto>,
+) -> Result<(), String> {
     let reporter = EventReporter { app };
     let suffix = if profile.is_empty() {
         String::new()
@@ -293,12 +299,19 @@ fn add_agent(app: AppHandle, sandbox: String, name: String, profile: String) -> 
     incus
         .add_user(&sandbox, &name, false)
         .map_err(|e| e.to_string())?;
-    // Persist the agent + its profile-seeded guardrails into config (sandbox must be config-managed).
+    // Persist the agent + its guardrails into config (sandbox must be config-managed).
+    // The profile *seeds* the guardrails; explicit values from the create form override the seed.
     let mut cfg = load_user_config().unwrap_or_default();
-    let guardrails = if profile.is_empty() {
-        None
-    } else {
-        llmsc_core::config::Guardrails::from_profile(&profile)
+    let guardrails = match guardrails {
+        Some(g) => Some(llmsc_core::config::Guardrails {
+            filesystem: g.filesystem,
+            network: g.network,
+            l3: g.l3,
+            llm_budget: g.llm_budget,
+            control_plane: g.control_plane,
+        }),
+        None if profile.is_empty() => None,
+        None => llmsc_core::config::Guardrails::from_profile(&profile),
     };
     let user = User {
         name: name.clone(),
