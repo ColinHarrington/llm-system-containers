@@ -441,6 +441,78 @@ pub fn parse_incus_profiles(list_json: &str) -> Result<Vec<IncusProfileRecord>> 
         .collect())
 }
 
+/// One rule in a network ACL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AclRule {
+    pub action: String,
+    pub source: String,
+    pub destination: String,
+    pub protocol: String,
+    pub port: String,
+    pub description: String,
+}
+
+/// A network ACL (named allow/deny ruleset applied to nics — the egress-policy layer).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetworkAcl {
+    pub name: String,
+    pub description: String,
+    pub used_by: usize,
+    pub ingress: Vec<AclRule>,
+    pub egress: Vec<AclRule>,
+}
+
+/// Parse `incus network acl list --format json` into ACLs with their rules.
+pub fn parse_network_acls(list_json: &str) -> Result<Vec<NetworkAcl>> {
+    #[derive(serde::Deserialize)]
+    struct RawRule {
+        #[serde(default, deserialize_with = "null_default")]
+        action: String,
+        #[serde(default, deserialize_with = "null_default")]
+        source: String,
+        #[serde(default, deserialize_with = "null_default")]
+        destination: String,
+        #[serde(default, deserialize_with = "null_default")]
+        protocol: String,
+        #[serde(default, deserialize_with = "null_default")]
+        destination_port: String,
+        #[serde(default, deserialize_with = "null_default")]
+        description: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        #[serde(default, deserialize_with = "null_default")]
+        description: String,
+        #[serde(default, deserialize_with = "null_default")]
+        ingress: Vec<RawRule>,
+        #[serde(default, deserialize_with = "null_default")]
+        egress: Vec<RawRule>,
+        #[serde(default, deserialize_with = "null_default")]
+        used_by: Vec<String>,
+    }
+    let map = |r: RawRule| AclRule {
+        action: r.action,
+        source: r.source,
+        destination: r.destination,
+        protocol: r.protocol,
+        port: r.destination_port,
+        description: r.description,
+    };
+    let raw: Vec<Raw> = serde_json::from_str(list_json)
+        .map_err(|e| Error::Incus(format!("parsing `incus network acl list` output: {e}")))?;
+    Ok(raw
+        .into_iter()
+        .map(|r| NetworkAcl {
+            used_by: r.used_by.len(),
+            name: r.name,
+            description: r.description,
+            ingress: r.ingress.into_iter().map(map).collect(),
+            egress: r.egress.into_iter().map(map).collect(),
+        })
+        .collect())
+}
+
 /// A managed Incus network (bridge) in the VM.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetworkRecord {
@@ -1070,6 +1142,15 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         parse_networks(&o.stdout)
     }
 
+    /// Network ACLs (named allow/deny rulesets — the egress-policy layer).
+    pub fn network_acls(&self) -> Result<Vec<NetworkAcl>> {
+        let o = self.incus_run(&["network", "acl", "list", "--format", "json"])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("network acl list: {}", o.stderr.trim())));
+        }
+        parse_network_acls(&o.stdout)
+    }
+
     /// Per-sandbox network attachments and addresses (services excluded).
     pub fn sandbox_networks(&self) -> Result<Vec<SandboxNetwork>> {
         let o = self.incus_run(&["list", "--format", "json"])?;
@@ -1542,6 +1623,26 @@ mod tests {
         assert_eq!(p[0].used_by, 2);
         assert_eq!(p[0].devices["eth0"]["network"], "incusbr0");
         assert_eq!(p[1].config["security.nesting"], "true");
+    }
+
+    #[test]
+    fn parse_network_acls_reads_rules() {
+        let json = r#"[
+          {"name":"egress-allowlist","description":"web/pkg allowlist",
+           "ingress":[],
+           "egress":[
+             {"action":"allow","destination":"github.com","protocol":"tcp","destination_port":"443","description":"git"},
+             {"action":"reject","destination":"","protocol":"","destination_port":"","description":"default-deny"}],
+           "used_by":["/1.0/instances/web-agent-01"]}
+        ]"#;
+        let a = parse_network_acls(json).unwrap();
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].name, "egress-allowlist");
+        assert_eq!(a[0].used_by, 1);
+        assert_eq!(a[0].egress.len(), 2);
+        assert_eq!(a[0].egress[0].action, "allow");
+        assert_eq!(a[0].egress[0].destination, "github.com");
+        assert_eq!(a[0].egress[0].port, "443");
     }
 
     #[test]

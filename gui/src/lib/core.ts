@@ -12,6 +12,7 @@ import type {
   ImageInfo,
   IncusProfileInfo,
   InstanceConfig,
+  NetworkAclInfo,
   NetworkingData,
   ProfileInfo,
   ProjectInfo,
@@ -455,6 +456,22 @@ export async function listVirtualKeys(): Promise<VirtualKey[]> {
     { key: "sk-vk-…77c2", assignedTo: "agent-aux @ ci-runner", models: "sonnet, haiku", budget: "$20 / day", used: "$3.40", status: "active" },
     { key: "sk-vk-…1d08", assignedTo: "agent-claude @ data-pipeline", models: "sonnet", budget: "$20 / day", used: "$0.00", status: "idle" },
     { key: "sk-vk-…be40", assignedTo: "browser-bot (stopped)", models: "haiku", budget: "$10 / day", used: "—", status: "revoked" },
+  ];
+}
+
+// Network ACLs (the egress-policy layer).
+export async function listNetworkAcls(): Promise<NetworkAclInfo[]> {
+  if (inTauri()) return invokeCmd<NetworkAclInfo[]>("network_acls");
+  await delay(80);
+  return [
+    {
+      name: "egress-allowlist", description: "web / package registries", usedBy: 2, ingress: [],
+      egress: [
+        { action: "allow", source: "", destination: "github.com", protocol: "tcp", port: "443", description: "git" },
+        { action: "allow", source: "", destination: "pypi.org", protocol: "tcp", port: "443", description: "pip" },
+        { action: "reject", source: "", destination: "", protocol: "", port: "", description: "default-deny" },
+      ],
+    },
   ];
 }
 

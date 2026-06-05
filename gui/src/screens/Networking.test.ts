@@ -9,6 +9,10 @@ vi.mock("../lib/core", () => ({
       { name: "web-agent-01", status: "running", networks: ["incusbr0"], ipv4: "10.71.0.20" },
     ],
   })),
+  listNetworkAcls: vi.fn(async () => [
+    { name: "egress-allowlist", description: "", usedBy: 1, ingress: [],
+      egress: [{ action: "allow", source: "", destination: "github.com", protocol: "tcp", port: "443", description: "" }] },
+  ]),
 }));
 
 import Networking from "./Networking.svelte";

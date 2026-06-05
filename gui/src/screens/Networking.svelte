@@ -1,15 +1,20 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import { ui } from "../lib/store.svelte";
-  import { networking } from "../lib/core";
-  import type { NetworkingData } from "../lib/types";
+  import { networking, listNetworkAcls } from "../lib/core";
+  import type { NetworkAclInfo, NetworkingData } from "../lib/types";
 
   let data = $state<NetworkingData>({ networks: [], sandboxes: [] });
+  let acls = $state<NetworkAclInfo[]>([]);
   let hoveredNet = $state<string | null>(null);
 
   $effect(() => {
     ui.dataVersion;
     void (async () => { data = await networking(); })();
+  });
+  $effect(() => {
+    ui.dataVersion;
+    void listNetworkAcls().then((a) => (acls = a)).catch(() => (acls = []));
   });
 
   const sbHot = (nets: string[]) => hoveredNet != null && nets.includes(hoveredNet);
@@ -71,13 +76,40 @@
     {/if}
   </div>
 
-  <!-- Honest note: the policy/inspection layer the original design depicted is not built yet. -->
-  <div class="banner warn">
+  <!-- Network ACLs — the real egress-policy layer -->
+  <section class="card mt16">
+    <div class="card-head"><h3>Egress ACLs</h3><span class="sub">named allow/deny rulesets · <span class="mono">incus network acl</span></span></div>
+    {#if acls.length === 0}
+      <div class="empty"><div class="icon"><Icon name="shield" size={24} /></div>No ACLs defined yet.</div>
+    {:else}
+      <div class="pad acls">
+        {#each acls as a (a.name)}
+          <div class="acl">
+            <div class="flex gap8 mb6"><span class="mono small strong" style="color:var(--text)">{a.name}</span>
+              <span class="muted xsmall">{a.description}</span>
+              <span class="tag right">{a.usedBy} used · {a.egress.length} egress</span></div>
+            <div class="rules">
+              {#each a.egress as r}
+                <div class="rule">
+                  <span class="act {r.action}">{r.action}</span>
+                  <span class="mono small">{r.destination || "*"}{r.port ? `:${r.port}` : ""}{r.protocol ? ` (${r.protocol})` : ""}</span>
+                  {#if r.description}<span class="muted xsmall right">{r.description}</span>{/if}
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </section>
+
+  <!-- Honest note: ACLs are read here, but applying/enforcing them is the remaining work. -->
+  <div class="banner warn mt16">
     <Icon name="shield" size={18} />
     <span>
-      Egress allowlists, traffic inspection (mitmproxy + Zeek), and Tetragon eBPF enforcement are
-      <strong>planned (M4)</strong> and not yet enforced — so they are not shown here. Today sandboxes
-      share the VM bridge above; per-network segmentation and per-UID policy come with that work.
+      ACLs above are read from Incus, but llmsc does not yet <strong>apply</strong> them to sandbox
+      nics or wire mitmproxy/Zeek + Tetragon enforcement (M4). Today sandboxes share the VM bridge;
+      auto-attaching egress ACLs + per-UID policy come with that work.
     </span>
   </div>
 </div>
@@ -88,4 +120,11 @@
   .net { transition: border-color .15s; cursor: default; }
   .net.hot { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   tr.hot td { background: var(--accent-soft); }
+  .acls { display: flex; flex-direction: column; gap: 14px; }
+  .acl { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card-2); padding: 10px 12px; }
+  .rules { display: flex; flex-direction: column; gap: 3px; }
+  .rule { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
+  .act { font-size: 10px; font-weight: 600; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; }
+  .act.allow { color: var(--ok); background: var(--ok-soft); }
+  .act.reject, .act.drop { color: #d9485a; background: #f871711a; }
 </style>

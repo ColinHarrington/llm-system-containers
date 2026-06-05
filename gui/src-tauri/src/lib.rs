@@ -742,6 +742,54 @@ struct NetworkDto {
 }
 
 #[derive(Serialize)]
+struct AclRuleDto {
+    action: String,
+    source: String,
+    destination: String,
+    protocol: String,
+    port: String,
+    description: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NetworkAclDto {
+    name: String,
+    description: String,
+    used_by: usize,
+    ingress: Vec<AclRuleDto>,
+    egress: Vec<AclRuleDto>,
+}
+
+fn acl_rule_dto(r: llmsc_core::incus::AclRule) -> AclRuleDto {
+    AclRuleDto {
+        action: r.action,
+        source: r.source,
+        destination: r.destination,
+        protocol: r.protocol,
+        port: r.port,
+        description: r.description,
+    }
+}
+
+/// Network ACLs (the egress-policy layer) in the project.
+#[tauri::command]
+fn network_acls() -> Result<Vec<NetworkAclDto>, String> {
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let acls = incus.network_acls().map_err(|e| e.to_string())?;
+    Ok(acls
+        .into_iter()
+        .map(|a| NetworkAclDto {
+            name: a.name,
+            description: a.description,
+            used_by: a.used_by,
+            ingress: a.ingress.into_iter().map(acl_rule_dto).collect(),
+            egress: a.egress.into_iter().map(acl_rule_dto).collect(),
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
 struct SandboxNetDto {
     name: String,
     status: String,
@@ -1009,6 +1057,7 @@ pub fn run() {
             reconcile_incus_profiles,
             topology,
             host_resources,
+            network_acls,
             images,
             images_available,
             build_image,

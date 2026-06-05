@@ -172,3 +172,20 @@ export interface NetworkingData {
   networks: NetworkInfo[];
   sandboxes: SandboxNet[];
 }
+
+export interface AclRule {
+  action: string;
+  source: string;
+  destination: string;
+  protocol: string;
+  port: string;
+  description: string;
+}
+
+export interface NetworkAclInfo {
+  name: string;
+  description: string;
+  usedBy: number;
+  ingress: AclRule[];
+  egress: AclRule[];
+}
