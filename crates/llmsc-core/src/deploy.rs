@@ -109,7 +109,7 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         }
 
         reporter.step("Writing config + systemd unit");
-        self.exec(&config_script())?;
+        self.exec(&config_script(provider_env_and_model("openai").1))?;
         self.exec(&unit_script(self.port))?;
 
         reporter.step("Starting LiteLLM");
@@ -172,20 +172,114 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         }
         Ok(synced)
     }
+
+    /// Set the upstream **provider** API key (e.g. OpenAI/Anthropic) — written ONLY into the
+    /// LiteLLM container (env file) and the model pointed at that provider. The real credential
+    /// never touches `llmsc.toml`; it lives only in the service container (credential isolation).
+    pub fn set_provider_key(
+        &self,
+        provider: &str,
+        api_key: &str,
+        reporter: &dyn Reporter,
+    ) -> Result<()> {
+        let (env_var, model) = provider_env_and_model(provider);
+        reporter.step(&format!("Configuring provider '{provider}' ({model})"));
+        // Write the env file (the key lives here, inside the container, 0600).
+        let env_script = format!(
+            "umask 077 && mkdir -p /etc/litellm && printf '%s=%s\\n' {env_var} '{}' > /etc/litellm/litellm.env",
+            api_key.replace('\'', "")
+        );
+        let o = self.exec(&env_script)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "writing provider key: {}",
+                o.stderr.trim()
+            )));
+        }
+        self.exec(&config_script(model))?;
+        self.exec(&unit_script(self.port))?;
+        let _ =
+            self.exec("systemctl daemon-reload && systemctl restart litellm 2>/dev/null || true");
+        reporter.step("Provider key set (stored only in the LiteLLM container)");
+        Ok(())
+    }
+
+    /// Read per-key spend from the proxy admin API (`/global/spend/keys`). Best-effort: returns an
+    /// empty list if the proxy is unreachable. The endpoint/shape may vary by LiteLLM version.
+    pub fn key_usage(&self) -> Result<Vec<KeyUsage>> {
+        let curl = format!(
+            "curl -sS http://127.0.0.1:{}/global/spend/keys -H 'Authorization: Bearer {}'",
+            self.port, MASTER_KEY
+        );
+        let o = self.exec(&curl)?;
+        if !o.ok() {
+            return Ok(Vec::new());
+        }
+        Ok(parse_key_usage(&o.stdout).unwrap_or_default())
+    }
 }
 
-/// Minimal proxy config. A real provider key + model must still be supplied (integration TODO).
-fn config_script() -> String {
+/// Per-key spend read back from LiteLLM.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyUsage {
+    pub key_alias: String,
+    pub spend: f64,
+}
+
+/// Parse `/global/spend/keys` output: a bare array or a `{"keys":[...]}` wrapper of
+/// `{key_alias, spend}` objects. Entries without an alias are dropped.
+pub fn parse_key_usage(json: &str) -> Result<Vec<KeyUsage>> {
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        #[serde(default)]
+        key_alias: String,
+        #[serde(default)]
+        spend: f64,
+    }
+    #[derive(serde::Deserialize)]
+    struct Wrap {
+        #[serde(default)]
+        keys: Vec<Raw>,
+    }
+    let raws: Vec<Raw> = if let Ok(arr) = serde_json::from_str::<Vec<Raw>>(json) {
+        arr
+    } else {
+        serde_json::from_str::<Wrap>(json)
+            .map_err(|e| Error::Incus(format!("parsing key usage: {e}")))?
+            .keys
+    };
+    Ok(raws
+        .into_iter()
+        .filter(|r| !r.key_alias.is_empty())
+        .map(|r| KeyUsage {
+            key_alias: r.key_alias,
+            spend: r.spend,
+        })
+        .collect())
+}
+
+/// Minimal proxy config for a given model. The provider key is supplied separately via
+/// [`LiteLlmDeployer::set_provider_key`] (env file), never stored in this config or in llmsc.toml.
+fn config_script(model: &str) -> String {
     format!(
         "mkdir -p /etc/litellm && cat > /etc/litellm/config.yaml <<'EOF'\n\
          model_list:\n\
          \x20 - model_name: default\n\
          \x20   litellm_params:\n\
-         \x20     model: openai/gpt-4o-mini\n\
+         \x20     model: {model}\n\
          general_settings:\n\
-         \x20 master_key: {MASTER_KEY}  # TODO: rotate; provider key via environment\n\
+         \x20 master_key: {MASTER_KEY}  # TODO: rotate\n\
          EOF"
     )
+}
+
+/// The env-var name and a default model for a provider. Unknown → OpenAI.
+fn provider_env_and_model(provider: &str) -> (&'static str, &'static str) {
+    match provider.trim().to_lowercase().as_str() {
+        "anthropic" => ("ANTHROPIC_API_KEY", "anthropic/claude-3-5-sonnet-latest"),
+        "openai" => ("OPENAI_API_KEY", "openai/gpt-4o-mini"),
+        _ => ("OPENAI_API_KEY", "openai/gpt-4o-mini"),
+    }
 }
 
 fn unit_script(port: u16) -> String {
@@ -193,6 +287,7 @@ fn unit_script(port: u16) -> String {
         "cat > /etc/systemd/system/litellm.service <<'EOF'\n\
          [Unit]\nDescription=LiteLLM proxy\nAfter=network.target\n\
          [Service]\n\
+         EnvironmentFile=-/etc/litellm/litellm.env\n\
          ExecStart=/opt/litellm/bin/litellm --config /etc/litellm/config.yaml --port {port}\n\
          Restart=on-failure\n\
          [Install]\nWantedBy=multi-user.target\nEOF"
@@ -440,6 +535,31 @@ mod tests {
         LiteLlmDeployer::new("llmsc", &r)
             .sync_virtual_keys(&specs, &SilentReporter)
             .unwrap();
+    }
+
+    #[test]
+    fn set_provider_key_writes_env_only_in_container() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        LiteLlmDeployer::new("llmsc", &r)
+            .set_provider_key("anthropic", "sk-ant-123", &SilentReporter)
+            .unwrap();
+        assert!(r.called_with("litellm.env"));
+        assert!(r.called_with("ANTHROPIC_API_KEY"));
+        assert!(r.called_with("sk-ant-123"));
+        assert!(r.called_with("anthropic/claude-3-5-sonnet-latest"));
+        // The key is only ever written inside the svc-litellm container.
+        assert!(r.called_with("svc-litellm"));
+    }
+
+    #[test]
+    fn parse_key_usage_handles_array_and_wrapper() {
+        let arr = r#"[{"key_alias":"llmsc-a-x","spend":1.25},{"key_alias":"","spend":9}]"#;
+        let u = parse_key_usage(arr).unwrap();
+        assert_eq!(u.len(), 1); // empty alias dropped
+        assert_eq!(u[0].key_alias, "llmsc-a-x");
+        assert_eq!(u[0].spend, 1.25);
+        let wrap = r#"{"keys":[{"key_alias":"llmsc-b-y","spend":0.5}]}"#;
+        assert_eq!(parse_key_usage(wrap).unwrap()[0].spend, 0.5);
     }
 
     #[test]

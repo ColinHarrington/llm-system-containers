@@ -544,6 +544,11 @@ export async function syncVirtualKeys(): Promise<number> {
   await mockSteps(["Virtual key llmsc-web-agent-01-agent-claude — $100/30d"], 160);
   return 1;
 }
+// Set the upstream provider API key (injected only into the LiteLLM container, never persisted).
+export async function setProviderKey(provider: string, apiKey: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("set_provider_key", { provider, apiKey });
+  await mockSteps([`Configuring provider '${provider}'`, "Provider key set (stored only in the LiteLLM container)"], 140);
+}
 
 // Network ACLs (the egress-policy layer).
 export async function listNetworkAcls(): Promise<NetworkAclInfo[]> {

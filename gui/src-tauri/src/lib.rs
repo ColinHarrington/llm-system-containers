@@ -1135,26 +1135,49 @@ struct VirtualKeyDto {
     status: String,
 }
 
-/// Per-agent virtual keys compiled from guardrails (intent). `used` is not instrumented yet and
-/// `status` is "planned" until synced to a running LiteLLM proxy.
+/// Per-agent virtual keys compiled from guardrails. Spend is merged best-effort from the live
+/// proxy (`/global/spend/keys`): a key with read-back spend shows as `active`, otherwise `planned`.
 #[tauri::command]
 fn virtual_keys() -> Result<Vec<VirtualKeyDto>, String> {
     let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    // Best-effort live spend (empty if the proxy is unreachable).
+    let usage = LiteLlmDeployer::new(vm_name(), &SystemRunner)
+        .key_usage()
+        .unwrap_or_default();
     Ok(llmsc_core::enforce::virtual_key_specs(&cfg)
         .into_iter()
-        .map(|s| VirtualKeyDto {
-            key: s.key_alias,
-            assigned_to: format!("{} @ {}", s.agent, s.sandbox),
-            models: if s.models.is_empty() {
-                "all".to_string()
-            } else {
-                s.models.join(", ")
-            },
-            budget: format!("${:.0} / {}", s.max_budget_usd, s.budget_duration),
-            used: "—".to_string(),
-            status: "planned".to_string(),
+        .map(|s| {
+            let spend = usage
+                .iter()
+                .find(|u| u.key_alias == s.key_alias)
+                .map(|u| u.spend);
+            VirtualKeyDto {
+                key: s.key_alias,
+                assigned_to: format!("{} @ {}", s.agent, s.sandbox),
+                models: if s.models.is_empty() {
+                    "all".to_string()
+                } else {
+                    s.models.join(", ")
+                },
+                budget: format!("${:.0} / {}", s.max_budget_usd, s.budget_duration),
+                used: match spend {
+                    Some(v) => format!("${v:.2}"),
+                    None => "—".to_string(),
+                },
+                status: if spend.is_some() { "active" } else { "planned" }.to_string(),
+            }
         })
         .collect())
+}
+
+/// Set the upstream provider API key — injected ONLY into the LiteLLM container (never stored in
+/// llmsc.toml). Credential isolation: real provider keys live only in the service container.
+#[tauri::command]
+fn set_provider_key(app: AppHandle, provider: String, api_key: String) -> Result<(), String> {
+    let reporter = EventReporter { app };
+    LiteLlmDeployer::new(vm_name(), &SystemRunner)
+        .set_provider_key(&provider, &api_key, &reporter)
+        .map_err(|e| e.to_string())
 }
 
 /// Sync the compiled virtual keys to the running LiteLLM proxy. Returns the count synced.
@@ -1550,6 +1573,7 @@ pub fn run() {
             egress_status,
             virtual_keys,
             sync_virtual_keys,
+            set_provider_key,
             tetragon_policies,
             tetragon_policy_yaml,
             apply_tetragon_policies,

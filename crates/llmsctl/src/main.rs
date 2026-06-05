@@ -70,6 +70,13 @@ enum KeysAction {
     Ls,
     /// Mint/refresh the compiled keys against the running LiteLLM proxy.
     Sync,
+    /// Set the upstream provider API key (stored only in the LiteLLM container).
+    SetProvider {
+        /// Provider (openai | anthropic).
+        provider: String,
+        /// The provider API key.
+        key: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -228,6 +235,12 @@ fn keys(action: KeysAction) -> Result<(), String> {
                 .sync_virtual_keys(&specs, &ConsoleReporter)
                 .map_err(|e| e.to_string())?;
             println!("synced {} virtual key(s)", synced.len());
+        }
+        KeysAction::SetProvider { provider, key } => {
+            LiteLlmDeployer::new(cfg.vm.name.clone(), &SystemRunner)
+                .set_provider_key(&provider, &key, &ConsoleReporter)
+                .map_err(|e| e.to_string())?;
+            println!("provider key set (stored only in the LiteLLM container)");
         }
     }
     Ok(())

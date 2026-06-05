@@ -2,7 +2,7 @@
   import Icon from "../lib/Icon.svelte";
   import { bump } from "../lib/store.svelte";
   import {
-    listServices, setService, provisionService, listVirtualKeys, syncVirtualKeys,
+    listServices, setService, provisionService, listVirtualKeys, syncVirtualKeys, setProviderKey,
     DEPLOYABLE_SERVICES, SERVICE_META,
   } from "../lib/core";
   import { ui, showToast } from "../lib/store.svelte";
@@ -46,6 +46,22 @@
       const n = await syncVirtualKeys();
       showToast(n === 0 ? "No agent keys to sync" : `Synced ${n} virtual key(s)`, "ok");
       await refresh();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { keysBusy = false; }
+  }
+
+  // Provider key (real upstream credential — injected only into the LiteLLM container).
+  let provider = $state("openai");
+  let providerKey = $state("");
+  async function saveProviderKey() {
+    if (!providerKey.trim()) return;
+    keysBusy = true;
+    showToast(`$ llmsctl keys set-provider ${provider} ****`);
+    try {
+      await setProviderKey(provider, providerKey.trim());
+      providerKey = "";
+      showToast("Provider key set (stored only in the LiteLLM container)", "ok");
     } catch (e) {
       showToast(String(e), "danger");
     } finally { keysBusy = false; }
@@ -101,6 +117,18 @@
     <div class="card-head"><h3>LiteLLM virtual keys</h3><span class="sub">Per-agent keys compiled from each agent's <span class="mono">llm_budget</span> guardrail</span>
       <button class="btn sm primary right" disabled={keysBusy} onclick={syncKeys} title="Mint/refresh the compiled keys against the running LiteLLM proxy">
         <Icon name="key" size={14} /><span>{keysBusy ? "Syncing…" : "Sync keys"}</span></button></div>
+    <div class="pad" style="border-bottom:1px solid var(--border)">
+      <div class="sub2">Provider key</div>
+      <p class="xsmall muted mb8">The real upstream credential. Injected only into the LiteLLM container — never written to <span class="mono">llmsc.toml</span>. Agents only ever see virtual keys.</p>
+      <div class="flex gap8" style="align-items:center;flex-wrap:wrap">
+        <select class="input" style="max-width:140px" bind:value={provider}>
+          <option value="openai">openai</option>
+          <option value="anthropic">anthropic</option>
+        </select>
+        <input class="input mono" style="max-width:320px" type="password" bind:value={providerKey} placeholder="sk-… (provider API key)" />
+        <button class="btn sm" disabled={keysBusy || !providerKey.trim()} onclick={saveProviderKey}>Set provider key</button>
+      </div>
+    </div>
     {#if keys.length === 0}
       <div class="empty"><div class="icon"><Icon name="key" size={22} /></div>No agents with virtual keys yet.</div>
     {:else}
