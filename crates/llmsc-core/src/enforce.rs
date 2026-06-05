@@ -5,11 +5,13 @@
 //!
 //! **Scope:** Incus ACL rules are L3/L4 only (CIDR + port + protocol). Domain/HTTP allowlists
 //! (e.g. "github.com only") are mitmproxy's job (a later ring), so a named set like `web` is
-//! coarse here (any host on the given port). The `llm` set resolves to the bridge subnet in v1
-//! (east-west reaches the LiteLLM service container) — a precise service-IP/ACL-subject lookup
-//! is a TODO.
+//! coarse here (any host on the given port). The `llm` set resolves to the precise `svc-litellm`
+//! IP when known ([`EnforceCtx::llm_dest`]), falling back to the bridge subnet.
+//!
+//! This module also compiles the **LLM virtual-key budgets** ring ([`virtual_key_specs`]): each
+//! agent's `llm_budget` guardrail → a LiteLLM key spec minted by [`crate::deploy::LiteLlmDeployer`].
 
-use crate::config::{EgressPosture, Sandbox};
+use crate::config::{Config, EgressPosture, Sandbox, UserRole};
 use crate::incus::{AclOp, AclRule, NetworkAcl};
 use std::collections::BTreeMap;
 
@@ -18,9 +20,12 @@ use std::collections::BTreeMap;
 pub struct EnforceCtx {
     /// The Incus bridge the sandbox's nic attaches to (e.g. `incusbr0`).
     pub bridge: String,
-    /// The bridge IPv4 network in CIDR form (e.g. `10.0.0.0/24`) — the coarse v1 destination for
-    /// the `llm` named set. Host bits are normalized away by [`cidr_network`].
+    /// The bridge IPv4 network in CIDR form (e.g. `10.0.0.0/24`) — the coarse fallback destination
+    /// for the `llm` named set. Host bits are normalized away by [`cidr_network`].
     pub bridge_subnet: String,
+    /// The LiteLLM service container's IPv4 (e.g. `10.0.0.7`), when known. Precise destination for
+    /// the `llm` set (`<ip>/32`); falls back to [`bridge_subnet`] when `None`.
+    pub llm_dest: Option<String>,
 }
 
 /// The deterministic ACL name for a sandbox's egress policy.
@@ -78,13 +83,19 @@ pub fn cidr_network(cidr: &str) -> String {
 /// `CIDR:port[/proto]` (IPv4; `proto` defaults to `tcp`) — into zero or more egress allow rules.
 fn resolve_allow(entry: &str, ctx: &EnforceCtx) -> Vec<AclRule> {
     match entry {
-        "llm" => vec![rule(
-            "allow",
-            &cidr_network(&ctx.bridge_subnet),
-            "4000",
-            "tcp",
-            "LLM proxy (coarse: bridge subnet:4000)",
-        )],
+        "llm" => {
+            let (dest, note) = match &ctx.llm_dest {
+                Some(ip) => (
+                    format!("{}/32", ip.trim_end_matches("/32")),
+                    "LLM proxy (svc-litellm)",
+                ),
+                None => (
+                    cidr_network(&ctx.bridge_subnet),
+                    "LLM proxy (coarse: bridge subnet)",
+                ),
+            };
+            vec![rule("allow", &dest, "4000", "tcp", note)]
+        }
         "package-registries" => vec![rule(
             "allow",
             "0.0.0.0/0",
@@ -198,6 +209,78 @@ pub fn egress_acl_plan(desired: &NetworkAcl, live: Option<&NetworkAcl>) -> Vec<A
     plan
 }
 
+// --- LLM virtual-key budgets (the credential-isolation ring) ---
+//
+// Agents never hold real provider credentials — they use a LiteLLM **virtual key** scoped to a
+// budget (`planning/security-model.md`). Here we compile each agent's `guardrails.llm_budget`
+// tier into a concrete key spec; `deploy::LiteLlmDeployer::sync_virtual_keys` mints/updates them.
+
+/// Monthly USD budget for a legible tier (the `llm_budget` guardrail axis). Unknown → `medium`.
+pub fn budget_usd(tier: &str) -> f64 {
+    match tier.trim().to_lowercase().as_str() {
+        "broad" => 200.0,
+        "generous" => 100.0,
+        "medium" => 30.0,
+        "small" => 5.0,
+        _ => 30.0,
+    }
+}
+
+/// A LiteLLM virtual-key spec compiled from an agent's guardrails. The `key_alias` is
+/// deterministic so syncs are idempotent.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VirtualKeySpec {
+    pub key_alias: String,
+    pub sandbox: String,
+    pub agent: String,
+    /// The legible tier the budget came from (e.g. `medium`).
+    pub tier: String,
+    pub max_budget_usd: f64,
+    /// LiteLLM budget reset window (fixed monthly for v1).
+    pub budget_duration: String,
+    /// Allowed model names; empty = all configured models.
+    pub models: Vec<String>,
+}
+
+/// The deterministic virtual-key alias for an agent in a sandbox.
+pub fn key_alias(sandbox: &str, agent: &str) -> String {
+    format!("llmsc-{sandbox}-{agent}")
+}
+
+/// Compile a virtual-key spec for one agent + budget tier.
+pub fn virtual_key_spec(sandbox: &str, agent: &str, tier: &str) -> VirtualKeySpec {
+    VirtualKeySpec {
+        key_alias: key_alias(sandbox, agent),
+        sandbox: sandbox.to_string(),
+        agent: agent.to_string(),
+        tier: tier.to_string(),
+        max_budget_usd: budget_usd(tier),
+        budget_duration: "30d".to_string(),
+        models: Vec::new(),
+    }
+}
+
+/// Compile virtual-key specs for every agent (one Linux user per agent) across all sandboxes.
+/// The human operator is excluded — only agents get scoped virtual keys.
+pub fn virtual_key_specs(config: &Config) -> Vec<VirtualKeySpec> {
+    let mut specs = Vec::new();
+    for sb in &config.sandboxes {
+        for u in &sb.users {
+            if u.role != UserRole::Agent {
+                continue;
+            }
+            let tier = u
+                .guardrails
+                .as_ref()
+                .map(|g| g.llm_budget.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("medium");
+            specs.push(virtual_key_spec(&sb.name, &u.name, tier));
+        }
+    }
+    specs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,6 +290,7 @@ mod tests {
         EnforceCtx {
             bridge: "incusbr0".to_string(),
             bridge_subnet: "10.21.32.1/24".to_string(),
+            llm_dest: None,
         }
     }
 
@@ -266,6 +350,53 @@ mod tests {
         assert_eq!(r.destination, "10.21.32.0/24");
         assert_eq!(r.port, "4000");
         assert_eq!(r.protocol, "tcp");
+    }
+
+    #[test]
+    fn llm_set_uses_precise_svc_ip_when_known() {
+        let mut c = ctx();
+        c.llm_dest = Some("10.21.32.7".to_string());
+        let acl = egress_acl(&sb_with(Some(EgressPolicy::default_managed())), &c).unwrap();
+        assert_eq!(acl.egress[0].destination, "10.21.32.7/32");
+    }
+
+    #[test]
+    fn budget_tiers_and_specs_compile_from_guardrails() {
+        use crate::config::{Config, Guardrails, User, UserRole};
+        assert_eq!(budget_usd("generous"), 100.0);
+        assert_eq!(budget_usd("small"), 5.0);
+        assert_eq!(budget_usd("unknown-tier"), 30.0); // medium fallback
+
+        let mut cfg = Config::default();
+        cfg.upsert_sandbox("web-agent-01", "images:alpine/3.21", false);
+        // human operator — excluded.
+        cfg.set_sandbox_user(
+            "web-agent-01",
+            User {
+                name: "colin".into(),
+                role: UserRole::Human,
+                profile: None,
+                guardrails: None,
+            },
+        );
+        // agent with a small budget.
+        cfg.set_sandbox_user(
+            "web-agent-01",
+            User {
+                name: "agent-claude".into(),
+                role: UserRole::Agent,
+                profile: Some("validation".into()),
+                guardrails: Some(Guardrails {
+                    llm_budget: "small".into(),
+                    ..Default::default()
+                }),
+            },
+        );
+        let specs = virtual_key_specs(&cfg);
+        assert_eq!(specs.len(), 1, "only agents get virtual keys");
+        assert_eq!(specs[0].key_alias, "llmsc-web-agent-01-agent-claude");
+        assert_eq!(specs[0].max_budget_usd, 5.0);
+        assert_eq!(specs[0].tier, "small");
     }
 
     #[test]

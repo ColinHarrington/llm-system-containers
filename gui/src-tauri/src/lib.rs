@@ -1011,9 +1011,12 @@ fn enforce_ctx(incus: &CliIncus<SystemRunner>, sandbox: &str) -> llmsc_core::enf
         .find(|n| n.name == bridge)
         .map(|n| n.ipv4.clone())
         .unwrap_or_default();
+    // Resolve the `llm` set to svc-litellm's precise IP when the proxy is up (else bridge subnet).
+    let llm_dest = incus.instance_ipv4(&llmsc_core::service::container_name("litellm"));
     llmsc_core::enforce::EnforceCtx {
         bridge,
         bridge_subnet,
+        llm_dest,
     }
 }
 
@@ -1180,6 +1183,58 @@ fn egress_status(sandbox: String) -> Result<EgressStatusDto, String> {
         bound,
         in_sync,
     })
+}
+
+// --- LLM virtual-key budgets (credential-isolation ring) ---
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VirtualKeyDto {
+    key: String,
+    assigned_to: String,
+    models: String,
+    budget: String,
+    used: String,
+    status: String,
+}
+
+/// Per-agent virtual keys compiled from guardrails (intent). `used` is not instrumented yet and
+/// `status` is "planned" until synced to a running LiteLLM proxy.
+#[tauri::command]
+fn virtual_keys() -> Result<Vec<VirtualKeyDto>, String> {
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    Ok(llmsc_core::enforce::virtual_key_specs(&cfg)
+        .into_iter()
+        .map(|s| VirtualKeyDto {
+            key: s.key_alias,
+            assigned_to: format!("{} @ {}", s.agent, s.sandbox),
+            models: if s.models.is_empty() {
+                "all".to_string()
+            } else {
+                s.models.join(", ")
+            },
+            budget: format!("${:.0} / {}", s.max_budget_usd, s.budget_duration),
+            used: "—".to_string(),
+            status: "planned".to_string(),
+        })
+        .collect())
+}
+
+/// Sync the compiled virtual keys to the running LiteLLM proxy. Returns the count synced.
+/// Requires svc-litellm to be up (provisioned via the Services screen).
+#[tauri::command]
+fn sync_virtual_keys(app: AppHandle) -> Result<usize, String> {
+    let reporter = EventReporter { app };
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let specs = llmsc_core::enforce::virtual_key_specs(&cfg);
+    if specs.is_empty() {
+        reporter.step("No agents with virtual keys to sync");
+        return Ok(0);
+    }
+    let synced = LiteLlmDeployer::new(vm_name(), &SystemRunner)
+        .sync_virtual_keys(&specs, &reporter)
+        .map_err(|e| e.to_string())?;
+    Ok(synced.len())
 }
 
 #[derive(Serialize)]
@@ -1481,6 +1536,8 @@ pub fn run() {
             egress_acl_preview,
             apply_egress,
             egress_status,
+            virtual_keys,
+            sync_virtual_keys,
             images,
             images_available,
             build_image,

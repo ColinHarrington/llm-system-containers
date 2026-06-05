@@ -2,15 +2,16 @@
   import Icon from "../lib/Icon.svelte";
   import { bump } from "../lib/store.svelte";
   import {
-    listServices, setService, provisionService, listVirtualKeys,
+    listServices, setService, provisionService, listVirtualKeys, syncVirtualKeys,
     DEPLOYABLE_SERVICES, SERVICE_META,
   } from "../lib/core";
-  import { ui } from "../lib/store.svelte";
+  import { ui, showToast } from "../lib/store.svelte";
   import type { ServiceEntry, VirtualKey } from "../lib/types";
 
   let services = $state<ServiceEntry[]>([]);
   let keys = $state<VirtualKey[]>([]);
   let busyName = $state<string | null>(null);
+  let keysBusy = $state(false);
   let error = $state<string | null>(null);
 
   $effect(() => {
@@ -36,6 +37,18 @@
     try { await provisionService(s.name); }
     catch (e) { error = `${s.name}: ${e}`; }
     finally { busyName = null; }
+  }
+
+  async function syncKeys() {
+    keysBusy = true;
+    showToast("$ llmsctl keys sync");
+    try {
+      const n = await syncVirtualKeys();
+      showToast(n === 0 ? "No agent keys to sync" : `Synced ${n} virtual key(s)`, "ok");
+      await refresh();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { keysBusy = false; }
   }
 
   const meta = (name: string) => SERVICE_META[name] ?? { initials: name.slice(0, 2), color: "#8a90a3", placement: "service" };
@@ -85,10 +98,14 @@
 
   <!-- LiteLLM virtual keys -->
   <div class="card">
-    <div class="card-head"><h3>LiteLLM virtual keys</h3><span class="sub">Per-agent keys — scoped, rotatable, revocable</span>
-      <button class="btn sm right"><Icon name="plus" size={14} /><span>Issue key</span></button></div>
+    <div class="card-head"><h3>LiteLLM virtual keys</h3><span class="sub">Per-agent keys compiled from each agent's <span class="mono">llm_budget</span> guardrail</span>
+      <button class="btn sm primary right" disabled={keysBusy} onclick={syncKeys} title="Mint/refresh the compiled keys against the running LiteLLM proxy">
+        <Icon name="key" size={14} /><span>{keysBusy ? "Syncing…" : "Sync keys"}</span></button></div>
+    {#if keys.length === 0}
+      <div class="empty"><div class="icon"><Icon name="key" size={22} /></div>No agents with virtual keys yet.</div>
+    {:else}
     <table class="tbl">
-      <thead><tr><th>Key</th><th>Assigned to</th><th>Models</th><th>Budget</th><th>Used (24h)</th><th>Status</th></tr></thead>
+      <thead><tr><th>Key alias</th><th>Assigned to</th><th>Models</th><th>Budget</th><th>Used</th><th>Status</th></tr></thead>
       <tbody>
         {#each keys as k (k.key)}
           <tr>
@@ -100,11 +117,14 @@
             <td>
               {#if k.status === "active"}<span class="pill ok"><span class="dot ok"></span> active</span>
               {:else if k.status === "idle"}<span class="pill warn"><span class="dot warn"></span> idle</span>
+              {:else if k.status === "planned"}<span class="pill" title="Compiled from guardrails; not yet synced to the proxy"><span class="dot muted"></span> planned</span>
               {:else}<span class="pill"><span class="dot muted"></span> revoked</span>{/if}
             </td>
           </tr>
         {/each}
       </tbody>
     </table>
+    {/if}
+    <p class="xsmall muted" style="padding:0 14px 12px">Usage metering is not instrumented yet; keys show as <span class="mono">planned</span> until synced to a running proxy.</p>
   </div>
 </div>

@@ -99,7 +99,7 @@ export interface VirtualKey {
   models: string;
   budget: string;
   used: string;
-  status: "active" | "idle" | "revoked";
+  status: "active" | "idle" | "revoked" | "planned";
 }
 
 export interface HostResources {

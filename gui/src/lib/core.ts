@@ -504,14 +504,21 @@ export async function listAvailableImages(): Promise<ImageInfo[]> {
   ];
 }
 
+// Per-agent virtual keys compiled from guardrails. In the Tauri shell these come from the
+// real command (config intent); usage is not instrumented and status is "planned" until synced.
 export async function listVirtualKeys(): Promise<VirtualKey[]> {
+  if (inTauri()) return invokeCmd<VirtualKey[]>("virtual_keys");
   await delay(80);
   return [
-    { key: "sk-vk-…a91f", assignedTo: "agent-claude @ web-agent-01", models: "opus, sonnet", budget: "$50 / day", used: "$0.86", status: "active" },
-    { key: "sk-vk-…77c2", assignedTo: "agent-aux @ ci-runner", models: "sonnet, haiku", budget: "$20 / day", used: "$3.40", status: "active" },
-    { key: "sk-vk-…1d08", assignedTo: "agent-claude @ data-pipeline", models: "sonnet", budget: "$20 / day", used: "$0.00", status: "idle" },
-    { key: "sk-vk-…be40", assignedTo: "browser-bot (stopped)", models: "haiku", budget: "$10 / day", used: "—", status: "revoked" },
+    { key: "llmsc-web-agent-01-agent-claude", assignedTo: "agent-claude @ web-agent-01", models: "all", budget: "$100 / 30d", used: "—", status: "planned" },
+    { key: "llmsc-ci-runner-agent-aux", assignedTo: "agent-aux @ ci-runner", models: "all", budget: "$30 / 30d", used: "—", status: "planned" },
   ];
+}
+// Sync the compiled virtual keys to the running LiteLLM proxy. Returns the count synced.
+export async function syncVirtualKeys(): Promise<number> {
+  if (inTauri()) return invokeCmd<number>("sync_virtual_keys");
+  await mockSteps(["Virtual key llmsc-web-agent-01-agent-claude — $100/30d"], 160);
+  return 1;
 }
 
 // Network ACLs (the egress-policy layer).

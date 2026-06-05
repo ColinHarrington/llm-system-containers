@@ -17,6 +17,10 @@ use crate::progress::Reporter;
 /// never float to an arbitrary version. Bump deliberately after vetting a release.
 const LITELLM_VERSION: &str = "1.87.0";
 
+/// LiteLLM admin master key (placeholder — TODO rotate; provider key via environment). Used both
+/// in the generated config and to authenticate virtual-key minting.
+const MASTER_KEY: &str = "sk-llmsc-master";
+
 /// Provisions LiteLLM in its own L2 container.
 pub struct LiteLlmDeployer<'a, R: CommandRunner> {
     vm: String,
@@ -117,19 +121,71 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         ));
         Ok(())
     }
+
+    /// Mint/refresh per-agent virtual keys (compiled by `enforce::virtual_key_specs`) against the
+    /// running proxy's admin API. Idempotent-ish: a duplicate `key_alias` is treated as success
+    /// (true upsert + usage read-back is a follow-up). Requires the proxy to be up. Returns the
+    /// aliases synced.
+    pub fn sync_virtual_keys(
+        &self,
+        specs: &[crate::enforce::VirtualKeySpec],
+        reporter: &dyn Reporter,
+    ) -> Result<Vec<String>> {
+        let mut synced = Vec::new();
+        for s in specs {
+            reporter.step(&format!(
+                "Virtual key {} — ${:.0}/{}",
+                s.key_alias, s.max_budget_usd, s.budget_duration
+            ));
+            let models = if s.models.is_empty() {
+                "[]".to_string()
+            } else {
+                format!(
+                    "[{}]",
+                    s.models
+                        .iter()
+                        .map(|m| format!("\"{m}\""))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
+            };
+            let body = format!(
+                "{{\"key_alias\":\"{}\",\"max_budget\":{},\"budget_duration\":\"{}\",\"models\":{}}}",
+                s.key_alias, s.max_budget_usd, s.budget_duration, models
+            );
+            let curl = format!(
+                "curl -sS -X POST http://127.0.0.1:{}/key/generate \
+                 -H 'Authorization: Bearer {}' -H 'Content-Type: application/json' -d '{}'",
+                self.port, MASTER_KEY, body
+            );
+            let o = self.exec(&curl)?;
+            let combined = format!("{} {}", o.stdout, o.stderr).to_lowercase();
+            let dup = combined.contains("already exists") || combined.contains("duplicate");
+            if !o.ok() && !dup {
+                return Err(Error::Incus(format!(
+                    "minting virtual key {}: {}",
+                    s.key_alias,
+                    o.stderr.trim()
+                )));
+            }
+            synced.push(s.key_alias.clone());
+        }
+        Ok(synced)
+    }
 }
 
 /// Minimal proxy config. A real provider key + model must still be supplied (integration TODO).
 fn config_script() -> String {
-    "mkdir -p /etc/litellm && cat > /etc/litellm/config.yaml <<'EOF'\n\
-     model_list:\n\
-     \x20 - model_name: default\n\
-     \x20   litellm_params:\n\
-     \x20     model: openai/gpt-4o-mini\n\
-     general_settings:\n\
-     \x20 master_key: sk-llmsc-master  # TODO: rotate; provider key via environment\n\
-     EOF"
-    .to_string()
+    format!(
+        "mkdir -p /etc/litellm && cat > /etc/litellm/config.yaml <<'EOF'\n\
+         model_list:\n\
+         \x20 - model_name: default\n\
+         \x20   litellm_params:\n\
+         \x20     model: openai/gpt-4o-mini\n\
+         general_settings:\n\
+         \x20 master_key: {MASTER_KEY}  # TODO: rotate; provider key via environment\n\
+         EOF"
+    )
 }
 
 fn unit_script(port: u16) -> String {
@@ -168,6 +224,33 @@ mod tests {
         assert!(r.called_with("config.yaml"));
         assert!(r.called_with("litellm.service"));
         assert!(r.called_with("systemctl"));
+    }
+
+    #[test]
+    fn sync_virtual_keys_posts_specs_to_admin_api() {
+        let r = FakeRunner::new(|_, _| out(0, "{\"key\":\"sk-...\"}"));
+        let specs = vec![crate::enforce::virtual_key_spec(
+            "web-agent-01",
+            "agent-claude",
+            "small",
+        )];
+        let synced = LiteLlmDeployer::new("llmsc", &r)
+            .sync_virtual_keys(&specs, &SilentReporter)
+            .unwrap();
+        assert_eq!(synced, vec!["llmsc-web-agent-01-agent-claude"]);
+        assert!(r.called_with("key/generate"));
+        assert!(r.called_with("llmsc-web-agent-01-agent-claude"));
+        assert!(r.called_with("\"max_budget\":5"));
+    }
+
+    #[test]
+    fn sync_virtual_keys_tolerates_duplicate_alias() {
+        let r = FakeRunner::new(|_, _| out(1, "Error: key_alias already exists"));
+        let specs = vec![crate::enforce::virtual_key_spec("sb", "agent-x", "medium")];
+        // duplicate → treated as success.
+        LiteLlmDeployer::new("llmsc", &r)
+            .sync_virtual_keys(&specs, &SilentReporter)
+            .unwrap();
     }
 
     #[test]

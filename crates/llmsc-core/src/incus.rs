@@ -696,6 +696,46 @@ pub fn parse_sandbox_networks(list_json: &str) -> Result<Vec<SandboxNetwork>> {
         .collect())
 }
 
+/// Parse the first global IPv4 address of `name` from `incus list <name> --format json`.
+pub fn parse_instance_ipv4(list_json: &str, name: &str) -> Option<String> {
+    use std::collections::HashMap;
+    #[derive(serde::Deserialize)]
+    struct RawAddr {
+        family: String,
+        address: String,
+        #[serde(default)]
+        scope: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct RawIface {
+        #[serde(default, deserialize_with = "null_default")]
+        addresses: Vec<RawAddr>,
+    }
+    #[derive(serde::Deserialize)]
+    struct RawState {
+        #[serde(default)]
+        network: Option<HashMap<String, RawIface>>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        #[serde(default)]
+        state: Option<RawState>,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(list_json).ok()?;
+    raw.into_iter()
+        .find(|r| r.name == name)
+        .and_then(|r| r.state)
+        .and_then(|s| s.network)
+        .and_then(|ifaces| {
+            ifaces
+                .into_values()
+                .flat_map(|i| i.addresses)
+                .find(|a| a.family == "inet" && a.scope == "global")
+                .map(|a| a.address)
+        })
+}
+
 /// An Incus image — either locally cached (base/custom) or from a remote catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageRecord {
@@ -1448,6 +1488,16 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
             return Err(Error::Incus(format!("list: {}", o.stderr.trim())));
         }
         parse_sandbox_networks(&o.stdout)
+    }
+
+    /// The first global IPv4 of an instance (any instance, services included), if it has one.
+    /// Used to resolve the egress `llm` set to the precise `svc-litellm` address.
+    pub fn instance_ipv4(&self, name: &str) -> Option<String> {
+        let o = self.incus_run(&["list", name, "--format", "json"]).ok()?;
+        if !o.ok() {
+            return None;
+        }
+        parse_instance_ipv4(&o.stdout, name)
     }
 
     /// Create a Linux user inside a sandbox — one per agent, or the human operator. An agent is
