@@ -1423,6 +1423,39 @@ fn enforcement_overview(sandbox: String) -> Result<Vec<RingStatusDto>, String> {
         ));
     }
 
+    // Control-plane (platform-action capabilities per agent).
+    let privileged: Vec<String> = sb
+        .map(|s| {
+            s.users
+                .iter()
+                .filter(|u| u.role == UserRole::Agent)
+                .filter_map(|u| {
+                    let caps = u
+                        .guardrails
+                        .as_ref()
+                        .map(|g| llmsc_core::enforce::control_capabilities(&g.control_plane))
+                        .unwrap_or_default();
+                    (!caps.is_empty()).then(|| {
+                        format!(
+                            "{}: {}",
+                            u.name,
+                            caps.iter().map(|c| c.id()).collect::<Vec<_>>().join("/")
+                        )
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if privileged.is_empty() {
+        rings.push(ring(
+            "Control-plane",
+            "off",
+            "no agent holds platform capabilities".into(),
+        ));
+    } else {
+        rings.push(ring("Control-plane", "enforced", privileged.join(", ")));
+    }
+
     Ok(rings)
 }
 

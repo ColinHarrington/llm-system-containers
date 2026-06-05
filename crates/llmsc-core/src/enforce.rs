@@ -222,6 +222,61 @@ pub fn is_read_only(filesystem: &str) -> bool {
     ro && !rw
 }
 
+// --- Control-plane capabilities (the platform-action ring) ---
+//
+// Most agents have `control_plane: "none"`. An orchestrator agent may drive platform actions
+// (launch/stop sandboxes, steer other agents). These compile to a capability set that gates
+// **agent-initiated** control-plane actions; the human operator is always unrestricted.
+
+/// A platform action an agent may be permitted to perform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlCap {
+    LaunchSandbox,
+    StopSandbox,
+    SteerAgent,
+}
+
+impl ControlCap {
+    /// Stable kebab-case id (for DTOs / display).
+    pub fn id(&self) -> &'static str {
+        match self {
+            ControlCap::LaunchSandbox => "launch-sandbox",
+            ControlCap::StopSandbox => "stop-sandbox",
+            ControlCap::SteerAgent => "steer-agent",
+        }
+    }
+}
+
+/// Compile a `guardrails.control_plane` posture into capabilities. Heuristic over the legible
+/// string: "launch" → LaunchSandbox, "stop" → StopSandbox, "coordinate"/"steer"/"agents" →
+/// SteerAgent. "none"/empty → no capabilities.
+pub fn control_capabilities(control_plane: &str) -> Vec<ControlCap> {
+    let l = control_plane.to_lowercase();
+    if l.trim().is_empty() || l.trim() == "none" {
+        return Vec::new();
+    }
+    let mut caps = Vec::new();
+    if l.contains("launch") {
+        caps.push(ControlCap::LaunchSandbox);
+    }
+    if l.contains("stop") {
+        caps.push(ControlCap::StopSandbox);
+    }
+    if l.contains("coordinate") || l.contains("steer") || l.contains("agent") {
+        caps.push(ControlCap::SteerAgent);
+    }
+    caps
+}
+
+/// Whether an agent (by its guardrails) holds a control-plane capability. The human operator
+/// (guardrails `None`) is always permitted.
+pub fn agent_can(guardrails: Option<&crate::config::Guardrails>, cap: ControlCap) -> bool {
+    match guardrails {
+        None => true, // operator / unrestricted
+        Some(g) => control_capabilities(&g.control_plane).contains(&cap),
+    }
+}
+
 // --- mitmproxy L7 domain allowlist (the HTTP(S) egress ring) ---
 //
 // Incus ACLs are L3/L4 only. HTTP(S) domain allowlists ("github.com only") are enforced by the
@@ -401,6 +456,31 @@ mod tests {
         c.llm_dest = Some("10.21.32.7".to_string());
         let acl = egress_acl(&sb_with(Some(EgressPolicy::default_managed())), &c).unwrap();
         assert_eq!(acl.egress[0].destination, "10.21.32.7/32");
+    }
+
+    #[test]
+    fn control_capabilities_compile_and_gate() {
+        use crate::config::Guardrails;
+        assert!(control_capabilities("none").is_empty());
+        assert!(control_capabilities("").is_empty());
+        let orch = control_capabilities("launch/stop sandboxes, coordinate agents");
+        assert!(orch.contains(&ControlCap::LaunchSandbox));
+        assert!(orch.contains(&ControlCap::StopSandbox));
+        assert!(orch.contains(&ControlCap::SteerAgent));
+        // operator (no guardrails) always permitted; a "none" agent never.
+        assert!(agent_can(None, ControlCap::StopSandbox));
+        let g = Guardrails {
+            control_plane: "none".into(),
+            ..Default::default()
+        };
+        assert!(!agent_can(Some(&g), ControlCap::StopSandbox));
+        let go = Guardrails {
+            control_plane: "launch sandboxes".into(),
+            ..Default::default()
+        };
+        assert!(agent_can(Some(&go), ControlCap::LaunchSandbox));
+        assert!(!agent_can(Some(&go), ControlCap::StopSandbox));
+        assert_eq!(ControlCap::SteerAgent.id(), "steer-agent");
     }
 
     #[test]

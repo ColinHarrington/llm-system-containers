@@ -380,6 +380,7 @@ const MOCK_RINGS: RingStatus[] = [
   { ring: "Filesystem", state: "pending", detail: "read-only agent(s) · workspace RW" },
   { ring: "Kernel (Tetragon)", state: "draft", detail: "1 policy(ies) compiled (load to apply)" },
   { ring: "LLM keys", state: "pending", detail: "1 key(s) · not synced" },
+  { ring: "Control-plane", state: "off", detail: "no agent holds platform capabilities" },
 ];
 export async function enforcementOverview(sandbox: string): Promise<RingStatus[]> {
   if (inTauri()) return invokeCmd<RingStatus[]>("enforcement_overview", { sandbox });
