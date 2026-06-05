@@ -28,16 +28,32 @@ export const ui = $state({
   addAgentSandbox: null as string | null,
   selectedSandbox: null as string | null,
   paletteOpen: false,
+  activityOpen: false,
   steerAgent: null as AgentInfo | null,
   terminalTarget: null as string | null,
   toast: null as { msg: string; color: ToastColor; id: number } | null,
   dataVersion: 0,
 });
 
+// --- activity log (a reviewable history of toasts + progress steps) ---
+export type ActivityKind = ToastColor | "progress";
+export interface ActivityItem { id: number; msg: string; kind: ActivityKind; time: number }
+export const activity = $state<ActivityItem[]>([]);
+let activityId = 0;
+export function logActivity(msg: string, kind: ActivityKind = "accent"): void {
+  activityId += 1;
+  activity.unshift({ id: activityId, msg, kind, time: Date.now() });
+  if (activity.length > 120) activity.length = 120;
+}
+export function clearActivity(): void {
+  activity.length = 0;
+}
+
 let toastId = 0;
 export function showToast(msg: string, color: ToastColor = "accent"): void {
   toastId += 1;
   ui.toast = { msg, color, id: toastId };
+  logActivity(msg, color);
 }
 
 export function openTerminal(target: string): void {

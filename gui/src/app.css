@@ -221,7 +221,14 @@ html[data-theme="light"] .btn.primary { background: var(--accent); color: #fff; 
   background: transparent; cursor: pointer; color: var(--text-2);
 }
 .iconbtn:hover { background: rgba(255, 255, 255, 0.04); color: var(--text); border-color: var(--border); }
+.iconbtn.on { background: var(--accent-soft-bg); color: var(--accent-text); border-color: var(--border); }
 .iconbtn :global(svg) { width: 17px; height: 17px; stroke-width: 1.8; }
+.iconbtn { position: relative; }
+.iconbtn .badge {
+  position: absolute; top: -3px; right: -3px; min-width: 15px; height: 15px; padding: 0 3px;
+  border-radius: 8px; background: var(--accent); color: #fff; font-size: 9px; font-weight: 700;
+  display: grid; place-items: center; line-height: 1;
+}
 
 /* ---------- Cards ---------- */
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
