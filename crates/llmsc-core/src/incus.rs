@@ -1291,6 +1291,31 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         Ok(())
     }
 
+    /// Delete a network ACL (`incus network acl delete <name>`). Idempotent: a "not found" or
+    /// "in use" failure on a missing ACL is treated as success.
+    pub fn network_acl_delete(&self, name: &str) -> Result<()> {
+        let o = self.incus_run(&["network", "acl", "delete", name])?;
+        let gone = format!("{} {}", o.stderr, o.stdout)
+            .to_lowercase()
+            .contains("not found");
+        if !o.ok() && !gone {
+            return Err(Error::Incus(format!(
+                "network acl delete {name}: {}",
+                o.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Unbind any egress ACL from a sandbox's nic (clears the `security.acls*` device keys). Best
+    /// effort: unsetting an absent key is not an error.
+    pub fn unbind_egress_acl(&self, sandbox: &str, nic: &str) -> Result<()> {
+        for k in ["security.acls", "security.acls.default.egress.action"] {
+            let _ = self.incus_run(&["config", "device", "unset", sandbox, nic, k]);
+        }
+        Ok(())
+    }
+
     /// The `key=value` args for a rule (action/destination/destination_port/protocol), shared by
     /// add and remove. Empty fields are omitted.
     fn acl_rule_args(rule: &AclRule) -> Vec<String> {
@@ -2034,6 +2059,22 @@ mod tests {
         let c = CliIncus::new("llmsc", &r);
         // "already exists" is swallowed; a real failure would propagate.
         c.network_acl_create("llmsc-egress-x").unwrap();
+    }
+
+    #[test]
+    fn teardown_deletes_acl_and_unbinds_nic() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.unbind_egress_acl("web-agent-01", "eth0").unwrap();
+        c.network_acl_delete("llmsc-egress-web-agent-01").unwrap();
+        assert!(r.called_with("unset"));
+        assert!(r.called_with("security.acls"));
+        assert!(r.called_with("delete"));
+        // delete of a missing ACL is swallowed.
+        let r2 = FakeRunner::new(|_, _| out(1, "Error: Network ACL not found"));
+        CliIncus::new("llmsc", &r2)
+            .network_acl_delete("nope")
+            .unwrap();
     }
 
     #[test]

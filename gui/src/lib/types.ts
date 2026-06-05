@@ -200,6 +200,15 @@ export interface EgressPolicy {
   allow: string[]; // named sets (llm, package-registries, web) or raw CIDR:port[/proto]
 }
 
+export interface EgressStatus {
+  managed: boolean;
+  posture: EgressPosture | null;
+  aclName: string;
+  aclExists: boolean;
+  bound: boolean;
+  inSync: boolean;
+}
+
 export interface NetworkAclInfo {
   name: string;
   description: string;

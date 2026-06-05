@@ -1077,7 +1077,8 @@ fn egress_acl_preview(sandbox: String) -> Result<Option<NetworkAclDto>, String> 
 }
 
 /// Enforce a sandbox's egress policy: compile → diff against the live ACL → apply + bind to the
-/// nic. Returns the number of ACL ops applied. Open/unmanaged → no-op (0).
+/// nic. Returns the number of ACL ops applied. Open/unmanaged → tear down (unbind + delete the
+/// managed ACL) so switching to open actually removes enforcement.
 #[tauri::command]
 fn apply_egress(app: AppHandle, sandbox: String) -> Result<usize, String> {
     let reporter = EventReporter { app };
@@ -1087,8 +1088,15 @@ fn apply_egress(app: AppHandle, sandbox: String) -> Result<usize, String> {
         .sandbox(&sandbox)
         .ok_or_else(|| format!("'{sandbox}' is not config-managed"))?;
     let ctx = enforce_ctx(&incus, &sandbox);
+    let nic = nic_device_name(&incus, &sandbox);
     let Some(desired) = llmsc_core::enforce::egress_acl(sb, &ctx) else {
-        reporter.step("Egress is open/unmanaged — nothing to enforce");
+        // open/unmanaged → remove any prior enforcement.
+        let acl_name = llmsc_core::enforce::egress_acl_name(&sandbox);
+        reporter.step(&format!("Egress open — unbinding {acl_name} from {nic}"));
+        incus
+            .unbind_egress_acl(&sandbox, &nic)
+            .map_err(|e| e.to_string())?;
+        let _ = incus.network_acl_delete(&acl_name);
         return Ok(0);
     };
     let acl_name = desired.name.clone();
@@ -1102,12 +1110,76 @@ fn apply_egress(app: AppHandle, sandbox: String) -> Result<usize, String> {
     incus
         .apply_egress(&acl_name, &plan, &reporter)
         .map_err(|e| e.to_string())?;
-    let nic = nic_device_name(&incus, &sandbox);
     reporter.step(&format!("Binding {acl_name} to {nic} (default-drop)"));
     incus
         .bind_egress_acl(&sandbox, &nic, &acl_name)
         .map_err(|e| e.to_string())?;
     Ok(n)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EgressStatusDto {
+    /// Config carries an egress policy (Some).
+    managed: bool,
+    /// "deny-all" | "allowlist" | "open" | null (unmanaged)
+    posture: Option<String>,
+    acl_name: String,
+    /// The compiled ACL exists in the VM.
+    acl_exists: bool,
+    /// The nic carries our security.acls binding.
+    bound: bool,
+    /// Live state matches the compiled intent (nothing to apply).
+    in_sync: bool,
+}
+
+/// Read the live enforcement status of a sandbox's egress policy (for the GUI badge).
+#[tauri::command]
+fn egress_status(sandbox: String) -> Result<EgressStatusDto, String> {
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let acl_name = llmsc_core::enforce::egress_acl_name(&sandbox);
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let sb = cfg.sandbox(&sandbox);
+    let policy = sb.and_then(|s| s.egress.as_ref());
+    let posture = policy.map(|p| posture_str(p.posture));
+
+    let live = incus.network_acls().unwrap_or_default();
+    let acl_exists = live.iter().any(|a| a.name == acl_name);
+    let bound = incus
+        .instance(&sandbox)
+        .ok()
+        .map(|i| {
+            i.devices.values().any(|d| {
+                d.get("security.acls")
+                    .map(|v| v.split(',').any(|p| p.trim() == acl_name))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
+
+    // in_sync: open/unmanaged → not bound; managed non-open → bound + compiled plan empty.
+    let in_sync = match (sb, policy.map(|p| p.posture)) {
+        (Some(s), Some(p)) if p != llmsc_core::config::EgressPosture::Open => {
+            let ctx = enforce_ctx(&incus, &sandbox);
+            match llmsc_core::enforce::egress_acl(s, &ctx) {
+                Some(desired) => {
+                    let live_match = live.iter().find(|a| a.name == acl_name);
+                    bound && llmsc_core::enforce::egress_acl_plan(&desired, live_match).is_empty()
+                }
+                None => !bound,
+            }
+        }
+        _ => !bound,
+    };
+
+    Ok(EgressStatusDto {
+        managed: policy.is_some(),
+        posture,
+        acl_name,
+        acl_exists,
+        bound,
+        in_sync,
+    })
 }
 
 #[derive(Serialize)]
@@ -1408,6 +1480,7 @@ pub fn run() {
             set_egress_policy,
             egress_acl_preview,
             apply_egress,
+            egress_status,
             images,
             images_available,
             build_image,

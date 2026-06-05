@@ -38,6 +38,9 @@ vi.mock("../lib/core", () => ({
     name: "llmsc-egress-web-agent-01", description: "", usedBy: 0, ingress: [],
     egress: [{ action: "allow", source: "", destination: "10.21.32.0/24", protocol: "tcp", port: "4000", description: "LLM proxy" }],
   })),
+  egressStatus: vi.fn(async () => ({
+    managed: true, posture: "allowlist", aclName: "llmsc-egress-web-agent-01", aclExists: false, bound: false, inSync: false,
+  })),
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",

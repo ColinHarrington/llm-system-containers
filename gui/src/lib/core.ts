@@ -9,6 +9,7 @@
 import type {
   AgentInfo,
   EgressPolicy,
+  EgressStatus,
   HostResources,
   Guardrails,
   ImageInfo,
@@ -349,6 +350,12 @@ export async function applyEgress(sandbox: string): Promise<number> {
   if (inTauri()) return invokeCmd<number>("apply_egress", { sandbox });
   await mockSteps([`Enforcing egress for ${sandbox} — 2 ACL change(s)`, "Binding ACL to eth0 (default-drop)"], 160);
   return 2;
+}
+// Live enforcement status of the egress policy (for the GUI badge).
+export async function egressStatus(sandbox: string): Promise<EgressStatus> {
+  if (inTauri()) return invokeCmd<EgressStatus>("egress_status", { sandbox });
+  await delay(60);
+  return { managed: true, posture: "allowlist", aclName: `llmsc-egress-${sandbox}`, aclExists: false, bound: false, inSync: false };
 }
 
 // The shipped agent-profile archetypes (definition layer).

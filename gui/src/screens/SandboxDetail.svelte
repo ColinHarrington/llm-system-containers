@@ -7,10 +7,10 @@
     instanceSetConfig, instanceUnsetConfig, instanceAddMount, instanceRemoveDevice,
     instanceAddProfile, instanceRemoveProfile, applySandbox, instanceYaml,
     listSnapshots, snapshotCreate, snapshotRestore, snapshotDelete, setAgentGuardrails,
-    egressPolicy, setEgressPolicy, egressAclPreview, applyEgress,
+    egressPolicy, setEgressPolicy, egressAclPreview, applyEgress, egressStatus,
   } from "../lib/core";
   import type {
-    EgressPolicy, EgressPosture, Guardrails, InstanceConfig, NetworkAclInfo, SnapshotInfo, TopoAgent, TopoSandbox,
+    EgressPolicy, EgressPosture, EgressStatus, Guardrails, InstanceConfig, NetworkAclInfo, SnapshotInfo, TopoAgent, TopoSandbox,
   } from "../lib/types";
 
   let all = $state<TopoSandbox[]>([]);
@@ -116,6 +116,7 @@
   // --- Network egress (per-container enforcement ring) ---
   let egress = $state<EgressPolicy | null>(null);
   let egressAcl = $state<NetworkAclInfo | null>(null);
+  let egStatus = $state<EgressStatus | null>(null);
   let egressBusy = $state(false);
   let enforcing = $state(false);
   let newAllow = $state("");
@@ -125,9 +126,11 @@
     const sel = ui.selectedSandbox;
     egress = null;
     egressAcl = null;
+    egStatus = null;
     if (sel) {
       void egressPolicy(sel).then((p) => (egress = p)).catch(() => (egress = null));
       void egressAclPreview(sel).then((a) => (egressAcl = a)).catch(() => (egressAcl = null));
+      void egressStatus(sel).then((s) => (egStatus = s)).catch(() => (egStatus = null));
     }
   });
   async function saveEgress(next: EgressPolicy) {
@@ -137,6 +140,7 @@
       await setEgressPolicy(sb.name, next);
       egress = next;
       egressAcl = await egressAclPreview(sb.name).catch(() => null);
+      egStatus = await egressStatus(sb.name).catch(() => null);
       showToast("Egress policy saved (not yet enforced)", "ok");
     } catch (e) {
       showToast(String(e), "danger");
@@ -163,7 +167,8 @@
     showToast(`$ llmsc egress apply ${sb.name}`);
     try {
       const n = await applyEgress(sb.name);
-      showToast(n === 0 ? "Open/unmanaged — nothing to enforce" : `Egress enforced — ${n} ACL change(s)`, "ok");
+      showToast(n === 0 ? "Egress torn down (open)" : `Egress enforced — ${n} ACL change(s)`, "ok");
+      egStatus = await egressStatus(sb.name).catch(() => null);
       bump();
     } catch (e) {
       showToast(String(e), "danger");
@@ -368,6 +373,17 @@
     <div class="card mt16">
       <div class="card-head"><h3>Network egress</h3>
         <span class="sub">container-level ACL · <span class="mono">incus network acl</span></span>
+        {#if egStatus}
+          {#if !egStatus.managed || egStatus.posture === "open"}
+            <span class="pill" title="No ACL bound to the nic">not enforced</span>
+          {:else if egStatus.inSync && egStatus.bound}
+            <span class="pill ok"><span class="dot ok"></span> enforced</span>
+          {:else if egStatus.bound}
+            <span class="pill warn" title="Bound, but live ACL differs from intent">drifted</span>
+          {:else}
+            <span class="pill warn" title="Policy set but not yet applied">not enforced</span>
+          {/if}
+        {/if}
         <button class="btn sm primary right" disabled={egressBusy || egress === null || egress.posture === "open"} onclick={enforceEgress}
           title="Compile the policy to an Incus ACL and bind it to the nic (default-drop)">
           <Icon name="shield" size={13} /><span>{enforcing ? "Enforcing…" : "Apply (enforce)"}</span></button>
