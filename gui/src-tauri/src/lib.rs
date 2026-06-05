@@ -1730,6 +1730,17 @@ fn service_up(app: AppHandle, name: String) -> Result<(), String> {
             d.sync_allowlist(&llmsc_core::enforce::mitmproxy_allowlist(&cfg), &reporter)
                 .map_err(|e| e.to_string())
         }
+        "phoenix" => {
+            llmsc_core::deploy::PhoenixDeployer::new(vm.clone(), &SystemRunner)
+                .deploy(&reporter)
+                .map_err(|e| e.to_string())?;
+            // Best-effort: point an already-deployed LiteLLM at this Phoenix.
+            let incus = CliIncus::new(vm.clone(), &SystemRunner);
+            if let Some(ip) = incus.instance_ipv4(&service::container_name("phoenix")) {
+                let _ = LiteLlmDeployer::new(vm, &SystemRunner).enable_phoenix(&ip, &reporter);
+            }
+            Ok(())
+        }
         other => Err(format!("no deployer yet for '{other}'")),
     }
 }

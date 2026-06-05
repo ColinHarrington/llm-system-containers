@@ -162,6 +162,11 @@ fn services(action: ServiceAction) -> Result<(), String> {
                         )
                         .map_err(|e| e.to_string())?;
                     }
+                    "phoenix" => {
+                        llmsc_core::deploy::PhoenixDeployer::new(vm.clone(), &SystemRunner)
+                            .deploy(&ConsoleReporter)
+                            .map_err(|e| e.to_string())?;
+                    }
                     other => eprintln!("→ no deployer yet for '{other}' (M5 follow-up)"),
                 }
             }

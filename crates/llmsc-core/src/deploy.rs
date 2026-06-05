@@ -217,6 +217,24 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         }
         Ok(parse_key_usage(&o.stdout).unwrap_or_default())
     }
+
+    /// Point LiteLLM's tracing at a Phoenix collector (`http://<host>:6006`). Writes the endpoint
+    /// to the env file and enables the arize_phoenix callback so every LLM call is traced. Idempotent.
+    pub fn enable_phoenix(&self, phoenix_host: &str, reporter: &dyn Reporter) -> Result<()> {
+        reporter.step(&format!("Wiring LiteLLM traces → Phoenix ({phoenix_host})"));
+        let endpoint = format!("http://{phoenix_host}:6006");
+        let script = format!(
+            "umask 077 && mkdir -p /etc/litellm && \
+             grep -q PHOENIX_COLLECTOR_ENDPOINT /etc/litellm/litellm.env 2>/dev/null || \
+             printf 'PHOENIX_COLLECTOR_ENDPOINT=%s\\n' '{endpoint}' >> /etc/litellm/litellm.env"
+        );
+        let o = self.exec(&script)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("wiring Phoenix: {}", o.stderr.trim())));
+        }
+        let _ = self.exec("systemctl restart litellm 2>/dev/null || true");
+        Ok(())
+    }
 }
 
 /// Per-key spend read back from LiteLLM.
@@ -289,6 +307,110 @@ fn unit_script(port: u16) -> String {
          [Service]\n\
          EnvironmentFile=-/etc/litellm/litellm.env\n\
          ExecStart=/opt/litellm/bin/litellm --config /etc/litellm/config.yaml --port {port}\n\
+         Restart=on-failure\n\
+         [Install]\nWantedBy=multi-user.target\nEOF"
+    )
+}
+
+/// Provisions **Phoenix** (Arize) in its own L2 container — LLM/agent observability (traces,
+/// token usage). Mirrors [`LiteLlmDeployer`]; LiteLLM is wired to export traces here via
+/// [`LiteLlmDeployer::enable_phoenix`].
+pub struct PhoenixDeployer<'a, R: CommandRunner> {
+    vm: String,
+    container: String,
+    image: String,
+    port: u16,
+    runner: &'a R,
+}
+
+impl<'a, R: CommandRunner> PhoenixDeployer<'a, R> {
+    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+        Self {
+            vm: vm.into(),
+            container: crate::service::container_name("phoenix"),
+            image: "images:debian/12".into(),
+            port: 6006,
+            runner,
+        }
+    }
+
+    fn incus(&self, args: &[&str]) -> Result<RunOutput> {
+        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
+        full.extend_from_slice(args);
+        self.runner.run("limactl", &full)
+    }
+
+    fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
+        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
+        full.extend_from_slice(args);
+        self.runner.run_streamed("limactl", &full)
+    }
+
+    fn exec(&self, cmd: &str) -> Result<RunOutput> {
+        self.incus(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
+    }
+
+    fn exec_streamed(&self, cmd: &str) -> Result<i32> {
+        self.incus_streamed(&["exec", self.container.as_str(), "--", "bash", "-lc", cmd])
+    }
+
+    /// Provision and start Phoenix (pip `arize-phoenix`, systemd `phoenix serve`).
+    pub fn deploy(&self, reporter: &dyn Reporter) -> Result<()> {
+        reporter.step("Creating Phoenix service container");
+        if !self.incus(&["info", self.container.as_str()])?.ok() {
+            let code =
+                self.incus_streamed(&["launch", self.image.as_str(), self.container.as_str()])?;
+            if code != 0 {
+                return Err(Error::Incus(format!(
+                    "creating {} failed (exit {code})",
+                    self.container
+                )));
+            }
+        }
+        reporter.step("Installing Python (apt)");
+        let o = self.exec(
+            "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv",
+        )?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "apt install python: {}",
+                o.stderr.trim()
+            )));
+        }
+        reporter.step("Creating virtualenv");
+        let o = self.exec("test -x /opt/phoenix/bin/pip || python3 -m venv /opt/phoenix")?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("python venv: {}", o.stderr.trim())));
+        }
+        reporter.step("Installing arize-phoenix (pip)");
+        let code = self.exec_streamed(
+            "/opt/phoenix/bin/pip install --quiet --upgrade pip && \
+             /opt/phoenix/bin/pip install --quiet arize-phoenix",
+        )?;
+        if code != 0 {
+            return Err(Error::Incus(format!(
+                "pip install phoenix failed (exit {code})"
+            )));
+        }
+        reporter.step("Writing systemd unit");
+        self.exec(&phoenix_unit_script(self.port))?;
+        reporter.step("Starting Phoenix");
+        self.exec("systemctl daemon-reload && systemctl enable --now phoenix")?;
+        reporter.step(&format!(
+            "Phoenix deployed — UI/collector in the VM at {}:{}",
+            self.container, self.port
+        ));
+        Ok(())
+    }
+}
+
+fn phoenix_unit_script(port: u16) -> String {
+    format!(
+        "cat > /etc/systemd/system/phoenix.service <<'EOF'\n\
+         [Unit]\nDescription=Arize Phoenix observability\nAfter=network.target\n\
+         [Service]\n\
+         Environment=PHOENIX_PORT={port}\n\
+         ExecStart=/opt/phoenix/bin/phoenix serve\n\
          Restart=on-failure\n\
          [Install]\nWantedBy=multi-user.target\nEOF"
     )
@@ -560,6 +682,34 @@ mod tests {
         assert_eq!(u[0].spend, 1.25);
         let wrap = r#"{"keys":[{"key_alias":"llmsc-b-y","spend":0.5}]}"#;
         assert_eq!(parse_key_usage(wrap).unwrap()[0].spend, 0.5);
+    }
+
+    #[test]
+    fn phoenix_deploy_runs_expected_steps() {
+        let r = FakeRunner::new(|_, args| {
+            if args.contains(&"info") {
+                out(1, "")
+            } else {
+                out(0, "")
+            }
+        });
+        PhoenixDeployer::new("llmsc", &r)
+            .deploy(&SilentReporter)
+            .unwrap();
+        assert!(r.called_with("svc-phoenix"));
+        assert!(r.called_with("arize-phoenix"));
+        assert!(r.called_with("phoenix.service"));
+        assert!(r.called_with("systemctl"));
+    }
+
+    #[test]
+    fn enable_phoenix_writes_collector_endpoint() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        LiteLlmDeployer::new("llmsc", &r)
+            .enable_phoenix("10.21.32.9", &SilentReporter)
+            .unwrap();
+        assert!(r.called_with("PHOENIX_COLLECTOR_ENDPOINT"));
+        assert!(r.called_with("10.21.32.9"));
     }
 
     #[test]
