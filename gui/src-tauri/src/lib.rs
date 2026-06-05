@@ -991,49 +991,6 @@ fn to_egress_policy(dto: EgressPolicyDto) -> llmsc_core::config::EgressPolicy {
     }
 }
 
-/// Build the enforcement context for a sandbox: its nic's bridge + that bridge's IPv4 subnet
-/// (for resolving the `llm` named set). Falls back to the first managed bridge.
-fn enforce_ctx(incus: &CliIncus<SystemRunner>, sandbox: &str) -> llmsc_core::enforce::EnforceCtx {
-    let networks = incus.networks().unwrap_or_default();
-    let bridge = incus
-        .instance(sandbox)
-        .ok()
-        .and_then(|i| {
-            i.devices
-                .values()
-                .find(|d| d.get("type").map(String::as_str) == Some("nic"))
-                .and_then(|d| d.get("network").cloned())
-        })
-        .or_else(|| networks.first().map(|n| n.name.clone()))
-        .unwrap_or_else(|| "incusbr0".to_string());
-    let bridge_subnet = networks
-        .iter()
-        .find(|n| n.name == bridge)
-        .map(|n| n.ipv4.clone())
-        .unwrap_or_default();
-    // Resolve the `llm` set to svc-litellm's precise IP when the proxy is up (else bridge subnet).
-    let llm_dest = incus.instance_ipv4(&llmsc_core::service::container_name("litellm"));
-    llmsc_core::enforce::EnforceCtx {
-        bridge,
-        bridge_subnet,
-        llm_dest,
-    }
-}
-
-/// The nic device name to bind the ACL to (the type=nic device, usually `eth0`).
-fn nic_device_name(incus: &CliIncus<SystemRunner>, sandbox: &str) -> String {
-    incus
-        .instance(sandbox)
-        .ok()
-        .and_then(|i| {
-            i.devices
-                .iter()
-                .find(|(_, d)| d.get("type").map(String::as_str) == Some("nic"))
-                .map(|(name, _)| name.clone())
-        })
-        .unwrap_or_else(|| "eth0".to_string())
-}
-
 /// Read a sandbox's egress policy intent from config. `None` = unmanaged (no ACL).
 #[tauri::command]
 fn egress_policy(sandbox: String) -> Result<Option<EgressPolicyDto>, String> {
@@ -1067,7 +1024,7 @@ fn egress_acl_preview(sandbox: String) -> Result<Option<NetworkAclDto>, String> 
     let sb = cfg
         .sandbox(&sandbox)
         .ok_or_else(|| format!("'{sandbox}' is not config-managed"))?;
-    let ctx = enforce_ctx(&incus, &sandbox);
+    let ctx = incus.enforce_ctx(&sandbox);
     Ok(
         llmsc_core::enforce::egress_acl(sb, &ctx).map(|a| NetworkAclDto {
             name: a.name,
@@ -1090,34 +1047,9 @@ fn apply_egress(app: AppHandle, sandbox: String) -> Result<usize, String> {
     let sb = cfg
         .sandbox(&sandbox)
         .ok_or_else(|| format!("'{sandbox}' is not config-managed"))?;
-    let ctx = enforce_ctx(&incus, &sandbox);
-    let nic = nic_device_name(&incus, &sandbox);
-    let Some(desired) = llmsc_core::enforce::egress_acl(sb, &ctx) else {
-        // open/unmanaged → remove any prior enforcement.
-        let acl_name = llmsc_core::enforce::egress_acl_name(&sandbox);
-        reporter.step(&format!("Egress open — unbinding {acl_name} from {nic}"));
-        incus
-            .unbind_egress_acl(&sandbox, &nic)
-            .map_err(|e| e.to_string())?;
-        let _ = incus.network_acl_delete(&acl_name);
-        return Ok(0);
-    };
-    let acl_name = desired.name.clone();
-    let live = incus.network_acls().map_err(|e| e.to_string())?;
-    let live_match = live.iter().find(|a| a.name == acl_name);
-    let plan = llmsc_core::enforce::egress_acl_plan(&desired, live_match);
-    let n = plan.len();
-    reporter.step(&format!(
-        "Enforcing egress for {sandbox} — {n} ACL change(s)"
-    ));
     incus
-        .apply_egress(&acl_name, &plan, &reporter)
-        .map_err(|e| e.to_string())?;
-    reporter.step(&format!("Binding {acl_name} to {nic} (default-drop)"));
-    incus
-        .bind_egress_acl(&sandbox, &nic, &acl_name)
-        .map_err(|e| e.to_string())?;
-    Ok(n)
+        .reconcile_egress(sb, &reporter)
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -1163,7 +1095,7 @@ fn egress_status(sandbox: String) -> Result<EgressStatusDto, String> {
     // in_sync: open/unmanaged → not bound; managed non-open → bound + compiled plan empty.
     let in_sync = match (sb, policy.map(|p| p.posture)) {
         (Some(s), Some(p)) if p != llmsc_core::config::EgressPosture::Open => {
-            let ctx = enforce_ctx(&incus, &sandbox);
+            let ctx = incus.enforce_ctx(&sandbox);
             match llmsc_core::enforce::egress_acl(s, &ctx) {
                 Some(desired) => {
                     let live_match = live.iter().find(|a| a.name == acl_name);

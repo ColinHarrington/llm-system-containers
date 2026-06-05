@@ -1500,6 +1500,77 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         parse_instance_ipv4(&o.stdout, name)
     }
 
+    /// Build the egress enforcement context for a sandbox: its nic's bridge + that bridge's IPv4
+    /// subnet, plus the precise `svc-litellm` IP when the proxy is up. Shared by the GUI and CLI.
+    pub fn enforce_ctx(&self, sandbox: &str) -> crate::enforce::EnforceCtx {
+        let networks = self.networks().unwrap_or_default();
+        let live = self.instance(sandbox).ok();
+        let bridge = live
+            .as_ref()
+            .and_then(|i| {
+                i.devices
+                    .values()
+                    .find(|d| d.get("type").map(String::as_str) == Some("nic"))
+                    .and_then(|d| d.get("network").cloned())
+            })
+            .or_else(|| networks.first().map(|n| n.name.clone()))
+            .unwrap_or_else(|| "incusbr0".to_string());
+        let bridge_subnet = networks
+            .iter()
+            .find(|n| n.name == bridge)
+            .map(|n| n.ipv4.clone())
+            .unwrap_or_default();
+        let llm_dest = self.instance_ipv4(&crate::service::container_name("litellm"));
+        crate::enforce::EnforceCtx {
+            bridge,
+            bridge_subnet,
+            llm_dest,
+        }
+    }
+
+    /// The nic device name to bind an egress ACL to (the type=nic device, usually `eth0`).
+    pub fn nic_device_name(&self, sandbox: &str) -> String {
+        self.instance(sandbox)
+            .ok()
+            .and_then(|i| {
+                i.devices
+                    .iter()
+                    .find(|(_, d)| d.get("type").map(String::as_str) == Some("nic"))
+                    .map(|(name, _)| name.clone())
+            })
+            .unwrap_or_else(|| "eth0".to_string())
+    }
+
+    /// Reconcile a sandbox's egress policy into Incus: compile → diff the live ACL → apply + bind
+    /// to the nic (default-drop). Open/unmanaged tears down (unbind + delete the managed ACL).
+    /// Returns the number of ACL ops applied. Shared by the GUI command and the CLI.
+    pub fn reconcile_egress(
+        &self,
+        sandbox_cfg: &crate::config::Sandbox,
+        reporter: &dyn Reporter,
+    ) -> Result<usize> {
+        let name = &sandbox_cfg.name;
+        let ctx = self.enforce_ctx(name);
+        let nic = self.nic_device_name(name);
+        let Some(desired) = crate::enforce::egress_acl(sandbox_cfg, &ctx) else {
+            let acl_name = crate::enforce::egress_acl_name(name);
+            reporter.step(&format!("Egress open — unbinding {acl_name} from {nic}"));
+            self.unbind_egress_acl(name, &nic)?;
+            let _ = self.network_acl_delete(&acl_name);
+            return Ok(0);
+        };
+        let acl_name = desired.name.clone();
+        let live = self.network_acls()?;
+        let live_match = live.iter().find(|a| a.name == acl_name);
+        let plan = crate::enforce::egress_acl_plan(&desired, live_match);
+        let n = plan.len();
+        reporter.step(&format!("Enforcing egress for {name} — {n} ACL change(s)"));
+        self.apply_egress(&acl_name, &plan, reporter)?;
+        reporter.step(&format!("Binding {acl_name} to {nic} (default-drop)"));
+        self.bind_egress_acl(name, &nic, &acl_name)?;
+        Ok(n)
+    }
+
     /// Create a Linux user inside a sandbox — one per agent, or the human operator. An agent is
     /// 1:1 with its Linux user. `human` users are best-effort added to the sudo/wheel group.
     pub fn add_user(&self, sandbox: &str, name: &str, human: bool) -> Result<()> {
@@ -2109,6 +2180,42 @@ mod tests {
         let c = CliIncus::new("llmsc", &r);
         // "already exists" is swallowed; a real failure would propagate.
         c.network_acl_create("llmsc-egress-x").unwrap();
+    }
+
+    #[test]
+    fn reconcile_egress_managed_creates_binds_and_open_tears_down() {
+        use crate::config::{EgressPolicy, EgressPosture, Sandbox};
+        // Everything returns empty-but-ok JSON: no live networks/ACLs.
+        let r = FakeRunner::new(|_, _| out(0, "[]"));
+        let c = CliIncus::new("llmsc", &r);
+
+        // Managed allowlist → create ACL + add rule + bind nic.
+        let mut managed = Sandbox {
+            name: "web-agent-01".into(),
+            image: "images:alpine/3.21".into(),
+            ..Default::default()
+        };
+        managed.egress = Some(EgressPolicy::default_managed());
+        c.reconcile_egress(&managed, &SilentReporter).unwrap();
+        assert!(r.called_with("create"));
+        assert!(r.called_with("add"));
+        assert!(r.called_with("override") || r.called_with("set")); // nic binding
+
+        // Open → tear down (unbind + delete), no create.
+        let r2 = FakeRunner::new(|_, _| out(0, "[]"));
+        let c2 = CliIncus::new("llmsc", &r2);
+        let open = Sandbox {
+            name: "web-agent-01".into(),
+            image: "images:alpine/3.21".into(),
+            egress: Some(EgressPolicy {
+                posture: EgressPosture::Open,
+                allow: vec![],
+            }),
+            ..Default::default()
+        };
+        assert_eq!(c2.reconcile_egress(&open, &SilentReporter).unwrap(), 0);
+        assert!(r2.called_with("unset"));
+        assert!(r2.called_with("delete"));
     }
 
     #[test]

@@ -49,6 +49,27 @@ enum Command {
         #[command(subcommand)]
         action: ServiceAction,
     },
+    /// Per-agent LLM virtual keys (the credential-isolation ring).
+    Keys {
+        #[command(subcommand)]
+        action: KeysAction,
+    },
+    /// Per-agent Tetragon kernel policies (the per-UID enforcement ring).
+    Tetragon {
+        /// Sandbox name.
+        sandbox: String,
+        /// Load the compiled policies into the VM (requires Tetragon installed).
+        #[arg(long)]
+        apply: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum KeysAction {
+    /// List the per-agent virtual keys compiled from guardrails.
+    Ls,
+    /// Mint/refresh the compiled keys against the running LiteLLM proxy.
+    Sync,
 }
 
 #[derive(Subcommand)]
@@ -167,6 +188,64 @@ fn run() -> Result<(), String> {
             println!("VM: {status:?}");
         }
         Command::Services { action } => services(action)?,
+        Command::Keys { action } => keys(action)?,
+        Command::Tetragon { sandbox, apply } => tetragon(sandbox, apply)?,
+    }
+    Ok(())
+}
+
+fn keys(action: KeysAction) -> Result<(), String> {
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let specs = llmsc_core::enforce::virtual_key_specs(&cfg);
+    match action {
+        KeysAction::Ls => {
+            if specs.is_empty() {
+                println!("(no agents with virtual keys)");
+            }
+            for s in &specs {
+                println!(
+                    "{:<40} {} @ {:<16} ${:.0}/{}",
+                    s.key_alias, s.agent, s.sandbox, s.max_budget_usd, s.budget_duration
+                );
+            }
+        }
+        KeysAction::Sync => {
+            if specs.is_empty() {
+                println!("no agent keys to sync");
+                return Ok(());
+            }
+            let synced = LiteLlmDeployer::new(cfg.vm.name.clone(), &SystemRunner)
+                .sync_virtual_keys(&specs, &ConsoleReporter)
+                .map_err(|e| e.to_string())?;
+            println!("synced {} virtual key(s)", synced.len());
+        }
+    }
+    Ok(())
+}
+
+fn tetragon(sandbox: String, apply: bool) -> Result<(), String> {
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let pols = llmsc_core::tetragon::sandbox_policies(&cfg, &sandbox);
+    if pols.is_empty() {
+        println!("no agents in '{sandbox}' — nothing to enforce at the kernel");
+        return Ok(());
+    }
+    if apply {
+        let applied = llmsc_core::deploy::TetragonDeployer::new(cfg.vm.name.clone(), &SystemRunner)
+            .apply_policies(&pols, &ConsoleReporter)
+            .map_err(|e| e.to_string())?;
+        println!("loaded {} Tetragon policy(ies)", applied.len());
+    } else {
+        for p in &pols {
+            println!(
+                "{:<40} {} — {} syscalls denied (egress: {})",
+                p.name,
+                p.agent,
+                p.denied_syscalls.len(),
+                p.egress_note
+            );
+        }
+        println!("(DRAFT — use --apply to load; requires Tetragon installed in the VM)");
     }
     Ok(())
 }

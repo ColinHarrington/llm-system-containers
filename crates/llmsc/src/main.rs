@@ -49,6 +49,14 @@ enum Command {
     Rm { name: String },
     /// Reconcile declared sandboxes (from llmsc.toml) into Incus.
     Apply,
+    /// Show or enforce a sandbox's network egress policy (the per-container ACL ring).
+    Egress {
+        /// Sandbox name.
+        name: String,
+        /// Compile + apply the policy (default just shows the compiled ACL).
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 fn vm_name() -> String {
@@ -103,6 +111,43 @@ fn run() -> Result<(), String> {
             println!("existing: {:?}", report.existing);
             if !report.extra.is_empty() {
                 println!("drift (in Incus, not in config): {:?}", report.extra);
+            }
+        }
+        Command::Egress { name, apply } => {
+            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+            let sb = cfg
+                .sandbox(&name)
+                .ok_or_else(|| format!("'{name}' is not config-managed"))?;
+            if apply {
+                let n = incus
+                    .reconcile_egress(sb, &ConsoleReporter)
+                    .map_err(|e| e.to_string())?;
+                println!(
+                    "{}",
+                    if n == 0 {
+                        "egress torn down (open/unmanaged)".to_string()
+                    } else {
+                        format!("egress enforced — {n} ACL change(s)")
+                    }
+                );
+            } else {
+                let ctx = incus.enforce_ctx(&name);
+                match llmsc_core::enforce::egress_acl(sb, &ctx) {
+                    Some(acl) => {
+                        println!("ACL {} (egress):", acl.name);
+                        if acl.egress.is_empty() {
+                            println!("  (no allow rules — default-drop blocks all egress)");
+                        }
+                        for r in &acl.egress {
+                            println!(
+                                "  {} {} {}/{}  {}",
+                                r.action, r.destination, r.port, r.protocol, r.description
+                            );
+                        }
+                        println!("(use --apply to enforce)");
+                    }
+                    None => println!("egress is open/unmanaged — no ACL"),
+                }
             }
         }
         Command::Cp { src, dst } => println!("cp {src} -> {dst}: not yet implemented (M6)"),
