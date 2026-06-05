@@ -325,6 +325,7 @@ struct InstanceConfigDto {
     profiles: Vec<String>,
     config: std::collections::BTreeMap<String, String>,
     devices: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    local_devices: Vec<String>,
 }
 
 /// Read a sandbox's live Incus surface (config/devices/profiles) back from the server.
@@ -340,7 +341,102 @@ fn instance_config(name: String) -> Result<InstanceConfigDto, String> {
         profiles: i.profiles,
         config: i.config,
         devices: i.devices,
+        local_devices: i.local_devices,
     })
+}
+
+fn save_user_config(cfg: &Config) {
+    let _ = cfg.save(&config::user_config_path());
+}
+
+/// Set a live instance config key and converge it into config intent.
+#[tauri::command]
+fn instance_set_config(name: String, key: String, value: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .set_config(&name, &key, &value)
+        .map_err(|e| e.to_string())?;
+    let mut cfg = load_user_config().unwrap_or_default();
+    if let Some(sb) = cfg.sandbox_mut(&name) {
+        sb.config.insert(key, value);
+        save_user_config(&cfg);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn instance_unset_config(name: String, key: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .unset_config(&name, &key)
+        .map_err(|e| e.to_string())?;
+    let mut cfg = load_user_config().unwrap_or_default();
+    if let Some(sb) = cfg.sandbox_mut(&name) {
+        sb.config.remove(&key);
+        save_user_config(&cfg);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn instance_add_mount(name: String, source: String, path: String, readonly: bool) -> Result<(), String> {
+    let mut keys: std::collections::BTreeMap<String, String> = Default::default();
+    keys.insert("type".into(), "disk".into());
+    keys.insert("source".into(), source);
+    keys.insert("path".into(), path.clone());
+    keys.insert("shift".into(), "true".into());
+    if readonly {
+        keys.insert("readonly".into(), "true".into());
+    }
+    let dev = device_name(&path, 0);
+    CliIncus::new(vm_name(), &SystemRunner)
+        .add_device(&name, &dev, &keys)
+        .map_err(|e| e.to_string())?;
+    let mut cfg = load_user_config().unwrap_or_default();
+    if let Some(sb) = cfg.sandbox_mut(&name) {
+        sb.devices.insert(dev, keys);
+        save_user_config(&cfg);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn instance_remove_device(name: String, device: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .remove_device(&name, &device)
+        .map_err(|e| e.to_string())?;
+    let mut cfg = load_user_config().unwrap_or_default();
+    if let Some(sb) = cfg.sandbox_mut(&name) {
+        sb.devices.remove(&device);
+        save_user_config(&cfg);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn instance_add_profile(name: String, profile: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .add_profile(&name, &profile)
+        .map_err(|e| e.to_string())?;
+    let mut cfg = load_user_config().unwrap_or_default();
+    if let Some(sb) = cfg.sandbox_mut(&name) {
+        if !sb.profiles.contains(&profile) {
+            sb.profiles.push(profile);
+        }
+        save_user_config(&cfg);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn instance_remove_profile(name: String, profile: String) -> Result<(), String> {
+    CliIncus::new(vm_name(), &SystemRunner)
+        .remove_profile(&name, &profile)
+        .map_err(|e| e.to_string())?;
+    let mut cfg = load_user_config().unwrap_or_default();
+    if let Some(sb) = cfg.sandbox_mut(&name) {
+        sb.profiles.retain(|p| p != &profile);
+        save_user_config(&cfg);
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -679,6 +775,12 @@ pub fn run() {
             sandbox_launch,
             sandbox_rm,
             instance_config,
+            instance_set_config,
+            instance_unset_config,
+            instance_add_mount,
+            instance_remove_device,
+            instance_add_profile,
+            instance_remove_profile,
             operator_default,
             add_agent,
             remove_agent,

@@ -2,7 +2,10 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { removeAgent } = vi.hoisted(() => ({ removeAgent: vi.fn(async () => {}) }));
+const { removeAgent, instanceRemoveProfile } = vi.hoisted(() => ({
+  removeAgent: vi.fn(async () => {}),
+  instanceRemoveProfile: vi.fn(async () => {}),
+}));
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
   removeAgent,
@@ -10,7 +13,14 @@ vi.mock("../lib/core", () => ({
     name: "web-agent-01", status: "running", description: "", ephemeral: false,
     profiles: ["default"], config: { "security.nesting": "true" },
     devices: { work: { type: "disk", source: "~/proj", path: "/work" } },
+    localDevices: ["work"],
   })),
+  instanceSetConfig: vi.fn(async () => {}),
+  instanceUnsetConfig: vi.fn(async () => {}),
+  instanceAddMount: vi.fn(async () => {}),
+  instanceRemoveDevice: vi.fn(async () => {}),
+  instanceAddProfile: vi.fn(async () => {}),
+  instanceRemoveProfile,
   topology: vi.fn(async () => [
     {
       name: "web-agent-01", image: "dev-ubuntu-24.04", status: "running", l3: true, cpu: "—", mem: "3.4 GB",
@@ -47,5 +57,14 @@ describe("SandboxDetail", () => {
     // Remove agent (the human has no remove button, so there's exactly one).
     await fireEvent.click(screen.getByTitle("Remove agent"));
     expect(removeAgent).toHaveBeenCalledWith("web-agent-01", "agent-claude");
+  });
+
+  it("edits the live Incus surface (remove a profile)", async () => {
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    await screen.findByText("Incus configuration");
+    // The one profile chip ("default") has a remove (×) button.
+    await fireEvent.click(screen.getByTitle("Remove profile"));
+    expect(instanceRemoveProfile).toHaveBeenCalledWith("web-agent-01", "default");
   });
 });

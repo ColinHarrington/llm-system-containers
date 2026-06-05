@@ -174,7 +174,34 @@ export async function instanceConfig(name: string): Promise<InstanceConfig> {
       root: { type: "disk", path: "/", pool: "default" },
       work: { type: "disk", source: "~/projects/app", path: "/work", shift: "true" },
     },
+    localDevices: ["work"],
   };
+}
+
+// Edit a live instance's Incus surface; each also converges the change into config intent.
+export async function instanceSetConfig(name: string, key: string, value: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("instance_set_config", { name, key, value });
+  await delay(80);
+}
+export async function instanceUnsetConfig(name: string, key: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("instance_unset_config", { name, key });
+  await delay(80);
+}
+export async function instanceAddMount(name: string, source: string, path: string, readonly: boolean): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("instance_add_mount", { name, source, path, readonly });
+  await delay(80);
+}
+export async function instanceRemoveDevice(name: string, device: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("instance_remove_device", { name, device });
+  await delay(80);
+}
+export async function instanceAddProfile(name: string, profile: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("instance_add_profile", { name, profile });
+  await delay(80);
+}
+export async function instanceRemoveProfile(name: string, profile: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("instance_remove_profile", { name, profile });
+  await delay(80);
 }
 
 // Remove an agent (its Linux user) from a sandbox.

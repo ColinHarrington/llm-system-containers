@@ -1,13 +1,40 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import { ui, navigate, bump, openTerminal, showToast } from "../lib/store.svelte";
-  import { topology, removeSandbox, removeAgent, instanceConfig } from "../lib/core";
+  import {
+    topology, removeSandbox, removeAgent, instanceConfig,
+    instanceSetConfig, instanceUnsetConfig, instanceAddMount, instanceRemoveDevice,
+    instanceAddProfile, instanceRemoveProfile,
+  } from "../lib/core";
   import type { InstanceConfig, TopoSandbox } from "../lib/types";
 
   let all = $state<TopoSandbox[]>([]);
   let inst = $state<InstanceConfig | null>(null);
   let busy = $state(false);
   let userBusy = $state<string | null>(null);
+  let cfgBusy = $state(false);
+
+  // edit inputs
+  let newProfile = $state("");
+  let newKey = $state("");
+  let newVal = $state("");
+  let mSource = $state("");
+  let mPath = $state("");
+  let mRo = $state(false);
+
+  async function edit(fn: () => Promise<void>, msg: string) {
+    if (!sb) return;
+    cfgBusy = true;
+    try {
+      await fn();
+      showToast(msg, "ok");
+      bump();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally {
+      cfgBusy = false;
+    }
+  }
 
   $effect(() => {
     ui.dataVersion;
@@ -128,20 +155,29 @@
     <!-- Live Incus surface (round-trip read from the server) -->
     {#if inst}
       <div class="card mt16">
-        <div class="card-head"><h3>Incus configuration</h3><span class="sub">live surface · <span class="mono">incus config show {sb.name}</span></span>
-          {#if inst.profiles.length}
-            <span class="right flex gap6">{#each inst.profiles as p}<span class="tag mono">{p}</span>{/each}</span>
-          {/if}
-        </div>
+        <div class="card-head"><h3>Incus configuration</h3><span class="sub">live surface · editable · <span class="mono">incus config show {sb.name}</span></span></div>
         <div class="pad">
+          <!-- profiles -->
+          <div class="sub2">Profiles</div>
+          <div class="flex gap6 wrap mb16">
+            {#each inst.profiles as p}
+              <span class="echip">{p}<button class="ex" title="Remove profile" disabled={cfgBusy} onclick={() => edit(() => instanceRemoveProfile(sb.name, p), `Removed profile ${p}`)}>×</button></span>
+            {/each}
+            <input class="input mini" bind:value={newProfile} placeholder="add profile…" />
+            <button class="btn sm" disabled={cfgBusy || !newProfile.trim()} onclick={() => { const p = newProfile.trim(); newProfile = ""; void edit(() => instanceAddProfile(sb.name, p), `Applied profile ${p}`); }}>Add</button>
+          </div>
+
+          <!-- devices -->
           <div class="sub2">Devices</div>
-          {#if deviceEntries.length === 0}
-            <div class="muted small mb12">none</div>
-          {:else}
-            <div class="devs mb16">
+          {#if deviceEntries.length === 0}<div class="muted small mb8">none</div>{:else}
+            <div class="devs mb12">
               {#each deviceEntries as [dname, dev]}
                 <div class="dev">
-                  <div class="flex gap8 mb4"><span class="mono small strong" style="color:var(--text)">{dname}</span><span class="tag">{dev.type ?? "?"}</span></div>
+                  <div class="flex gap8 mb4"><span class="mono small strong" style="color:var(--text)">{dname}</span><span class="tag">{dev.type ?? "?"}</span>
+                    {#if inst.localDevices.includes(dname)}
+                      <button class="ex right" title="Remove device" disabled={cfgBusy} onclick={() => edit(() => instanceRemoveDevice(sb.name, dname), `Removed device ${dname}`)}>×</button>
+                    {/if}
+                  </div>
                   <div class="kvs">
                     {#each Object.entries(dev).filter(([k]) => k !== "type") as [k, v]}
                       <div class="kvline"><span class="kk mono">{k}</span><span class="vv mono">{v}</span></div>
@@ -151,16 +187,29 @@
               {/each}
             </div>
           {/if}
+          <div class="addmount mb16">
+            <input class="input mono" bind:value={mSource} placeholder="host source" />
+            <input class="input mono" bind:value={mPath} placeholder="/container/path" />
+            <label class="ro"><input type="checkbox" bind:checked={mRo} /> ro</label>
+            <button class="btn sm" disabled={cfgBusy || !mSource.trim() || !mPath.trim()} onclick={() => { const s = mSource.trim(), p = mPath.trim(), ro = mRo; mSource = ""; mPath = ""; mRo = false; void edit(() => instanceAddMount(sb.name, s, p, ro), `Added mount ${p}`); }}>Add mount</button>
+          </div>
+
+          <!-- config -->
           <div class="sub2">Config</div>
-          {#if configEntries.length === 0}
-            <div class="muted small">none</div>
-          {:else}
-            <div class="kvs">
+          {#if configEntries.length === 0}<div class="muted small mb8">none</div>{:else}
+            <div class="kvs mb12">
               {#each configEntries as [k, v]}
-                <div class="kvline"><span class="kk mono">{k}</span><span class="vv mono">{v}</span></div>
+                <div class="kvline"><span class="kk mono">{k}</span><span class="vv mono">{v}</span>
+                  <button class="ex" title="Unset" disabled={cfgBusy} onclick={() => edit(() => instanceUnsetConfig(sb.name, k), `Unset ${k}`)}>×</button>
+                </div>
               {/each}
             </div>
           {/if}
+          <div class="addcfg">
+            <input class="input mono" bind:value={newKey} placeholder="config key (e.g. limits.processes)" />
+            <input class="input mono" bind:value={newVal} placeholder="value" />
+            <button class="btn sm" disabled={cfgBusy || !newKey.trim()} onclick={() => { const k = newKey.trim(), v = newVal; newKey = ""; newVal = ""; void edit(() => instanceSetConfig(sb.name, k, v), `Set ${k}`); }}>Set</button>
+          </div>
         </div>
       </div>
     {/if}
@@ -179,5 +228,12 @@
   .kvs { display: flex; flex-direction: column; gap: 3px; }
   .kvline { display: flex; gap: 10px; font-size: 11.5px; }
   .kk { color: var(--text-3); min-width: 120px; }
-  .vv { color: var(--text); overflow-wrap: anywhere; }
+  .vv { color: var(--text); overflow-wrap: anywhere; flex: 1; }
+  .echip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; color: var(--text-2); background: var(--card-2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px 2px 8px; }
+  .ex { border: none; background: transparent; color: var(--text-3); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+  .ex:hover { color: var(--danger); }
+  .ex:disabled { opacity: .4; cursor: not-allowed; }
+  .input.mini { width: 130px; padding: 4px 8px; font-size: 11.5px; }
+  .addmount { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; align-items: center; }
+  .addcfg { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; }
 </style>

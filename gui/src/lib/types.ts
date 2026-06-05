@@ -89,6 +89,7 @@ export interface InstanceConfig {
   profiles: string[];
   config: Record<string, string>;
   devices: Record<string, Record<string, string>>;
+  localDevices: string[];
 }
 
 // --- Topology (nested VM -> sandboxes -> agents) ---

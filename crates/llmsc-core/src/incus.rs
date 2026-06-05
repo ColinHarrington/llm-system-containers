@@ -189,6 +189,8 @@ pub struct InstanceConfig {
     pub config: BTreeMap<String, String>,
     /// Effective devices (expanded — includes profile-provided eth0/root plus instance-local).
     pub devices: BTreeMap<String, BTreeMap<String, String>>,
+    /// Names of instance-local devices (the removable subset; profile-inherited ones are not).
+    pub local_devices: Vec<String>,
 }
 
 /// Parse `incus list <name> --format json` into the named instance's [`InstanceConfig`].
@@ -208,6 +210,8 @@ pub fn parse_instance(list_json: &str, name: &str) -> Result<InstanceConfig> {
         config: BTreeMap<String, String>,
         #[serde(default, deserialize_with = "null_default")]
         expanded_devices: BTreeMap<String, BTreeMap<String, String>>,
+        #[serde(default, deserialize_with = "null_default")]
+        devices: BTreeMap<String, BTreeMap<String, String>>,
     }
     let raw: Vec<Raw> = serde_json::from_str(list_json)
         .map_err(|e| Error::Incus(format!("parsing `incus list` output: {e}")))?;
@@ -216,6 +220,7 @@ pub fn parse_instance(list_json: &str, name: &str) -> Result<InstanceConfig> {
         .find(|r| r.name == name)
         .ok_or_else(|| Error::NotFound(format!("instance '{name}'")))?;
     Ok(InstanceConfig {
+        local_devices: inst.devices.keys().cloned().collect(),
         status: if inst.status == "Running" {
             InstanceStatus::Running
         } else {
@@ -620,6 +625,69 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         parse_images(&o.stdout)
     }
 
+    /// Set one instance config key (`incus config set <name> <key> <value>`).
+    pub fn set_config(&self, name: &str, key: &str, value: &str) -> Result<()> {
+        let o = self.incus_run(&["config", "set", name, key, value])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("config set {key}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Unset one instance config key (`incus config unset`).
+    pub fn unset_config(&self, name: &str, key: &str) -> Result<()> {
+        let o = self.incus_run(&["config", "unset", name, key])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("config unset {key}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Add a device to an instance (`incus config device add <name> <dev> <type> key=value…`).
+    pub fn add_device(&self, name: &str, dev: &str, keys: &BTreeMap<String, String>) -> Result<()> {
+        let dtype = keys.get("type").cloned().unwrap_or_else(|| "disk".into());
+        let mut args: Vec<String> =
+            vec!["config".into(), "device".into(), "add".into(), name.into(), dev.into(), dtype];
+        for (k, v) in keys {
+            if k != "type" {
+                args.push(format!("{k}={v}"));
+            }
+        }
+        let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+        let o = self.incus_run(&argv)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("device add {dev}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Remove an instance-local device (`incus config device remove`).
+    pub fn remove_device(&self, name: &str, dev: &str) -> Result<()> {
+        let o = self.incus_run(&["config", "device", "remove", name, dev])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("device remove {dev}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Apply a profile to an instance (`incus profile add <instance> <profile>`).
+    pub fn add_profile(&self, name: &str, profile: &str) -> Result<()> {
+        let o = self.incus_run(&["profile", "add", name, profile])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("profile add {profile}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Remove a profile from an instance (`incus profile remove`).
+    pub fn remove_profile(&self, name: &str, profile: &str) -> Result<()> {
+        let o = self.incus_run(&["profile", "remove", name, profile])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("profile remove {profile}: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
     /// Read a live instance's Incus surface back from the server (config/devices/profiles).
     pub fn instance(&self, name: &str) -> Result<InstanceConfig> {
         let o = self.incus_run(&["list", name, "--format", "json"])?;
@@ -1011,6 +1079,25 @@ mod tests {
         assert!(!i.config.contains_key("volatile.eth0.hwaddr")); // volatile filtered out
         assert_eq!(i.devices["work"]["source"], "/home/colin/proj");
         assert!(matches!(parse_instance(json, "missing"), Err(Error::NotFound(_))));
+    }
+
+    #[test]
+    fn instance_mutations_call_the_right_incus_commands() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        c.set_config("web-agent-01", "limits.processes", "512").unwrap();
+        c.unset_config("web-agent-01", "limits.processes").unwrap();
+        let mut keys = std::collections::BTreeMap::new();
+        keys.insert("type".into(), "disk".into());
+        keys.insert("source".into(), "/h/p".into());
+        keys.insert("path".into(), "/work".into());
+        c.add_device("web-agent-01", "work", &keys).unwrap();
+        c.remove_device("web-agent-01", "work").unwrap();
+        c.add_profile("web-agent-01", "net-isolated").unwrap();
+        c.remove_profile("web-agent-01", "net-isolated").unwrap();
+        for needle in ["set", "unset", "device", "add", "remove", "profile", "limits.processes", "net-isolated", "source=/h/p"] {
+            assert!(r.called_with(needle), "expected an incus call containing {needle:?}");
+        }
     }
 
     #[test]

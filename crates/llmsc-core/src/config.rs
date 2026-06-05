@@ -182,6 +182,11 @@ impl Config {
         self.sandboxes.iter().find(|s| s.name == name)
     }
 
+    /// A declared sandbox by name, mutably (to converge config/devices/profiles edits).
+    pub fn sandbox_mut(&mut self, name: &str) -> Option<&mut Sandbox> {
+        self.sandboxes.iter_mut().find(|s| s.name == name)
+    }
+
     /// Record a sandbox (insert if absent; update image/nesting if present). Returns a mut ref.
     pub fn upsert_sandbox(&mut self, name: &str, image: &str, nesting: bool) -> &mut Sandbox {
         if let Some(i) = self.sandboxes.iter().position(|s| s.name == name) {
