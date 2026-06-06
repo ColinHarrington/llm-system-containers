@@ -21,6 +21,16 @@ describe("CommandPalette", () => {
     expect(ui.paletteOpen).toBe(false);
   });
 
+  it("opens the keyboard shortcuts help from the palette", async () => {
+    ui.paletteOpen = true;
+    ui.shortcutsOpen = false;
+    render(CommandPalette);
+    const input = await screen.findByPlaceholderText("Type a command…");
+    await fireEvent.input(input, { target: { value: "shortcuts" } });
+    await fireEvent.click(screen.getByText("Keyboard shortcuts"));
+    expect(ui.shortcutsOpen).toBe(true);
+  });
+
   it("jumps to a sandbox loaded from the backend", async () => {
     ui.paletteOpen = true;
     ui.selectedSandbox = null;

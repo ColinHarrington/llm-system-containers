@@ -29,6 +29,7 @@ export const ui = $state({
   selectedSandbox: null as string | null,
   paletteOpen: false,
   activityOpen: false,
+  shortcutsOpen: false,
   steerAgent: null as AgentInfo | null,
   terminalTarget: null as string | null,
   toast: null as { msg: string; color: ToastColor; id: number } | null,

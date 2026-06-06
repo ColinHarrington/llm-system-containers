@@ -62,10 +62,21 @@
     document.documentElement.dataset.theme = ui.theme;
   });
 
+  // The cheat-sheet shown by the `?` shortcut.
+  const SHORTCUTS: [string[], string][] = [
+    [["⌘", "K"], "Command palette"],
+    [["/"], "Command palette"],
+    [["1", "–", "8"], "Jump between screens"],
+    [["n"], "New sandbox"],
+    [["t"], "Toggle theme"],
+    [["?"], "This help"],
+    [["Esc"], "Close any overlay"],
+  ];
+
   // Keyboard nav: Escape closes overlays; number keys jump between screens (direction A).
   const NUM_NAV: Record<string, Screen> = {
     "1": "dashboard", "2": "sandboxes", "3": "topology", "4": "agent",
-    "5": "incus", "6": "services", "7": "profiles",
+    "5": "incus", "6": "services", "7": "security", "8": "profiles",
   };
   $effect(() => {
     function onKey(e: KeyboardEvent) {
@@ -81,11 +92,17 @@
         ui.paletteOpen = false;
         ui.buildImageOpen = false;
         ui.addAgentSandbox = null;
+        ui.activityOpen = false;
+        ui.shortcutsOpen = false;
         return;
       }
       const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return; // don't hijack browser/system combos
       if (e.key === "/") { e.preventDefault(); ui.paletteOpen = true; return; }
+      if (e.key === "?") { e.preventDefault(); ui.shortcutsOpen = true; return; }
+      if (e.key === "n") { e.preventDefault(); ui.newSandboxOpen = true; return; }
+      if (e.key === "t") { e.preventDefault(); toggleTheme(); return; }
       if (NUM_NAV[e.key]) navigate(NUM_NAV[e.key]);
     }
     window.addEventListener("keydown", onKey);
@@ -329,6 +346,21 @@
   <ActivityDrawer />
 </div>
 
+{#if ui.shortcutsOpen}
+  <Modal title="Keyboard shortcuts" maxWidth={460} onclose={() => (ui.shortcutsOpen = false)}>
+    {#snippet body()}
+      <div class="sc-grid">
+        {#each SHORTCUTS as [keys, label]}
+          <div class="sc-row"><span class="sc-keys">{#each keys as k}<kbd>{k}</kbd>{/each}</span><span class="sc-label">{label}</span></div>
+        {/each}
+      </div>
+    {/snippet}
+    {#snippet foot()}
+      <button class="btn primary" onclick={() => (ui.shortcutsOpen = false)}>Got it</button>
+    {/snippet}
+  </Modal>
+{/if}
+
 {#if ui.newSandboxOpen}
   <NewSandbox />
 {/if}
@@ -436,4 +468,13 @@
     margin-top: 10px; padding: 12px; border: 1px solid var(--border);
     border-radius: 9px; background: rgba(255, 255, 255, 0.02);
   }
+  .sc-grid { display: flex; flex-direction: column; gap: 4px; }
+  .sc-row { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 12px; padding: 5px 2px; }
+  .sc-keys { display: flex; gap: 4px; }
+  .sc-keys kbd {
+    font-family: var(--mono); font-size: 11px; min-width: 20px; text-align: center;
+    padding: 2px 6px; border: 1px solid var(--border-strong); border-bottom-width: 2px;
+    border-radius: 5px; background: var(--card-2); color: var(--text-2);
+  }
+  .sc-label { font-size: 12.5px; color: var(--text); }
 </style>

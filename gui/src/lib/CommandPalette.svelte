@@ -50,7 +50,8 @@
     { id: "build-image", label: "Build image", hint: "incus publish", icon: "image", keywords: "build custom image distro", group: "Actions", run: () => (ui.buildImageOpen = true) },
     { id: "vm-toggle", label: vm === "Running" ? "Stop the VM" : "Start the VM", hint: "llmsctl", icon: vm === "Running" ? "stop" : "play", keywords: "vm up down start stop lima", group: "Actions", run: () => void vmToggle() },
     { id: "sync-keys", label: "Sync virtual keys", hint: "llmsctl keys sync", icon: "key", keywords: "litellm keys budget sync", group: "Actions", run: () => void doSyncKeys() },
-    { id: "toggle-theme", label: "Toggle light / dark theme", hint: "", icon: "moon", keywords: "theme dark light appearance", group: "Actions", run: () => toggleTheme() },
+    { id: "toggle-theme", label: "Toggle light / dark theme", hint: "t", icon: "moon", keywords: "theme dark light appearance", group: "Actions", run: () => toggleTheme() },
+    { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", icon: "doc", keywords: "keyboard shortcuts help keys cheat sheet", group: "Actions", run: () => (ui.shortcutsOpen = true) },
   ]);
 
   const sandboxCmds = $derived<Cmd[]>(
