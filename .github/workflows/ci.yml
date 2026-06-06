@@ -17,9 +17,36 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: rustfmt
+      - name: rustfmt (workspace)
         run: cargo fmt --all --check
+      - name: rustfmt (gui/src-tauri)
+        run: cargo fmt --manifest-path gui/src-tauri/Cargo.toml --all --check
       - name: clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: test
         run: cargo test --all
+
+  gui:
+    name: gui (svelte-check, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: gui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: gui/pnpm-lock.yaml
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: svelte-check
+        run: pnpm check
+      - name: test
+        run: pnpm test
+      - name: build
+        run: pnpm build
