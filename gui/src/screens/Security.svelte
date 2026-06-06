@@ -2,13 +2,42 @@
   import Icon from "../lib/Icon.svelte";
   import Skeleton from "../lib/Skeleton.svelte";
   import FetchError from "../lib/FetchError.svelte";
-  import { ui, live, openSandbox } from "../lib/store.svelte";
-  import { fleetEnforcement } from "../lib/core";
+  import { ui, live, openSandbox, showToast, bump } from "../lib/store.svelte";
+  import { fleetEnforcement, enforceAll } from "../lib/core";
   import type { FleetEnforcement } from "../lib/types";
 
   let fleet = $state<FleetEnforcement[]>([]);
   let loading = $state(true);
   let loadError = $state<string | null>(null);
+  let busyRow = $state<string | null>(null);
+  let bulkBusy = $state(false);
+
+  const managedSandboxes = $derived(fleet.filter((f) => f.egressPosture !== "unmanaged" && f.egressPosture !== "open"));
+
+  async function enforceRow(name: string) {
+    busyRow = name;
+    showToast(`$ llmsctl enforce ${name}`);
+    try { await enforceAll(name); showToast(`Enforced ${name}`, "ok"); bump(); }
+    catch (e) { showToast(String(e), "danger"); }
+    finally { busyRow = null; }
+  }
+
+  async function enforceFleet() {
+    const targets = managedSandboxes.map((f) => f.sandbox);
+    if (targets.length === 0) return;
+    bulkBusy = true;
+    showToast(`Enforcing ${targets.length} sandbox(es)…`);
+    let ok = 0;
+    for (const name of targets) {
+      busyRow = name;
+      try { await enforceAll(name); ok++; }
+      catch { /* keep going; reported in summary */ }
+    }
+    busyRow = null;
+    bulkBusy = false;
+    showToast(ok === targets.length ? `Enforced all ${ok} sandbox(es)` : `Enforced ${ok}/${targets.length} (some failed)`, ok === targets.length ? "ok" : "warn");
+    bump();
+  }
 
   $effect(() => {
     ui.dataVersion;
@@ -69,7 +98,11 @@
 
   <!-- Matrix -->
   <div class="card">
-    <div class="card-head"><h3>Per-sandbox posture</h3><span class="sub">configured intent · <span class="mono">llmsctl doctor</span></span></div>
+    <div class="card-head"><h3>Per-sandbox posture</h3><span class="sub">configured intent · <span class="mono">llmsctl doctor</span></span>
+      <button class="btn sm primary right" disabled={bulkBusy || managedSandboxes.length === 0} onclick={enforceFleet}
+        title="Apply every ring for every managed sandbox">
+        <Icon name="shield" size={13} /><span>{bulkBusy ? "Enforcing…" : `Enforce all (${managedSandboxes.length})`}</span></button>
+    </div>
     {#if loading}
       <div class="pad"><Skeleton w="100%" h={18} mb={10} /><Skeleton w="100%" h={18} mb={10} /><Skeleton w="80%" h={18} /></div>
     {:else if fleet.length === 0}
@@ -92,7 +125,12 @@
               <td class="mono small">{f.agents}</td>
               <td>{#if f.readOnlyAgents > 0}<span class="pill ok">{f.readOnlyAgents}</span>{:else}<span class="muted small">—</span>{/if}</td>
               <td>{#if f.controlPlaneAgents > 0}<span class="pill warn">{f.controlPlaneAgents}</span>{:else}<span class="muted small">none</span>{/if}</td>
-              <td style="text-align:right"><button class="btn sm" onclick={(e) => { e.stopPropagation(); openSandbox(f.sandbox); }}>Open ›</button></td>
+              <td style="text-align:right; white-space:nowrap">
+                {#if f.egressPosture !== "unmanaged" && f.egressPosture !== "open"}
+                  <button class="btn sm" disabled={busyRow === f.sandbox || bulkBusy} title="Apply every ring for this sandbox" onclick={(e) => { e.stopPropagation(); enforceRow(f.sandbox); }}>{busyRow === f.sandbox ? "…" : "Enforce"}</button>
+                {/if}
+                <button class="btn sm" onclick={(e) => { e.stopPropagation(); openSandbox(f.sandbox); }}>Open ›</button>
+              </td>
             </tr>
           {/each}
         </tbody>

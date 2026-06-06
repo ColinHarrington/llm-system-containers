@@ -2,11 +2,13 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
+const { enforceAll } = vi.hoisted(() => ({ enforceAll: vi.fn(async () => []) }));
 vi.mock("../lib/core", () => ({
   fleetEnforcement: vi.fn(async () => [
     { sandbox: "web-agent-01", egressPosture: "allowlist", domains: 2, agents: 1, readOnlyAgents: 0, controlPlaneAgents: 1 },
     { sandbox: "scratch", egressPosture: "unmanaged", domains: 0, agents: 0, readOnlyAgents: 0, controlPlaneAgents: 0 },
   ]),
+  enforceAll,
 }));
 
 import { ui } from "../lib/store.svelte";
@@ -23,6 +25,22 @@ describe("Security", () => {
     await fireEvent.click(screen.getByText("web-agent-01"));
     expect(ui.selectedSandbox).toBe("web-agent-01");
     expect(ui.screen).toBe("sandbox-detail");
+  });
+
+  it("enforces a single managed sandbox and the whole fleet", async () => {
+    enforceAll.mockClear();
+    render(Security);
+    await screen.findByText("web-agent-01");
+    // Per-row Enforce shows only for managed sandboxes (web-agent-01, not scratch).
+    const rowEnforce = screen.getAllByRole("button", { name: "Enforce" });
+    expect(rowEnforce.length).toBe(1);
+    await fireEvent.click(rowEnforce[0]);
+    expect(enforceAll).toHaveBeenCalledWith("web-agent-01");
+
+    // Fleet enforce hits every managed sandbox (1 here).
+    enforceAll.mockClear();
+    await fireEvent.click(screen.getByRole("button", { name: /Enforce all \(1\)/ }));
+    expect(enforceAll).toHaveBeenCalledWith("web-agent-01");
   });
 
   it("filters the matrix by search and posture", async () => {
