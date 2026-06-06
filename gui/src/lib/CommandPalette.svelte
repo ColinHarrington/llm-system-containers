@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
-  import { ui, navigate, openSandbox, openTerminal, toggleTheme, bump, showToast, type Screen, type IncusTab } from "./store.svelte";
+  import { ui, navigate, openSandbox, openTerminal, toggleTheme, bump, showToast, confirmAction, type Screen, type IncusTab } from "./store.svelte";
   import { listSandboxes, vmStatus, vmUp, vmDown, syncVirtualKeys } from "./core";
   import type { Sandbox, VmStatus } from "./types";
 
@@ -20,8 +20,10 @@
   let vm = $state<VmStatus | null>(null);
 
   async function vmToggle() {
-    showToast(vm === "Running" ? "$ llmsctl down" : "$ llmsctl up");
-    try { if (vm === "Running") await vmDown(); else await vmUp(); showToast(vm === "Running" ? "VM stopped" : "VM is up", "ok"); bump(); }
+    const stopping = vm === "Running";
+    if (stopping && !(await confirmAction({ title: "Stop the VM", message: "Stop the Playground VM? Every running sandbox and service stops with it.", confirmLabel: "Stop VM" }))) return;
+    showToast(stopping ? "$ llmsctl down" : "$ llmsctl up");
+    try { if (stopping) await vmDown(); else await vmUp(); showToast(stopping ? "VM stopped" : "VM is up", "ok"); bump(); }
     catch (e) { showToast(String(e), "danger"); }
   }
   async function doSyncKeys() {

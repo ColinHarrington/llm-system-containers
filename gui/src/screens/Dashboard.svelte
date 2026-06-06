@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import Skeleton from "../lib/Skeleton.svelte";
-  import { ui, live, navigate, openSandbox, bump, openTerminal, showToast } from "../lib/store.svelte";
+  import { ui, live, navigate, openSandbox, bump, openTerminal, showToast, confirmAction } from "../lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, topology, hostResources,
     serviceStates, fleetEnforcement,
@@ -37,11 +37,17 @@
   }
 
   async function toggleVm() {
+    const stopping = vm === "Running";
+    if (stopping && !(await confirmAction({
+      title: "Stop the VM",
+      message: "Stop the Playground VM? Every running sandbox and service stops with it. You can start it again afterwards.",
+      confirmLabel: "Stop VM",
+    }))) return;
     vmBusy = true;
-    showToast(vm === "Running" ? "$ llmsctl down" : "$ llmsctl up");
+    showToast(stopping ? "$ llmsctl down" : "$ llmsctl up");
     try {
-      if (vm === "Running") await vmDown(); else await vmUp();
-      showToast(vm === "Running" ? "VM stopped" : "VM is up", "ok");
+      if (stopping) await vmDown(); else await vmUp();
+      showToast(stopping ? "VM stopped" : "VM is up", "ok");
       bump();
     } catch (e) { showToast(String(e), "danger"); } finally { vmBusy = false; }
   }

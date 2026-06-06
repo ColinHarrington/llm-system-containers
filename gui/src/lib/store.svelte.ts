@@ -54,17 +54,24 @@ export function clearActivity(): void {
 // --- live polling ---
 // A `tick` counter incremented on an interval (paused when the tab is hidden or the user toggles
 // it off). Live screens read `live.tick` in their refresh effect to stay current automatically.
-export const live = $state({ tick: 0, paused: false });
+export const live = $state({ tick: 0, paused: false, lastRefresh: 0 });
 export function toggleLive(): void {
   live.paused = !live.paused;
+}
+/** Force every live screen to refetch now (and stamp the last-refresh time). */
+export function refreshNow(): void {
+  live.lastRefresh = Date.now();
+  ui.dataVersion++;
 }
 let liveTimer: ReturnType<typeof setInterval> | null = null;
 export function initLivePolling(ms = 6000): () => void {
   if (liveTimer) clearInterval(liveTimer);
+  live.lastRefresh = Date.now();
   liveTimer = setInterval(() => {
     if (live.paused) return;
     if (typeof document !== "undefined" && document.hidden) return;
     live.tick++;
+    live.lastRefresh = Date.now();
   }, ms);
   return () => {
     if (liveTimer) clearInterval(liveTimer);
@@ -119,7 +126,17 @@ export function openSandbox(name: string): void {
 }
 
 export function bump(): void {
+  live.lastRefresh = Date.now();
   ui.dataVersion++;
+}
+
+/** "updated Xs ago" — pass `live.tick` so it recomputes on each poll. */
+export function refreshedAgo(ts: number, _tick: number): string {
+  if (!ts) return "—";
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  return `${Math.round(s / 60)}m ago`;
 }
 
 export function toggleTheme(): void {

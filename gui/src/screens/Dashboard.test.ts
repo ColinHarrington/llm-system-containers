@@ -25,6 +25,8 @@ vi.mock("../lib/core", () => ({
   hostResources: vi.fn(async () => ({ cpuUsed: 5, cpuTotal: 8, memUsed: 9, memTotal: 16, diskUsed: 34, diskTotal: 120 })),
 }));
 
+import { vmDown } from "../lib/core";
+import { ui, resolveConfirm } from "../lib/store.svelte";
 import Dashboard from "./Dashboard.svelte";
 
 describe("Dashboard", () => {
@@ -44,6 +46,16 @@ describe("Dashboard", () => {
     expect(await screen.findByText("Welcome to llmsc")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: /Run setup wizard/ }));
     expect(ui.screen).toBe("wizard");
+  });
+
+  it("confirms before stopping the VM", async () => {
+    vi.mocked(vmDown).mockClear();
+    render(Dashboard);
+    await fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    expect(ui.confirm?.title).toBe("Stop the VM");
+    resolveConfirm(false);
+    await Promise.resolve();
+    expect(vmDown).not.toHaveBeenCalled();
   });
 
   it("surfaces live service health and security posture", async () => {

@@ -23,7 +23,7 @@
   import { onMount } from "svelte";
   import {
     ui, navigate, openSandbox, bump, toggleTheme, showToast, activity, logActivity,
-    live, toggleLive, initLivePolling, resolveConfirm, SCREEN_TITLES, type Screen,
+    live, toggleLive, initLivePolling, resolveConfirm, refreshNow, refreshedAgo, SCREEN_TITLES, type Screen,
   } from "./lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, addAgent, listProfiles, agentSteer, onProgress,
@@ -302,6 +302,8 @@
         <span>Search sandboxes, users, traces…</span>
         <kbd>⌘K</kbd>
       </button>
+      <span class="updated mono" title="Last refresh">{refreshedAgo(live.lastRefresh, live.tick)}</span>
+      <button class="iconbtn" title="Refresh now" aria-label="Refresh now" onclick={refreshNow}><Icon name="arrow" /></button>
       <button class="livebtn" class:paused={live.paused} title={live.paused ? "Live updates paused — click to resume" : "Live updates on — click to pause"} onclick={toggleLive}>
         <span class="dot {live.paused ? 'muted' : 'ok'}" class:pulse={!live.paused}></span>
         <span>{live.paused ? "Paused" : "Live"}</span>
