@@ -43,6 +43,19 @@ describe("Security", () => {
     expect(enforceAll).toHaveBeenCalledWith("web-agent-01");
   });
 
+  it("sorts the matrix when a column header is clicked", async () => {
+    const { container } = render(Security);
+    await screen.findByText("web-agent-01");
+    const rowNames = () => [...container.querySelectorAll("tbody tr")].map((r) => r.querySelector("td")?.textContent ?? "");
+
+    // Sort by Agents ascending → scratch (0 agents) before web-agent-01 (1).
+    await fireEvent.click(screen.getByRole("button", { name: /Agents/ }));
+    expect(rowNames()[0]).toContain("scratch");
+    // Toggle to descending → web-agent-01 first.
+    await fireEvent.click(screen.getByRole("button", { name: /Agents/ }));
+    expect(rowNames()[0]).toContain("web-agent-01");
+  });
+
   it("filters the matrix by search and posture", async () => {
     render(Security);
     await screen.findByText("web-agent-01");

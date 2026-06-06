@@ -2,6 +2,7 @@
   import Icon from "../lib/Icon.svelte";
   import Skeleton from "../lib/Skeleton.svelte";
   import FetchError from "../lib/FetchError.svelte";
+  import SortHeader from "../lib/SortHeader.svelte";
   import { ui, live, openSandbox, showToast, bump } from "../lib/store.svelte";
   import { fleetEnforcement, enforceAll } from "../lib/core";
   import type { FleetEnforcement } from "../lib/types";
@@ -61,12 +62,28 @@
 
   let query = $state("");
   let pfilter = $state<"all" | "managed" | "unmanaged">("all");
+
+  type SortKey = "sandbox" | "egressPosture" | "domains" | "agents" | "readOnlyAgents" | "controlPlaneAgents";
+  let sort = $state<{ key: SortKey; dir: 1 | -1 }>({ key: "sandbox", dir: 1 });
+  function toggleSort(key: string) {
+    const k = key as SortKey;
+    if (sort.key === k) sort.dir = sort.dir === 1 ? -1 : 1;
+    else { sort.key = k; sort.dir = 1; }
+  }
+
   const shown = $derived(
     fleet
       .filter((f) => f.sandbox.toLowerCase().includes(query.toLowerCase()))
       .filter((f) => {
         const managed = f.egressPosture !== "unmanaged" && f.egressPosture !== "open";
         return pfilter === "all" || (pfilter === "managed" ? managed : !managed);
+      })
+      .slice()
+      .sort((a, b) => {
+        const av = a[sort.key];
+        const bv = b[sort.key];
+        const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+        return cmp * sort.dir;
       }),
   );
 </script>
@@ -115,7 +132,15 @@
       <div class="empty"><div class="icon"><Icon name="search" size={22} /></div>No sandboxes match the current filter.</div>
     {:else}
       <table class="tbl">
-        <thead><tr><th>Sandbox</th><th>Egress (L3/L4)</th><th>Domains (L7)</th><th>Agents</th><th>RO fs</th><th>Control-plane</th><th></th></tr></thead>
+        <thead><tr>
+          <SortHeader label="Sandbox" col="sandbox" {sort} onsort={toggleSort} />
+          <SortHeader label="Egress (L3/L4)" col="egressPosture" {sort} onsort={toggleSort} />
+          <SortHeader label="Domains (L7)" col="domains" {sort} onsort={toggleSort} />
+          <SortHeader label="Agents" col="agents" {sort} onsort={toggleSort} />
+          <SortHeader label="RO fs" col="readOnlyAgents" {sort} onsort={toggleSort} />
+          <SortHeader label="Control-plane" col="controlPlaneAgents" {sort} onsort={toggleSort} />
+          <th></th>
+        </tr></thead>
         <tbody>
           {#each shown as f (f.sandbox)}
             <tr class="clickable" onclick={() => openSandbox(f.sandbox)}>
