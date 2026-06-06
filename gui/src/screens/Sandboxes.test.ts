@@ -27,6 +27,16 @@ describe("Sandboxes", () => {
     expect(screen.queryByText("scratch-01")).not.toBeInTheDocument();
   });
 
+  it("shows a fetch error with retry, then recovers", async () => {
+    vi.mocked(listSandboxes).mockRejectedValueOnce(new Error("incus unreachable"));
+    render(Sandboxes);
+    expect(await screen.findByTestId("fetch-error")).toHaveTextContent("incus unreachable");
+    // Retry → the default mock resolves with sandboxes.
+    await fireEvent.click(screen.getByRole("button", { name: /Retry/ }));
+    expect(await screen.findByText("web-agent-01")).toBeInTheDocument();
+    expect(screen.queryByTestId("fetch-error")).not.toBeInTheDocument();
+  });
+
   it("shows skeletons while the first fetch is in flight", async () => {
     vi.mocked(listSandboxes).mockReturnValueOnce(new Promise(() => {})); // never resolves
     render(Sandboxes);

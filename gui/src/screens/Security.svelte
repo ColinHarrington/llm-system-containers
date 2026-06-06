@@ -1,18 +1,25 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import Skeleton from "../lib/Skeleton.svelte";
+  import FetchError from "../lib/FetchError.svelte";
   import { ui, live, openSandbox } from "../lib/store.svelte";
   import { fleetEnforcement } from "../lib/core";
   import type { FleetEnforcement } from "../lib/types";
 
   let fleet = $state<FleetEnforcement[]>([]);
   let loading = $state(true);
+  let loadError = $state<string | null>(null);
 
   $effect(() => {
     ui.dataVersion;
     live.tick; // auto-refresh on the live poll
-    void fleetEnforcement().then((f) => (fleet = f)).catch(() => (fleet = [])).finally(() => (loading = false));
+    void load();
   });
+  async function load() {
+    try { fleet = await fleetEnforcement(); loadError = null; }
+    catch (e) { loadError = String(e); }
+    finally { loading = false; }
+  }
 
   const managed = $derived(fleet.filter((f) => f.egressPosture !== "unmanaged" && f.egressPosture !== "open").length);
   const totalAgents = $derived(fleet.reduce((n, f) => n + f.agents, 0));
@@ -36,6 +43,9 @@
 </script>
 
 <div class="content">
+  {#if loadError}
+    <FetchError message={loadError} onretry={() => { loading = true; void load(); }} busy={loading} />
+  {/if}
   <p class="hint mb16">Configured enforcement intent across every config-managed sandbox. Per-container egress ACLs (L3/L4) + mitmproxy domains (L7) + per-UID Tetragon policies all compile from each agent's guardrails. Open a sandbox for its live ring status and to refine policy.</p>
 
   <!-- Aggregate -->

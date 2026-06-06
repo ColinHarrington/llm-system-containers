@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import Skeleton from "../lib/Skeleton.svelte";
+  import FetchError from "../lib/FetchError.svelte";
   import { ui, live, navigate, openSandbox, bump, openTerminal, showToast, confirmAction } from "../lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, topology, hostResources,
@@ -18,6 +19,7 @@
   let fleet = $state<FleetEnforcement[]>([]);
   let res = $state<HostResources | null>(null);
   let loading = $state(true);
+  let loadError = $state<string | null>(null);
   let vmBusy = $state(false);
 
   $effect(() => {
@@ -31,7 +33,8 @@
       [vm, sandboxes, services, topo, res] = await Promise.all([
         vmStatus(), listSandboxes(), listServices(), topology().catch(() => []), hostResources().catch(() => null),
       ]);
-    } finally { loading = false; }
+      loadError = null;
+    } catch (e) { loadError = String(e); } finally { loading = false; }
     void serviceStates().then((s) => (states = s)).catch(() => (states = {}));
     void fleetEnforcement().then((f) => (fleet = f)).catch(() => (fleet = []));
   }
@@ -75,6 +78,9 @@
 </script>
 
 <div class="content">
+  {#if loadError}
+    <FetchError message={loadError} onretry={() => { loading = true; void refresh(); }} busy={loading} />
+  {/if}
   <!-- First-run onboarding: the VM has not been created yet -->
   {#if vm === "NotCreated"}
     <div class="card pad onboard mb16">

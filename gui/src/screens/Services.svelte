@@ -2,6 +2,7 @@
   import Icon from "../lib/Icon.svelte";
   import Modal from "../lib/Modal.svelte";
   import Skeleton from "../lib/Skeleton.svelte";
+  import FetchError from "../lib/FetchError.svelte";
   import { bump } from "../lib/store.svelte";
   import {
     listServices, setService, provisionService, listVirtualKeys, syncVirtualKeys, setProviderKey,
@@ -14,6 +15,7 @@
   let keys = $state<VirtualKey[]>([]);
   let states = $state<Record<string, ServiceState>>({});
   let loading = $state(true);
+  let loadError = $state<string | null>(null);
   let busyName = $state<string | null>(null);
   let keysBusy = $state(false);
   let error = $state<string | null>(null);
@@ -25,7 +27,8 @@
   });
 
   async function refresh() {
-    try { [services, keys] = await Promise.all([listServices(), listVirtualKeys()]); }
+    try { [services, keys] = await Promise.all([listServices(), listVirtualKeys()]); loadError = null; }
+    catch (e) { loadError = String(e); }
     finally { loading = false; }
     void serviceStates().then((s) => (states = s)).catch(() => (states = {}));
   }
@@ -98,6 +101,9 @@
 </script>
 
 <div class="content">
+  {#if loadError}
+    <FetchError message={loadError} onretry={() => { loading = true; void refresh(); }} busy={loading} />
+  {/if}
   {#if error}
     <div class="banner warn mb16" role="alert"><Icon name="warn" size={18} /><span>{error}</span></div>
   {/if}

@@ -1,12 +1,14 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import Skeleton from "../lib/Skeleton.svelte";
+  import FetchError from "../lib/FetchError.svelte";
   import { ui, bump, openTerminal, openSandbox, confirmAction } from "../lib/store.svelte";
   import { listSandboxes, removeSandbox } from "../lib/core";
   import type { Sandbox } from "../lib/types";
 
   let sandboxes = $state<Sandbox[]>([]);
   let loading = $state(true);
+  let loadError = $state<string | null>(null);
   let filter = $state<"All" | "Running" | "Stopped">("All");
   let query = $state("");
   let busy = $state<string | null>(null);
@@ -17,7 +19,8 @@
   });
 
   async function refresh() {
-    try { sandboxes = await listSandboxes(); }
+    try { sandboxes = await listSandboxes(); loadError = null; }
+    catch (e) { loadError = String(e); }
     finally { loading = false; }
   }
 
@@ -42,6 +45,9 @@
 </script>
 
 <div class="content">
+  {#if loadError}
+    <FetchError message={loadError} onretry={() => { loading = true; void refresh(); }} busy={loading} />
+  {/if}
   <div class="banner info mb16">
     <Icon name="shield" size={18} />
     <span>Every sandbox is an <strong>unprivileged</strong> system container. Agents authenticate to LLMs with <strong>virtual keys</strong> — never real API keys.</span>
