@@ -17,12 +17,17 @@ function initialTheme(): "light" | "dark" {
   return "dark"; // direction A is dark-first
 }
 
+function initialCollapsed(): boolean {
+  return typeof localStorage !== "undefined" && localStorage.getItem("llmsc-sidebar") === "collapsed";
+}
+
 export type ToastColor = "accent" | "ok" | "warn" | "danger";
 
 export const ui = $state({
   screen: "dashboard" as Screen,
   incusTab: "profiles" as IncusTab,
   theme: initialTheme(),
+  sidebarCollapsed: initialCollapsed(),
   newSandboxOpen: false,
   buildImageOpen: false,
   addAgentSandbox: null as string | null,
@@ -142,6 +147,13 @@ export function refreshedAgo(ts: number, _tick: number): string {
 export function toggleTheme(): void {
   ui.theme = ui.theme === "dark" ? "light" : "dark";
   if (typeof localStorage !== "undefined") localStorage.setItem("llmsc-theme", ui.theme);
+}
+
+export function toggleSidebar(): void {
+  ui.sidebarCollapsed = !ui.sidebarCollapsed;
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem("llmsc-sidebar", ui.sidebarCollapsed ? "collapsed" : "expanded");
+  }
 }
 
 export const SCREEN_TITLES: Record<Screen, [string, string]> = {

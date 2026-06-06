@@ -23,7 +23,7 @@
   import { onMount } from "svelte";
   import {
     ui, navigate, openSandbox, bump, toggleTheme, showToast, activity, logActivity,
-    live, toggleLive, initLivePolling, resolveConfirm, refreshNow, refreshedAgo, SCREEN_TITLES, type Screen,
+    live, toggleLive, initLivePolling, resolveConfirm, refreshNow, refreshedAgo, toggleSidebar, SCREEN_TITLES, type Screen,
   } from "./lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, addAgent, listProfiles, agentSteer, onProgress,
@@ -215,19 +215,22 @@
 </script>
 
 <div class="app">
-  <aside class="sidebar">
+  <aside class="sidebar" class:collapsed={ui.sidebarCollapsed}>
     <div class="brand">
       <div class="logo">L</div>
-      <div>
+      <div class="brand-text">
         <div class="name">LLM System Containers</div>
         <div class="sub">llmsc · llmsctl</div>
       </div>
+      <button class="collapse-btn" title={ui.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} aria-label="Toggle sidebar" onclick={toggleSidebar}>
+        <Icon name="chevron" size={14} />
+      </button>
     </div>
 
     <div class="nav-label">Workspace</div>
     {#each workspaceNav as n (n.id)}
       {#if n.id === "sandboxes"}
-        <button class="nav-item" class:active={onSandboxes} onclick={() => navigate("sandboxes")}>
+        <button class="nav-item" class:active={onSandboxes} title="Sandbox Containers" onclick={() => navigate("sandboxes")}>
           <Icon name={n.icon} />
           <span class="twoline">Sandbox<br />Containers</span>
           {#if counts.sandboxes}<span class="badge">{counts.sandboxes}</span>{/if}
@@ -244,7 +247,7 @@
           </div>
         {/if}
       {:else}
-        <button class="nav-item" class:active={ui.screen === n.id} onclick={() => navigate(n.id)}>
+        <button class="nav-item" class:active={ui.screen === n.id} title={n.label} onclick={() => navigate(n.id)}>
           <Icon name={n.icon} />
           <span>{n.label}</span>
           {#if n.id === "agent" && counts.agents}<span class="badge">{counts.agents}</span>{/if}
@@ -254,7 +257,7 @@
 
     <div class="nav-label">Platform</div>
     {#each platformNav as n (n.id)}
-      <button class="nav-item" class:active={ui.screen === n.id} onclick={() => navigate(n.id)}>
+      <button class="nav-item" class:active={ui.screen === n.id} title={n.label} onclick={() => navigate(n.id)}>
         <Icon name={n.icon} />
         <span>{n.label}</span>
         {#if n.id === "services" && counts.services}<span class="badge">{counts.services}</span>{/if}

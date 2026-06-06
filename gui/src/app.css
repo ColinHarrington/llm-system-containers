@@ -107,6 +107,32 @@ body {
   height: 100vh;
   overflow: hidden;
 }
+.app:has(.sidebar.collapsed) { grid-template-columns: 64px 1fr; }
+
+/* Collapsed sidebar — icons only */
+.collapse-btn {
+  margin-left: auto; display: grid; place-items: center; width: 22px; height: 22px;
+  border: none; background: transparent; color: var(--text-3); cursor: pointer; border-radius: 5px;
+}
+.collapse-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.sidebar:not(.collapsed) .collapse-btn :global(svg) { transform: rotate(180deg); }
+.sidebar.collapsed .brand { flex-direction: column; gap: 8px; padding: 4px 0 12px; }
+.sidebar.collapsed .brand-text { display: none; }
+.sidebar.collapsed .collapse-btn { margin-left: 0; }
+.sidebar.collapsed .nav-label { display: none; }
+.sidebar.collapsed .nav-item { justify-content: center; padding: 9px 0; }
+.sidebar.collapsed .nav-item span,
+.sidebar.collapsed .nav-item .twoline,
+.sidebar.collapsed .nav-item .badge,
+.sidebar.collapsed .submenu,
+.sidebar.collapsed .vm-meta,
+.sidebar.collapsed .vm-name,
+.sidebar.collapsed .sidebar-foot .small,
+.sidebar.collapsed .sidebar-foot kbd { display: none; }
+.sidebar.collapsed .sidebar-foot .row { justify-content: center; }
+.sidebar.collapsed .sidebar-foot .flex { justify-content: center; }
+.sidebar.collapsed .vm-card .btn span { display: none; }
+.sidebar.collapsed .vm-card .btn { padding: 6px; }
 
 /* Sidebar */
 .sidebar {
