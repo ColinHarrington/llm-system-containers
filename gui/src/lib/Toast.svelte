@@ -1,34 +1,45 @@
 <script lang="ts">
-  import { ui } from "./store.svelte";
+  import { ui, dismissToast } from "./store.svelte";
 
-  // Bottom-right command/status toast (direction A). Auto-dismisses ~2.6s after the last one.
-  let visible = $state(false);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let shown = $state<{ msg: string; color: string } | null>(null);
-
+  // Bottom-right toast stack. Each toast auto-dismisses; ones carrying an action
+  // (e.g. Undo) linger a little longer so it's actually clickable.
+  const scheduled = new Set<number>();
   $effect(() => {
-    const t = ui.toast;
-    if (!t) return;
-    shown = { msg: t.msg, color: t.color };
-    visible = true;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => (visible = false), 2600);
-    return () => { if (timer) clearTimeout(timer); };
+    for (const t of ui.toasts) {
+      if (scheduled.has(t.id)) continue;
+      scheduled.add(t.id);
+      const ms = t.action ? 6000 : 2800;
+      setTimeout(() => {
+        dismissToast(t.id);
+        scheduled.delete(t.id);
+      }, ms);
+    }
   });
 </script>
 
-{#if visible && shown}
-  <div class="toast" role="status" aria-live="polite">
-    <span class="tdot {shown.color}"></span>
-    <span class="tmsg">{shown.msg}</span>
+{#if ui.toasts.length}
+  <div class="toast-stack">
+    {#each ui.toasts as t (t.id)}
+      <div class="toast" role="status" aria-live="polite">
+        <span class="tdot {t.color}"></span>
+        <span class="tmsg">{t.msg}</span>
+        {#if t.action}
+          <button class="toast-action" onclick={() => { t.action!.run(); dismissToast(t.id); }}>{t.action.label}</button>
+        {/if}
+        <button class="toast-x" aria-label="Dismiss" onclick={() => dismissToast(t.id)}>×</button>
+      </div>
+    {/each}
   </div>
 {/if}
 
 <style>
-  .toast {
+  .toast-stack {
     position: fixed; bottom: 20px; right: 20px; z-index: 200;
+    display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+  }
+  .toast {
     display: flex; align-items: center; gap: 10px;
-    padding: 11px 15px; border-radius: var(--radius-sm);
+    padding: 11px 13px 11px 15px; border-radius: var(--radius-sm);
     background: var(--card); border: 1px solid var(--border-strong);
     box-shadow: var(--shadow-lg);
     font-size: 12px; color: var(--text);
@@ -40,4 +51,15 @@
   .tdot.warn { background: var(--warn); }
   .tdot.danger { background: var(--danger); }
   .tmsg { font-family: var(--mono); }
+  .toast-action {
+    border: 1px solid var(--border-strong); background: var(--card-2); color: var(--accent-text);
+    font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+    padding: 3px 9px; border-radius: 6px;
+  }
+  .toast-action:hover { background: var(--accent-soft); }
+  .toast-x {
+    border: none; background: transparent; color: var(--text-3); cursor: pointer;
+    font-size: 15px; line-height: 1; padding: 2px 4px;
+  }
+  .toast-x:hover { color: var(--text); }
 </style>

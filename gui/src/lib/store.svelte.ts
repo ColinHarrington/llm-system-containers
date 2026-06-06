@@ -22,6 +22,8 @@ function initialCollapsed(): boolean {
 }
 
 export type ToastColor = "accent" | "ok" | "warn" | "danger";
+export interface ToastAction { label: string; run: () => void }
+export interface ToastItem { id: number; msg: string; color: ToastColor; action?: ToastAction }
 
 export const ui = $state({
   screen: "dashboard" as Screen,
@@ -38,7 +40,7 @@ export const ui = $state({
   confirm: null as ConfirmState | null,
   steerAgent: null as AgentInfo | null,
   terminalTarget: null as string | null,
-  toast: null as { msg: string; color: ToastColor; id: number } | null,
+  toasts: [] as ToastItem[],
   dataVersion: 0,
 });
 
@@ -111,10 +113,18 @@ export function resolveConfirm(ok: boolean): void {
 }
 
 let toastId = 0;
-export function showToast(msg: string, color: ToastColor = "accent"): void {
+/** Show a transient toast. Returns its id. Pass an `action` (e.g. Undo) to add an inline button. */
+export function showToast(msg: string, color: ToastColor = "accent", action?: ToastAction): number {
   toastId += 1;
-  ui.toast = { msg, color, id: toastId };
+  const id = toastId;
+  ui.toasts.push({ id, msg, color, action });
+  if (ui.toasts.length > 4) ui.toasts.shift(); // keep the stack shallow
   logActivity(msg, color);
+  return id;
+}
+export function dismissToast(id: number): void {
+  const i = ui.toasts.findIndex((t) => t.id === id);
+  if (i >= 0) ui.toasts.splice(i, 1);
 }
 
 export function openTerminal(target: string): void {

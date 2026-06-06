@@ -36,9 +36,22 @@
   async function toggle(s: ServiceEntry) {
     error = null;
     busyName = s.name;
-    try { await setService(s.name, !s.enabled); bump(); }
-    catch (e) { error = `${s.name}: ${e}`; }
+    const target = !s.enabled;
+    try {
+      await setService(s.name, target);
+      bump();
+      showToast(target ? `Enabled ${s.name}` : `Disabled ${s.name}`, "ok", {
+        label: "Undo",
+        run: () => void setEnabled(s.name, !target),
+      });
+    } catch (e) { error = `${s.name}: ${e}`; }
     finally { busyName = null; }
+  }
+
+  // Reversal path for the toast's Undo (re-applies the prior enabled state).
+  async function setEnabled(name: string, enabled: boolean) {
+    try { await setService(name, enabled); bump(); showToast(enabled ? `Re-enabled ${name}` : `Disabled ${name}`, "ok"); }
+    catch (e) { showToast(String(e), "danger"); }
   }
 
   async function provision(s: ServiceEntry) {
