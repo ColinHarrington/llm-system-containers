@@ -59,11 +59,12 @@ pnpm dev            # vite dev server (frontend only)
 The Tauri Rust shell lives in `gui/src-tauri/` (its own crate, not in the workspace members);
 format it with `cargo fmt --manifest-path gui/src-tauri/Cargo.toml`.
 
-**Pre-commit hooks** (`prek`, see `.pre-commit-config.yaml`): fast hygiene + `cargo fmt` /
-`ruff` run at **commit** time; the slow gates — `cargo clippy`, `cargo test`, `pnpm check`,
-`pnpm test` — run at **push** time. Install once with `prek install --install-hooks`. CI
-(`.github/workflows/ci.yml`) runs both a **rust** job (fmt incl. `gui/src-tauri`, clippy, test)
-and a **gui** job (svelte-check, vitest, build).
+**Pre-commit hooks** (`prek`, see `.pre-commit-config.yaml`): commit-time only — fast hygiene
+plus `cargo fmt` (workspace + `gui/src-tauri`) and `ruff`. The slow gates (`cargo clippy`,
+`cargo test`, `pnpm check`, `pnpm test`) are **not** run as git hooks; they're left to CI.
+Install once with `prek install --install-hooks`. CI (`.github/workflows/ci.yml`) runs both a
+**rust** job (fmt incl. `gui/src-tauri`, clippy, test) and a **gui** job (svelte-check, vitest,
+build).
 
 ## What this project is
 

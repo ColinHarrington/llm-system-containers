@@ -1,0 +1,80 @@
+# Pre-commit hooks, run with prek (https://github.com/j178/prek) — a fast,
+# Rust-based drop-in for the pre-commit framework (same config format).
+#
+#   Install once:   prek install --install-hooks
+#   Run manually:   prek run --all-files
+#   Update repos:   prek autoupdate
+#
+# Layout: fast hygiene + formatting run on every commit (pre-commit stage).
+# The slower compile/type/test gates (clippy, cargo test, svelte-check, vitest)
+# are left to CI (.github/workflows/ci.yml) rather than blocking commits.
+# Project hooks use the already-installed toolchains (cargo, uvx) via
+# `language: system`.
+
+default_install_hook_types: [pre-commit]
+minimum_pre_commit_version: "3.0.0"
+
+# IDE-managed and generated artifacts: never lint/fix these.
+exclude: |
+  (?x)^(
+    \.idea/.*|
+    planning/research/.*\.html|
+    gui/dist/.*|
+    mockups/.*
+  )$
+
+repos:
+  # ----------------------------------------------------------------------- #
+  # Generic hygiene — fast, every commit
+  # ----------------------------------------------------------------------- #
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: '\.svg$|(^|/)(Cargo|pnpm)-?lock'
+      - id: end-of-file-fixer
+        exclude: '\.svg$|(^|/)(Cargo\.lock|pnpm-lock\.yaml)$'
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: '(^|/)tsconfig.*\.json$' # tsconfig files allow comments (JSONC)
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # ----------------------------------------------------------------------- #
+  # Project hooks — use installed toolchains
+  # ----------------------------------------------------------------------- #
+  - repo: local
+    hooks:
+      # ---- Rust: format check (fast) — mirrors .github/workflows/ci.yml ----
+      - id: cargo-fmt
+        name: cargo fmt (workspace)
+        entry: cargo fmt --all --check
+        language: system
+        files: '^crates/.*\.rs$'
+        pass_filenames: false
+
+      - id: cargo-fmt-gui
+        name: cargo fmt (gui/src-tauri)
+        entry: cargo fmt --manifest-path gui/src-tauri/Cargo.toml --all --check
+        language: system
+        files: '^gui/src-tauri/.*\.rs$'
+        pass_filenames: false
+
+      # ---- Python operational scripts: ruff via uvx (no global install) ----
+      - id: ruff-format
+        name: ruff format (scripts)
+        entry: uvx ruff format --check
+        language: system
+        types: [python]
+
+      - id: ruff-check
+        name: ruff lint (scripts)
+        entry: uvx ruff check
+        language: system
+        types: [python]

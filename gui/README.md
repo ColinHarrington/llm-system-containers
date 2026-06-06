@@ -48,5 +48,5 @@ cargo tauri dev     # full desktop app against a real backend (needs the tauri C
 - New Tauri command? Add the Rust `#[tauri::command]` + DTO (`camelCase` serde) in
   `src-tauri/src/lib.rs`, register it in `generate_handler!`, then bridge it in `core.ts` with
   a mock fallback and type it in `types.ts`.
-- `svelte-check` must stay **0/0**; it (and vitest) run as pre-push hooks (see the repo-root
-  `.pre-commit-config.yaml`).
+- `svelte-check` must stay **0/0**; it (and vitest) are not git hooks — they run in CI
+  (`.github/workflows/ci.yml`, the **gui** job). Run them locally before pushing.
