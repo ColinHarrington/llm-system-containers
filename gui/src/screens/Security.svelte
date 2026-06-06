@@ -1,15 +1,17 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
+  import Skeleton from "../lib/Skeleton.svelte";
   import { ui, live, openSandbox } from "../lib/store.svelte";
   import { fleetEnforcement } from "../lib/core";
   import type { FleetEnforcement } from "../lib/types";
 
   let fleet = $state<FleetEnforcement[]>([]);
+  let loading = $state(true);
 
   $effect(() => {
     ui.dataVersion;
     live.tick; // auto-refresh on the live poll
-    void fleetEnforcement().then((f) => (fleet = f)).catch(() => (fleet = []));
+    void fleetEnforcement().then((f) => (fleet = f)).catch(() => (fleet = [])).finally(() => (loading = false));
   });
 
   const managed = $derived(fleet.filter((f) => f.egressPosture !== "unmanaged" && f.egressPosture !== "open").length);
@@ -36,7 +38,9 @@
   <!-- Matrix -->
   <div class="card">
     <div class="card-head"><h3>Per-sandbox posture</h3><span class="sub">configured intent · <span class="mono">llmsctl doctor</span></span></div>
-    {#if fleet.length === 0}
+    {#if loading}
+      <div class="pad"><Skeleton w="100%" h={18} mb={10} /><Skeleton w="100%" h={18} mb={10} /><Skeleton w="80%" h={18} /></div>
+    {:else if fleet.length === 0}
       <div class="empty">
         <div class="icon"><Icon name="shield" size={24} /></div>
         No config-managed sandboxes yet — create one to start enforcing policy.

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
+  import Skeleton from "../lib/Skeleton.svelte";
   import { ui, live, navigate, openSandbox, bump, openTerminal, showToast } from "../lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, topology, hostResources,
@@ -16,6 +17,7 @@
   let states = $state<Record<string, ServiceState>>({});
   let fleet = $state<FleetEnforcement[]>([]);
   let res = $state<HostResources | null>(null);
+  let loading = $state(true);
   let vmBusy = $state(false);
 
   $effect(() => {
@@ -25,9 +27,11 @@
   });
 
   async function refresh() {
-    [vm, sandboxes, services, topo, res] = await Promise.all([
-      vmStatus(), listSandboxes(), listServices(), topology().catch(() => []), hostResources().catch(() => null),
-    ]);
+    try {
+      [vm, sandboxes, services, topo, res] = await Promise.all([
+        vmStatus(), listSandboxes(), listServices(), topology().catch(() => []), hostResources().catch(() => null),
+      ]);
+    } finally { loading = false; }
     void serviceStates().then((s) => (states = s)).catch(() => (states = {}));
     void fleetEnforcement().then((f) => (fleet = f)).catch(() => (fleet = []));
   }
@@ -218,7 +222,9 @@
     <div class="card-head"><h3>Sandboxes</h3><span class="sub">L2 system containers</span>
       <button class="btn sm right" onclick={() => navigate("sandboxes")}><span>View all</span></button>
     </div>
-    {#if sandboxes.length === 0}
+    {#if loading}
+      <div class="pad"><Skeleton w="100%" h={20} mb={10} /><Skeleton w="100%" h={20} mb={10} /><Skeleton w="70%" h={20} /></div>
+    {:else if sandboxes.length === 0}
       <div class="empty">
         <div class="icon"><Icon name="box" size={26} /></div>
         No sandboxes yet.

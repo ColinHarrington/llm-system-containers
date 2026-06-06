@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import Modal from "../lib/Modal.svelte";
+  import Skeleton from "../lib/Skeleton.svelte";
   import { bump } from "../lib/store.svelte";
   import {
     listServices, setService, provisionService, listVirtualKeys, syncVirtualKeys, setProviderKey,
@@ -12,6 +13,7 @@
   let services = $state<ServiceEntry[]>([]);
   let keys = $state<VirtualKey[]>([]);
   let states = $state<Record<string, ServiceState>>({});
+  let loading = $state(true);
   let busyName = $state<string | null>(null);
   let keysBusy = $state(false);
   let error = $state<string | null>(null);
@@ -23,7 +25,8 @@
   });
 
   async function refresh() {
-    [services, keys] = await Promise.all([listServices(), listVirtualKeys()]);
+    try { [services, keys] = await Promise.all([listServices(), listVirtualKeys()]); }
+    finally { loading = false; }
     void serviceStates().then((s) => (states = s)).catch(() => (states = {}));
   }
 
@@ -95,6 +98,14 @@
   {/if}
 
   <div class="grid g-2 mb16">
+    {#if loading}
+      {#each Array(4) as _, i (i)}
+        <div class="card pad">
+          <div class="flex gap12 mb8"><Skeleton w="34px" h={34} r={9} /><div style="flex:1"><Skeleton w="40%" h={13} mb={6} /><Skeleton w="65%" h={10} /></div></div>
+          <Skeleton w="80%" h={20} mb={12} /><Skeleton w="50%" h={26} />
+        </div>
+      {/each}
+    {:else}
     {#each services as s (s.name)}
       <div class="card pad">
         <div class="flex gap12 mb8">
@@ -139,6 +150,7 @@
       <div class="xsmall">Optional / future services — enable in the wizard</div>
       <button class="btn sm mt8" onclick={() => (ui.screen = "wizard")}>Configure services</button>
     </div>
+    {/if}
   </div>
 
   <!-- LiteLLM virtual keys -->

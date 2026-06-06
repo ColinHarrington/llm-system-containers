@@ -1,10 +1,12 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
+  import Skeleton from "../lib/Skeleton.svelte";
   import { ui, bump, openTerminal, openSandbox, confirmAction } from "../lib/store.svelte";
   import { listSandboxes, removeSandbox } from "../lib/core";
   import type { Sandbox } from "../lib/types";
 
   let sandboxes = $state<Sandbox[]>([]);
+  let loading = $state(true);
   let filter = $state<"All" | "Running" | "Stopped">("All");
   let query = $state("");
   let busy = $state<string | null>(null);
@@ -15,7 +17,8 @@
   });
 
   async function refresh() {
-    sandboxes = await listSandboxes();
+    try { sandboxes = await listSandboxes(); }
+    finally { loading = false; }
   }
 
   async function remove(n: string) {
@@ -60,6 +63,15 @@
   </div>
 
   <div class="grid g-3">
+    {#if loading}
+      {#each Array(3) as _, i (i)}
+        <div class="card pad">
+          <div class="flex gap10 mb12"><Skeleton w="36px" h={36} r={9} /><div style="flex:1"><Skeleton w="55%" h={13} mb={6} /><Skeleton w="40%" h={10} /></div></div>
+          <Skeleton w="100%" h={42} mb={10} />
+          <Skeleton w="70%" h={30} />
+        </div>
+      {/each}
+    {:else}
     {#each shown as s (s.name)}
       <div class="card pad sb">
         <div class="flex gap10 mb12">
@@ -104,9 +116,10 @@
       <div class="strong" style="color:var(--text)">New sandbox</div>
       <div class="xsmall muted">{sandboxes.length === 0 ? "Launch your first LLMSC workspace" : "Launch a fresh LLMSC workspace"}</div>
     </button>
+    {/if}
   </div>
 
-  {#if sandboxes.length > 0 && shown.length === 0}
+  {#if !loading && sandboxes.length > 0 && shown.length === 0}
     <div class="empty mt16"><div class="icon"><Icon name="search" size={22} /></div>No sandboxes match the current filter.</div>
   {/if}
 </div>

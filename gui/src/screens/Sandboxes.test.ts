@@ -12,6 +12,7 @@ vi.mock("../lib/core", () => ({
 }));
 
 import { ui, resolveConfirm } from "../lib/store.svelte";
+import { listSandboxes } from "../lib/core";
 import Sandboxes from "./Sandboxes.svelte";
 
 describe("Sandboxes", () => {
@@ -24,6 +25,13 @@ describe("Sandboxes", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Running" }));
     expect(screen.getByText("web-agent-01")).toBeInTheDocument();
     expect(screen.queryByText("scratch-01")).not.toBeInTheDocument();
+  });
+
+  it("shows skeletons while the first fetch is in flight", async () => {
+    vi.mocked(listSandboxes).mockReturnValueOnce(new Promise(() => {})); // never resolves
+    render(Sandboxes);
+    expect((await screen.findAllByTestId("skeleton")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("web-agent-01")).not.toBeInTheDocument();
   });
 
   it("removes a sandbox after confirming", async () => {
