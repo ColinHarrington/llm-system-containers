@@ -82,6 +82,48 @@
     } finally { snapBusy = null; }
   }
 
+  // Confirm-gated wrappers for the hard-to-reverse Incus actions.
+  async function restoreSnapshot(name: string) {
+    if (!sb) return;
+    const sbName = sb.name;
+    if (!(await confirmAction({
+      title: "Restore snapshot",
+      message: `Roll '${sbName}' back to snapshot '${name}'? Everything changed since the snapshot is lost.`,
+      confirmLabel: "Restore", danger: true,
+    }))) return;
+    await snapEdit(`r-${name}`, () => snapshotRestore(sbName, name), `Restored to '${name}'`);
+  }
+  async function deleteSnapshot(name: string) {
+    if (!sb) return;
+    const sbName = sb.name;
+    if (!(await confirmAction({
+      title: "Delete snapshot",
+      message: `Delete snapshot '${name}' of '${sbName}'? This cannot be undone.`,
+      confirmLabel: "Delete", danger: true,
+    }))) return;
+    await snapEdit(`d-${name}`, () => snapshotDelete(sbName, name), `Deleted '${name}'`);
+  }
+  async function removeDevice(dname: string) {
+    if (!sb) return;
+    const sbName = sb.name;
+    if (!(await confirmAction({
+      title: "Remove device",
+      message: `Detach device '${dname}' from '${sbName}'? Anything relying on it loses access until it's re-added.`,
+      confirmLabel: "Remove", danger: true,
+    }))) return;
+    await edit(() => instanceRemoveDevice(sbName, dname), `Removed device ${dname}`);
+  }
+  async function removeProfile(p: string) {
+    if (!sb) return;
+    const sbName = sb.name;
+    if (!(await confirmAction({
+      title: "Remove profile",
+      message: `Remove profile '${p}' from '${sbName}'? Its config and devices no longer apply.`,
+      confirmLabel: "Remove", danger: true,
+    }))) return;
+    await edit(() => instanceRemoveProfile(sbName, p), `Removed profile ${p}`);
+  }
+
   // Guardrails editor
   let gAgent = $state<string | null>(null);
   let gForm = $state<Guardrails>({ filesystem: "", network: "", l3: false, llmBudget: "", controlPlane: "" });
@@ -470,7 +512,7 @@
           <div class="sub2">Profiles</div>
           <div class="flex gap6 wrap mb16">
             {#each inst.profiles as p}
-              <span class="echip">{p}<button class="ex" title="Remove profile" disabled={cfgBusy} onclick={() => edit(() => instanceRemoveProfile(sb.name, p), `Removed profile ${p}`)}>×</button></span>
+              <span class="echip">{p}<button class="ex" title="Remove profile" disabled={cfgBusy} onclick={() => removeProfile(p)}>×</button></span>
             {/each}
             <input class="input mini" bind:value={newProfile} placeholder="add profile…" />
             <button class="btn sm" disabled={cfgBusy || !newProfile.trim()} onclick={() => { const p = newProfile.trim(); newProfile = ""; void edit(() => instanceAddProfile(sb.name, p), `Applied profile ${p}`); }}>Add</button>
@@ -484,7 +526,7 @@
                 <div class="dev">
                   <div class="flex gap8 mb4"><span class="mono small strong" style="color:var(--text)">{dname}</span><span class="tag">{dev.type ?? "?"}</span>
                     {#if inst.localDevices.includes(dname)}
-                      <button class="ex right" title="Remove device" disabled={cfgBusy} onclick={() => edit(() => instanceRemoveDevice(sb.name, dname), `Removed device ${dname}`)}>×</button>
+                      <button class="ex right" title="Remove device" disabled={cfgBusy} onclick={() => removeDevice(dname)}>×</button>
                     {/if}
                   </div>
                   <div class="kvs">
@@ -698,9 +740,9 @@
                   <td>{#if s.stateful}<span class="tag">stateful</span>{:else}<span class="muted small">stateless</span>{/if}</td>
                   <td style="text-align:right; white-space:nowrap">
                     <button class="btn sm" disabled={snapBusy !== null} title="Restore"
-                      onclick={() => snapEdit(`r-${s.name}`, () => snapshotRestore(sb.name, s.name), `Restored to '${s.name}'`)}><Icon name="arrow" size={13} /></button>
+                      onclick={() => restoreSnapshot(s.name)}><Icon name="arrow" size={13} /></button>
                     <button class="btn sm danger" disabled={snapBusy !== null} title="Delete"
-                      onclick={() => snapEdit(`d-${s.name}`, () => snapshotDelete(sb.name, s.name), `Deleted '${s.name}'`)}><Icon name="x" size={13} /></button>
+                      onclick={() => deleteSnapshot(s.name)}><Icon name="x" size={13} /></button>
                   </td>
                 </tr>
               {/each}

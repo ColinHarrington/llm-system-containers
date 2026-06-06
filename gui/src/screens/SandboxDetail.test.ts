@@ -75,6 +75,7 @@ vi.mock("../lib/core", () => ({
 
 import { fireEvent, waitFor } from "@testing-library/svelte";
 import { ui, resolveConfirm } from "../lib/store.svelte";
+import { listSnapshots, snapshotDelete } from "../lib/core";
 import SandboxDetail from "./SandboxDetail.svelte";
 
 describe("SandboxDetail", () => {
@@ -191,13 +192,37 @@ describe("SandboxDetail", () => {
     expect(await screen.findByText("Network egress")).toBeInTheDocument();
   });
 
-  it("edits the live Incus surface (remove a profile)", async () => {
+  it("edits the live Incus surface (remove a profile, confirm-gated)", async () => {
     ui.selectedSandbox = "web-agent-01";
     render(SandboxDetail);
     await tab("Incus config");
     await screen.findByText("Incus configuration");
     // The one profile chip ("default") has a remove (×) button.
     await fireEvent.click(screen.getByTitle("Remove profile"));
-    expect(instanceRemoveProfile).toHaveBeenCalledWith("web-agent-01", "default");
+    // Destructive — gated by a confirm dialog.
+    expect(ui.confirm?.title).toBe("Remove profile");
+    resolveConfirm(true);
+    await waitFor(() => expect(instanceRemoveProfile).toHaveBeenCalledWith("web-agent-01", "default"));
+  });
+
+  it("deletes a snapshot only after confirming", async () => {
+    vi.mocked(snapshotDelete).mockClear();
+    vi.mocked(listSnapshots).mockResolvedValueOnce([
+      { name: "before-deploy", created: "2026-06-01 10:00", stateful: false },
+    ]);
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    await tab("Snapshots");
+    await screen.findByText("before-deploy");
+    await fireEvent.click(screen.getByTitle("Delete"));
+    expect(ui.confirm?.title).toBe("Delete snapshot");
+    // Cancel → nothing happens.
+    resolveConfirm(false);
+    await Promise.resolve();
+    expect(snapshotDelete).not.toHaveBeenCalled();
+    // Confirm → the delete fires.
+    await fireEvent.click(screen.getByTitle("Delete"));
+    resolveConfirm(true);
+    await waitFor(() => expect(snapshotDelete).toHaveBeenCalledWith("web-agent-01", "before-deploy"));
   });
 });
