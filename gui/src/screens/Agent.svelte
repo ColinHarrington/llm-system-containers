@@ -1,140 +1,134 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui } from "../lib/store.svelte";
-  import { listAgents } from "../lib/core";
-  import type { AgentInfo } from "../lib/types";
+  import Skeleton from "../lib/Skeleton.svelte";
+  import { ui, live, openSandbox, openTerminal, showToast } from "../lib/store.svelte";
+  import { topology, agentPause, agentResume, agentStop } from "../lib/core";
+  import type { TopoSandbox } from "../lib/types";
 
-  let agents = $state<AgentInfo[]>([]);
-  let selectedId = $state<string | null>(null);
-  let paused = $state(false);
+  let sandboxes = $state<TopoSandbox[]>([]);
+  let loading = $state(true);
+  let selected = $state<string | null>(null);
+  let busy = $state(false);
 
   $effect(() => {
+    ui.dataVersion;
+    live.tick; // auto-refresh on the live poll
     void (async () => {
-      agents = await listAgents();
-      if (!selectedId && agents.length) selectedId = agents[0].id;
+      try { sandboxes = await topology(); }
+      finally { loading = false; }
     })();
   });
 
-  const focused = $derived(agents.find((a) => a.id === selectedId) ?? null);
-  const others = $derived(agents.filter((a) => a.id !== selectedId));
+  const initial = (name: string) => name.replace(/^agent-/, "").slice(0, 2).toUpperCase();
+  // One entry per agent (one Linux user per agent); the human operator is excluded.
+  const agentList = $derived(
+    sandboxes.flatMap((s) => s.agents.filter((a) => a.kind === "agent").map((a) => ({ sb: s.name, running: s.status === "running", agent: a }))),
+  );
+  $effect(() => {
+    if ((!selected || !agentList.some((x) => `${x.sb}/${x.agent.name}` === selected)) && agentList.length) {
+      selected = `${agentList[0].sb}/${agentList[0].agent.name}`;
+    }
+  });
+  const focused = $derived(agentList.find((x) => `${x.sb}/${x.agent.name}` === selected) ?? null);
 
-  // Demo trace + log content (no backend trace stream yet).
-  const trace = [
-    { t: "12:47:02", w: 34, kind: "", label: "llm.chat · 1.2s · 980 tok" },
-    { t: "12:47:04", w: 18, kind: "tool", label: "tool · read_file(auth_test.py)" },
-    { t: "12:47:09", w: 46, kind: "tool", label: "tool · run(pytest -k auth) · 3.4s" },
-    { t: "12:47:21", w: 52, kind: "", label: "llm.chat · 2.1s · 1,540 tok" },
-    { t: "12:47:26", w: 24, kind: "tool", label: "tool · edit_file(auth.py)" },
-    { t: "12:47:38", w: 14, kind: "retr", label: "retrieval · docs (4 chunks)" },
-    { t: "12:47:44", w: 60, kind: "", label: "llm.chat · 2.6s · 1,910 tok" },
-  ];
+  async function control(fn: () => Promise<void>, msg: string) {
+    if (!focused) return;
+    busy = true;
+    try { await fn(); showToast(msg, "ok"); }
+    catch (e) { showToast(String(e), "danger"); }
+    finally { busy = false; }
+  }
+  function steer() {
+    if (!focused) return;
+    ui.steerAgent = { id: focused.agent.name, name: focused.agent.name, initials: initial(focused.agent.name), kind: "agent", sandbox: focused.sb, uid: 0, model: "", status: "idle", task: "" };
+  }
 </script>
 
 <div class="content">
-  {#if focused}
-    <div class="card pad mb16">
-      <div class="flex gap12 wrap">
-        <div class="avatar {focused.kind}" style="width:40px;height:40px;border-radius:11px;font-size:14px">{focused.initials}</div>
-        <div>
-          <div class="flex gap10"><span class="strong" style="font-size:16px">{focused.name}</span>
-            {#if paused}<span class="pill warn"><span class="dot warn"></span> Paused</span>
-            {:else}<span class="pill ok"><span class="dot ok pulse"></span> Working</span>{/if}
-          </div>
-          <div class="muted small mt4 mono">{focused.sandbox} · UID {focused.uid} · model {focused.model}</div>
-        </div>
-        <div class="right flex gap8 wrap">
-          <button class="btn" onclick={() => (paused = !paused)}>
-            <Icon name={paused ? "play" : "pause"} size={15} /><span>{paused ? "Resume" : "Pause"}</span>
-          </button>
-          <button class="btn"><Icon name="hand" size={15} /><span>Interrupt</span></button>
-          <button class="btn primary" onclick={() => (ui.steerAgent = focused)}><Icon name="steer" size={15} /><span>Steer</span></button>
-          <button class="btn danger"><Icon name="stop" size={15} /><span>Terminate</span></button>
-        </div>
-      </div>
-      <div class="divider"></div>
-      <div class="flex gap16 wrap small t2">
-        <span class="flex gap6"><Icon name="key" size={15} /> LLM via <span class="mono">litellm</span> virtual key <span class="mono">sk-vk-…a91f</span></span>
-        <span class="flex gap6"><Icon name="shield" size={15} /> Tetragon enforcing</span>
-        <span class="flex gap6">Current task: <span class="strong" style="color:var(--text)">{focused.task}</span></span>
-      </div>
-    </div>
-
+  {#if loading}
     <div class="grid agent-grid">
-      <div class="grid" style="gap:16px">
-        <div class="card">
-          <div class="card-head"><h3>Live activity</h3><span class="sub">LLM call trace · Phoenix</span>
-            <span class="pill ok right"><span class="dot ok pulse"></span> streaming</span></div>
-          <div class="pad trace">
-            {#each trace as r}
-              <div class="trace-row">
-                <span style="width:64px" class="t2">{r.t}</span>
-                <div class="trace-bar {r.kind}" style="width:{r.w}%"></div>
-                <span class="t2">{r.label}</span>
+      <div class="card pad"><Skeleton w="60%" h={16} mb={12} /><Skeleton w="100%" h={40} mb={10} /><Skeleton w="100%" h={40} /></div>
+      <div class="card pad"><Skeleton w="40%" h={14} mb={10} /><Skeleton w="100%" h={60} /></div>
+    </div>
+  {:else if agentList.length === 0}
+    <div class="card"><div class="empty"><div class="icon"><Icon name="agent" size={26} /></div>No agents yet. Add an agent to a running sandbox to observe and control it here.</div></div>
+  {:else}
+    <div class="grid agent-grid">
+      <!-- Agent list -->
+      <div class="card">
+        <div class="card-head"><h3>Agents</h3><span class="sub">one Linux user each · across {sandboxes.length} sandboxes</span></div>
+        <div class="pad grid" style="gap:8px">
+          {#each agentList as x (`${x.sb}/${x.agent.name}`)}
+            <button class="arow" class:sel={`${x.sb}/${x.agent.name}` === selected} onclick={() => (selected = `${x.sb}/${x.agent.name}`)}>
+              <div class="avatar agent sm">{initial(x.agent.name)}</div>
+              <div style="min-width:0;flex:1">
+                <div class="mono small strong" style="color:var(--text)">{x.agent.name}</div>
+                <div class="muted xsmall mono">{x.sb}{x.agent.profile ? ` · from ${x.agent.profile}` : ""}</div>
               </div>
-            {/each}
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-head"><h3>Logs</h3><span class="sub">stdout · Loki</span></div>
-          <div class="pad">
-            <div class="console">
-              <div><span class="ts">12:47:09</span> <span class="lvl-info">[run]</span> $ pytest -k auth -q</div>
-              <div><span class="ts">12:47:12</span> <span class="lvl-err">FAILED</span> tests/test_auth.py::test_refresh_token</div>
-              <div><span class="ts">12:47:21</span> <span class="agent">[{focused.name}]</span> Reading failure; token TTL mismatch suspected.</div>
-              <div><span class="ts">12:47:26</span> <span class="lvl-info">[edit]</span> auth.py — set refresh TTL to 30m</div>
-              <div><span class="ts">12:47:40</span> <span class="lvl-warn">[net]</span> egress to api.anthropic.com via litellm proxy (vk)</div>
-              <div><span class="ts">12:47:55</span> <span class="lvl-info">[run]</span> $ pytest -k auth -q</div>
-              <div><span class="ts">12:48:01</span> <span class="lvl-ok">PASSED</span> 2 passed in 1.9s</div>
-              <div><span class="ts">12:48:03</span> <span class="agent">[{focused.name}]</span> Tests green. Preparing PR…</div>
-            </div>
-          </div>
+              <span class="dot {x.running ? 'ok' : 'muted'} right"></span>
+            </button>
+          {/each}
         </div>
       </div>
 
-      <div class="grid" style="gap:16px">
-        <div class="card">
-          <div class="card-head"><h3>Token usage</h3><span class="sub">this session</span></div>
-          <div class="pad">
-            <div class="flex"><div class="stat"><div class="num" style="font-size:24px">142.8K <small>tokens</small></div></div>
-              <div class="right center"><div class="strong" style="font-size:18px">$0.86</div><div class="muted xsmall">est. cost</div></div></div>
-            <div class="bars mt16">
-              {#each [30, 55, 40, 80, 50, 95, 60, 45, 70, 38, 62, 88] as h, i}
-                <i class:hi={h > 75} style="height:{h}%"></i>
-              {/each}
+      <!-- Focused agent -->
+      {#if focused}
+        {@const g = focused.agent.guardrails}
+        <div class="grid" style="gap:16px">
+          <div class="card pad">
+            <div class="flex gap12 wrap">
+              <div class="avatar agent" style="width:40px;height:40px;border-radius:11px;font-size:14px">{initial(focused.agent.name)}</div>
+              <div style="min-width:0">
+                <div class="flex gap10"><span class="strong" style="font-size:16px">{focused.agent.name}</span>
+                  {#if focused.running}<span class="pill ok"><span class="dot ok pulse"></span> running</span>
+                  {:else}<span class="pill"><span class="dot muted"></span> stopped</span>{/if}
+                </div>
+                <div class="muted small mt4 mono">
+                  <button class="linkbtn" onclick={() => openSandbox(focused.sb)}>{focused.sb}</button>{focused.agent.profile ? ` · seeded from ${focused.agent.profile}` : ""}
+                </div>
+              </div>
+              <div class="right flex gap8 wrap">
+                <button class="btn" disabled={busy} onclick={() => control(() => agentPause(focused.sb, focused.agent.name), `Paused ${focused.agent.name}`)}><Icon name="pause" size={15} /><span>Pause</span></button>
+                <button class="btn" disabled={busy} onclick={() => control(() => agentResume(focused.sb, focused.agent.name), `Resumed ${focused.agent.name}`)}><Icon name="play" size={15} /><span>Resume</span></button>
+                <button class="btn primary" onclick={steer}><Icon name="steer" size={15} /><span>Steer</span></button>
+                <button class="btn danger" disabled={busy} onclick={() => control(() => agentStop(focused.sb, focused.agent.name), `Stopped ${focused.agent.name}`)}><Icon name="stop" size={15} /><span>Stop</span></button>
+              </div>
             </div>
             <div class="divider"></div>
-            <div class="kv"><span class="k">Input</span><span class="v mono">118.2K</span></div>
-            <div class="kv"><span class="k">Output</span><span class="v mono">24.6K</span></div>
-            <div class="kv"><span class="k">LLM calls</span><span class="v mono">37</span></div>
-            <div class="kv"><span class="k">Tool calls</span><span class="v mono">58</span></div>
+            <div class="flex gap16 wrap small t2">
+              <button class="linkbtn flex gap6" onclick={() => openTerminal(`${focused.agent.name}@${focused.sb}`)}><Icon name="terminal" size={15} /> Open shell</button>
+              <span class="flex gap6"><Icon name="key" size={15} /> LLM budget: <span class="strong" style="color:var(--text)">{g?.llmBudget || "—"}</span></span>
+            </div>
           </div>
-        </div>
 
-        <div class="card">
-          <div class="card-head"><h3>Other agents</h3></div>
-          <div class="pad grid" style="gap:10px">
-            {#each others as a (a.id)}
-              <button class="other" onclick={() => (selectedId = a.id)}>
-                <div class="avatar {a.kind} sm">{a.initials}</div>
-                <div><div class="strong small">{a.name}</div><div class="muted xsmall">{a.sandbox} · {a.status}</div></div>
-                {#if a.status === "working"}<span class="pill ok right"><span class="dot ok pulse"></span></span>
-                {:else}<span class="pill warn right"><span class="dot warn"></span></span>{/if}
-              </button>
-            {/each}
-            {#if others.length === 0}<div class="muted small">No other agents.</div>{/if}
+          <!-- Guardrails (the agent's real permission bundle) -->
+          <div class="card">
+            <div class="card-head"><h3>Guardrails</h3><span class="sub">the agent's permission bundle · refine on the sandbox detail page</span></div>
+            <div class="pad">
+              {#if g}
+                <div class="kv"><span class="k">Filesystem</span><span class="v">{g.filesystem || "—"}</span></div>
+                <div class="kv"><span class="k">Network egress</span><span class="v">{g.network || "—"}</span></div>
+                <div class="kv"><span class="k">LLM budget</span><span class="v mono">{g.llmBudget || "—"}</span></div>
+                <div class="kv"><span class="k">Control-plane</span><span class="v">{g.controlPlane || "none"}</span></div>
+                <div class="kv"><span class="k">Nested L3</span><span class="v">{g.l3 ? "allowed" : "off"}</span></div>
+              {:else}
+                <div class="muted small">No guardrails recorded for this agent (added outside the GUI?).</div>
+              {/if}
+              <p class="xsmall muted mt8">Guardrails are the legible intent; the egress ACL / Tetragon / LiteLLM rings enforce them. Steering delivers a message to the agent's mailbox (an agent runtime must read it).</p>
+            </div>
           </div>
         </div>
-      </div>
+      {/if}
     </div>
-  {:else}
-    <div class="card"><div class="empty"><div class="icon"><Icon name="agent" size={26} /></div>No running agents.</div></div>
   {/if}
 </div>
 
 <style>
-  .agent-grid { grid-template-columns: 1.55fr 1fr; gap: 16px; }
+  .agent-grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
   @media (max-width: 960px) { .agent-grid { grid-template-columns: 1fr; } }
-  .other { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: transparent; border: none; cursor: pointer; font-family: inherit; padding: 4px; border-radius: 8px; }
-  .other:hover { background: var(--card-2); }
+  .arow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: transparent; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-family: inherit; padding: 8px 10px; }
+  .arow:hover { border-color: var(--border-strong); }
+  .arow.sel { background: var(--accent-soft-bg); border-color: var(--accent); }
+  .linkbtn { background: none; border: none; padding: 0; color: var(--accent-text); cursor: pointer; font: inherit; }
+  .linkbtn:hover { text-decoration: underline; }
 </style>
