@@ -113,11 +113,16 @@ describe("SandboxDetail", () => {
     expect(setAgentGuardrails).toHaveBeenCalledWith("web-agent-01", "agent-claude", expect.any(Object));
   });
 
+  // Switch to a detail tab once the page has loaded.
+  async function tab(name: RegExp | string) {
+    await fireEvent.click(await screen.findByRole("button", { name }));
+  }
+
   it("shows the enforcement overview and runs enforce-all", async () => {
     ui.selectedSandbox = "web-agent-01";
     render(SandboxDetail);
-    await screen.findByText("Enforcement");
-    expect(screen.getByText("Egress (L3/L4)")).toBeInTheDocument();
+    // Overview is the default tab — the rings show.
+    expect(await screen.findByText("Egress (L3/L4)")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: /Enforce all/ }));
     expect(enforceAll).toHaveBeenCalledWith("web-agent-01");
   });
@@ -125,6 +130,7 @@ describe("SandboxDetail", () => {
   it("shows the egress policy with its compiled ACL and enforces it", async () => {
     ui.selectedSandbox = "web-agent-01";
     render(SandboxDetail);
+    await tab("Enforcement");
     await screen.findByText("Network egress");
     // The compiled ACL preview shows the LLM allow rule.
     expect(await screen.findByText("10.21.32.0/24")).toBeInTheDocument();
@@ -139,7 +145,7 @@ describe("SandboxDetail", () => {
   it("adds an L7 domain to the egress policy", async () => {
     ui.selectedSandbox = "web-agent-01";
     render(SandboxDetail);
-    await screen.findByText("Network egress");
+    await tab("Enforcement");
     const input = await screen.findByPlaceholderText("domain (e.g. github.com)");
     await fireEvent.input(input, { target: { value: "github.com" } });
     await fireEvent.click(screen.getByRole("button", { name: "Add domain" }));
@@ -152,8 +158,8 @@ describe("SandboxDetail", () => {
   it("shows the per-agent Tetragon policy and loads it", async () => {
     ui.selectedSandbox = "web-agent-01";
     render(SandboxDetail);
-    await screen.findByText("Kernel enforcement");
-    expect(screen.getByText("2 syscalls denied")).toBeInTheDocument();
+    await tab("Enforcement");
+    expect(await screen.findByText("2 syscalls denied")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: /Load policies/ }));
     expect(applyTetragonPolicies).toHaveBeenCalledWith("web-agent-01");
   });
@@ -169,14 +175,26 @@ describe("SandboxDetail", () => {
   it("sets the workspace mounts read-only", async () => {
     ui.selectedSandbox = "web-agent-01";
     render(SandboxDetail);
+    await tab("Enforcement");
     await screen.findByText("Workspace mounts");
     await fireEvent.click(screen.getByRole("button", { name: "Read-only" }));
     expect(setWorkspaceReadonly).toHaveBeenCalledWith("web-agent-01", true);
   });
 
+  it("tabs hide other sections until selected", async () => {
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    // Overview default: enforcement rings visible, egress section not.
+    expect(await screen.findByText("Egress (L3/L4)")).toBeInTheDocument();
+    expect(screen.queryByText("Network egress")).not.toBeInTheDocument();
+    await tab("Enforcement");
+    expect(await screen.findByText("Network egress")).toBeInTheDocument();
+  });
+
   it("edits the live Incus surface (remove a profile)", async () => {
     ui.selectedSandbox = "web-agent-01";
     render(SandboxDetail);
+    await tab("Incus config");
     await screen.findByText("Incus configuration");
     // The one profile chip ("default") has a remove (×) button.
     await fireEvent.click(screen.getByTitle("Remove profile"));

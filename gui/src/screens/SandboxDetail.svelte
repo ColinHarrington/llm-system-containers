@@ -16,6 +16,8 @@
     RingStatus, SnapshotInfo, TetragonPolicy, TopoAgent, TopoSandbox,
   } from "../lib/types";
 
+  type DetailTab = "overview" | "enforcement" | "incus" | "snapshots";
+  let detailTab = $state<DetailTab>("overview");
   let all = $state<TopoSandbox[]>([]);
   let inst = $state<InstanceConfig | null>(null);
   let busy = $state(false);
@@ -358,6 +360,15 @@
       </div>
     </div>
 
+    <!-- Tabs -->
+    <div class="seg tabs mb16">
+      <button class:on={detailTab === "overview"} onclick={() => (detailTab = "overview")}>Overview</button>
+      <button class:on={detailTab === "enforcement"} onclick={() => (detailTab = "enforcement")}>Enforcement</button>
+      <button class:on={detailTab === "incus"} onclick={() => (detailTab = "incus")}>Incus config</button>
+      <button class:on={detailTab === "snapshots"} onclick={() => (detailTab = "snapshots")}>Snapshots</button>
+    </div>
+
+    {#if detailTab === "overview"}
     <!-- Enforcement overview (all rings) -->
     {#if rings.length > 0}
       <div class="card mb16">
@@ -434,6 +445,9 @@
       </div>
     </div>
 
+    {/if}
+
+    {#if detailTab === "incus"}
     <!-- Live Incus surface (round-trip read from the server) -->
     {#if inst}
       <div class="card mt16">
@@ -509,10 +523,14 @@
           </div>
         </div>
       </div>
+    {:else}
+      <div class="card"><div class="empty"><div class="icon"><Icon name="cog" size={22} /></div>Reading the live Incus surface… (start the sandbox if it is stopped)</div></div>
+    {/if}
     {/if}
 
+    {#if detailTab === "enforcement"}
     <!-- Network egress (per-container enforcement ring) -->
-    <div class="card mt16">
+    <div class="card">
       <div class="card-head"><h3>Network egress</h3>
         <span class="sub">container-level ACL · <span class="mono">incus network acl</span></span>
         {#if egStatus}
@@ -652,9 +670,11 @@
         {/if}
       </div>
     </div>
+    {/if}
 
+    {#if detailTab === "snapshots"}
     <!-- Snapshots -->
-    <div class="card mt16">
+    <div class="card">
       <div class="card-head"><h3>Snapshots</h3><span class="sub">checkpoint &amp; restore · <span class="mono">incus snapshot</span></span></div>
       <div class="pad">
         <div class="flex gap8 mb12">
@@ -687,6 +707,7 @@
         {/if}
       </div>
     </div>
+    {/if}
 
     <p class="xsmall muted mt12">Live per-agent activity (sessions, trace, tokens) is not instrumented yet.</p>
   {/if}
