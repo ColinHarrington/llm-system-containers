@@ -71,6 +71,20 @@
     else { sort.key = k; sort.dir = 1; }
   }
 
+  // Keyboard navigation of the matrix: ↑/↓ move a row cursor, Enter opens it.
+  let cursor = $state(-1);
+  $effect(() => {
+    if (cursor >= shown.length) cursor = shown.length - 1;
+  });
+  function onMatrixKey(e: KeyboardEvent) {
+    if (shown.length === 0) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); cursor = Math.min(cursor < 0 ? 0 : cursor + 1, shown.length - 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); cursor = Math.max(cursor - 1, 0); }
+    else if (e.key === "Home") { e.preventDefault(); cursor = 0; }
+    else if (e.key === "End") { e.preventDefault(); cursor = shown.length - 1; }
+    else if (e.key === "Enter" && cursor >= 0 && cursor < shown.length) { openSandbox(shown[cursor].sandbox); }
+  }
+
   const shown = $derived(
     fleet
       .filter((f) => f.sandbox.toLowerCase().includes(query.toLowerCase()))
@@ -131,7 +145,7 @@
     {:else if shown.length === 0}
       <div class="empty"><div class="icon"><Icon name="search" size={22} /></div>No sandboxes match the current filter.</div>
     {:else}
-      <table class="tbl">
+      <table class="tbl matrix" tabindex="0" role="grid" aria-label="Per-sandbox posture (use arrow keys to navigate, Enter to open)" onkeydown={onMatrixKey}>
         <thead><tr>
           <SortHeader label="Sandbox" col="sandbox" {sort} onsort={toggleSort} />
           <SortHeader label="Egress (L3/L4)" col="egressPosture" {sort} onsort={toggleSort} />
@@ -142,8 +156,8 @@
           <th></th>
         </tr></thead>
         <tbody>
-          {#each shown as f (f.sandbox)}
-            <tr class="clickable" onclick={() => openSandbox(f.sandbox)}>
+          {#each shown as f, i (f.sandbox)}
+            <tr class="clickable" class:cursor={i === cursor} aria-selected={i === cursor} onclick={() => { cursor = i; openSandbox(f.sandbox); }}>
               <td class="mono small strong" style="color:var(--text)">{f.sandbox}</td>
               <td><span class="pill {posturePill(f.egressPosture)}">{f.egressPosture}</span></td>
               <td class="mono small">{f.domains || "—"}</td>
@@ -163,5 +177,17 @@
     {/if}
   </div>
 
-  <p class="xsmall muted mt12">Egress "open" or "unmanaged" means no ACL is applied — surfaced in amber so it is easy to spot. Enforcement compiles from intent; a sandbox's detail page applies it and shows live status.</p>
+  <p class="xsmall muted mt12">Egress "open" or "unmanaged" means no ACL is applied — surfaced in amber so it is easy to spot. Enforcement compiles from intent; a sandbox's detail page applies it and shows live status. <span class="kbd">↑</span><span class="kbd">↓</span> to navigate, <span class="kbd">↵</span> to open.</p>
 </div>
+
+<style>
+  .matrix { outline: none; }
+  .matrix:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+  .matrix tbody tr.cursor { background: var(--accent-soft); }
+  .matrix tbody tr.cursor td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+  .kbd {
+    display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 3px;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: var(--card-2);
+    font-family: var(--mono); font-size: 10px; color: var(--text-2); margin: 0 1px; vertical-align: middle;
+  }
+</style>

@@ -56,6 +56,19 @@ describe("Security", () => {
     expect(rowNames()[0]).toContain("web-agent-01");
   });
 
+  it("navigates the matrix by keyboard and opens with Enter", async () => {
+    ui.selectedSandbox = null;
+    const { container } = render(Security);
+    await screen.findByText("web-agent-01");
+    const grid = container.querySelector("table.matrix") as HTMLElement;
+    // Default sort is by sandbox name → scratch, then web-agent-01.
+    await fireEvent.keyDown(grid, { key: "ArrowDown" }); // cursor → row 0 (scratch)
+    await fireEvent.keyDown(grid, { key: "ArrowDown" }); // cursor → row 1 (web-agent-01)
+    await fireEvent.keyDown(grid, { key: "Enter" });
+    expect(ui.selectedSandbox).toBe("web-agent-01");
+    expect(ui.screen).toBe("sandbox-detail");
+  });
+
   it("filters the matrix by search and posture", async () => {
     render(Security);
     await screen.findByText("web-agent-01");
