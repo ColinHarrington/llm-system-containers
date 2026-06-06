@@ -3,6 +3,7 @@
   import Modal from "../lib/Modal.svelte";
   import Skeleton from "../lib/Skeleton.svelte";
   import FetchError from "../lib/FetchError.svelte";
+  import Copy from "../lib/Copy.svelte";
   import { bump } from "../lib/store.svelte";
   import {
     listServices, setService, provisionService, listVirtualKeys, syncVirtualKeys, setProviderKey,
@@ -214,7 +215,7 @@
       <tbody>
         {#each keys as k (k.key)}
           <tr>
-            <td class="mono small">{k.key}</td>
+            <td class="mono small">{k.key}<Copy value={k.key} label="key alias" /></td>
             <td>{k.assignedTo}</td>
             <td class="small t2">{k.models}</td>
             <td class="mono small">{k.budget}</td>
@@ -237,7 +238,7 @@
 {#if detail}
   <Modal title={`Service · ${detail.name}`} maxWidth={460} onclose={() => (detail = null)}>
     {#snippet body()}
-      <div class="kv"><span class="k">Container</span><span class="v mono">svc-{detail!.name}</span></div>
+      <div class="kv"><span class="k">Container</span><span class="v mono">svc-{detail!.name}<Copy value={`svc-${detail!.name}`} label="container" /></span></div>
       <div class="kv"><span class="k">State</span><span class="v">
         {#if states[detail!.name] === "running"}<span class="pill ok"><span class="dot ok"></span> running</span>
         {:else if states[detail!.name] === "stopped"}<span class="pill warn"><span class="dot warn"></span> stopped</span>

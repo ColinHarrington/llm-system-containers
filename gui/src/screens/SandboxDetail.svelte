@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import Modal from "../lib/Modal.svelte";
+  import Copy from "../lib/Copy.svelte";
   import { ui, navigate, bump, openTerminal, showToast, confirmAction } from "../lib/store.svelte";
   import {
     topology, removeSandbox, removeAgent, instanceConfig,
@@ -344,6 +345,7 @@
       <div>
         <div class="flex gap10">
           <span class="strong mono" style="font-size:16px;color:var(--text)">{sb.name}</span>
+          <Copy value={sb.name} label="sandbox name" size={15} />
           {#if sb.status === "running"}<span class="pill ok"><span class="dot ok pulse"></span> running</span>
           {:else}<span class="pill"><span class="dot muted"></span> stopped</span>{/if}
           <span class="tag">L2 · system container</span>
