@@ -35,6 +35,8 @@ platform). Target platforms: **Linux and macOS**.
 - [agent-profiles.md](agent-profiles.md) — Reusable permission bundles (researcher/tester/builder/validation/orchestrator)
 - [coding-agents.md](coding-agents.md) — Running Claude Code / Pi / Codex / Aider / … via the LiteLLM gateway; credentialing modes
 - [research/litellm-claude-subscription.md](research/litellm-claude-subscription.md) — Can a Claude subscription back LiteLLM? (cited research)
+- [research/incus-instance-inputs.md](research/incus-instance-inputs.md) — Full enumeration of Incus instance-creation inputs + declarative-YAML / generated-UI design direction
+- [research/agent-collaboration-landscape.md](research/agent-collaboration-landscape.md) — Cited landscape survey: A2A protocols, message buses, multi-agent frameworks/patterns, team-chat & dev-collab platforms
 - **services/** — shared infra; may run in L1 or in their own L2 container
   - [README.md](services/README.md) — Catalog, plugin model, L1-vs-L2 placement choice
   - [llm-proxy.md](services/llm-proxy.md) — LiteLLM, virtual keys
@@ -54,8 +56,10 @@ platform). Target platforms: **Linux and macOS**.
 
 ## Status
 
-Early design / brainstorming. No code yet. **Tech stack is largely chosen** — Rust core
-(`llmsc-core` crate), Tauri GUI, declarative on-disk config, Incus as runtime truth, CLI-first,
-daemon deferred (see [tech-stack.md](tech-stack.md)); a few preference details remain in
-[open-questions.md](open-questions.md). This document set is the umbrella; individual docs are
-expected to grow into their own layered plans.
+Pre-alpha; **implementation underway** (M0–M2 done; services, enforcement, and GUI in
+progress — see [buildout.md](buildout.md)). These remain the design docs, intentionally
+separate from the code under `crates/` and `gui/`. **Tech stack is chosen** — Rust core
+(`llmsc-core` crate), Tauri + Svelte GUI, declarative on-disk config, Incus as runtime truth,
+CLI-first, daemon deferred (see [tech-stack.md](tech-stack.md)); a few preference details
+remain in [open-questions.md](open-questions.md). This document set is the umbrella; individual
+docs grow into their own layered plans.

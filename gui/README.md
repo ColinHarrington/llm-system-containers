@@ -1,47 +1,52 @@
-# Svelte + TS + Vite
+# LLMSC GUI
 
-This template should help get you started developing with Svelte and TypeScript in Vite.
+Desktop GUI for **llm-system-containers** — a [Tauri](https://tauri.app/) v2 shell over the
+shared `llmsc-core` Rust library, with a **Svelte 5 (runes) + TypeScript** frontend. It's a
+view onto the same config and Incus state the `llmsc` / `llmsctl` CLIs drive; nothing here is
+GUI-only state.
 
-## Recommended IDE Setup
+## Layout
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
-
-## Need an official Svelte framework?
-
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
-
-## Technical considerations
-
-**Why use this over SvelteKit?**
-
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
-
-This template contains as little as possible to get started with Vite + TypeScript + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
-
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
-
-**Why `global.d.ts` instead of `compilerOptions.types` inside `jsconfig.json` or `tsconfig.json`?**
-
-Setting `compilerOptions.types` shuts out all other types not explicitly listed in the configuration. Using triple-slash references keeps the default TypeScript setting of accepting type information from the entire workspace, while also adding `svelte` and `vite/client` type information.
-
-**Why include `.vscode/extensions.json`?**
-
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
-
-**Why enable `allowJs` in the TS template?**
-
-While `allowJs: false` would indeed prevent the use of `.js` files in the project, it does not prevent the use of JavaScript syntax in `.svelte` files. In addition, it would force `checkJs: false`, bringing the worst of both worlds: not being able to guarantee the entire codebase is TypeScript, and also having worse typechecking for the existing JavaScript. In addition, there are valid use cases in which a mixed codebase may be relevant.
-
-**Why is HMR not preserving my local component state?**
-
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/rixo/svelte-hmr#svelte-hmr).
-
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
-
-```ts
-// store.ts
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
 ```
+gui/
+├── src/
+│   ├── screens/        # one component per screen (Dashboard, Sandboxes, SandboxDetail,
+│   │                   #   Services, Security, Topology, Agent, Settings, Wizard, Incus*, …)
+│   ├── lib/            # reusable components + the runes store
+│   │   ├── store.svelte.ts   # global UI state, toasts, confirm dialogs, live polling
+│   │   ├── core.ts           # bridge: calls Tauri commands in-app, mock data otherwise
+│   │   ├── types.ts          # shared DTO types (mirror the Tauri command layer)
+│   │   └── *.svelte          # Modal, Toast, Copy, SortHeader, Skeleton, FetchError, …
+│   ├── App.svelte      # shell: sidebar + screen router
+│   └── app.css         # global styles / design tokens
+└── src-tauri/          # Tauri Rust shell — exposes llmsc-core as #[tauri::command]s
+```
+
+`core.ts` is the seam: when running inside Tauri it invokes the Rust commands in
+`src-tauri/src/lib.rs`; otherwise it returns mock data, so `pnpm dev` and the tests run with no
+VM/Incus present.
+
+## Commands
+
+```bash
+pnpm install
+pnpm dev            # vite dev server (frontend only, mock data)
+pnpm check          # svelte-check — keep at 0 errors / 0 warnings
+pnpm test           # vitest run (one-shot)
+pnpm test Security  # a single test file by name substring
+pnpm test:watch     # vitest watch mode
+pnpm build          # production build
+cargo tauri dev     # full desktop app against a real backend (needs the tauri CLI)
+```
+
+## Conventions
+
+- **Svelte 5 runes** throughout (`$state`, `$derived`, `$effect`, `$props`, snippets) — no
+  legacy stores, no plain JS.
+- Tests are **Vitest + @testing-library/svelte**; mock `../lib/core` with `vi.hoisted()` spies.
+  Every screen with data/actions ships tests. Suite is green (`pnpm test`).
+- New Tauri command? Add the Rust `#[tauri::command]` + DTO (`camelCase` serde) in
+  `src-tauri/src/lib.rs`, register it in `generate_handler!`, then bridge it in `core.ts` with
+  a mock fallback and type it in `types.ts`.
+- `svelte-check` must stay **0/0**; it (and vitest) run as pre-push hooks (see the repo-root
+  `.pre-commit-config.yaml`).

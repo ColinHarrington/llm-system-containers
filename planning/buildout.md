@@ -52,40 +52,58 @@ core logic is unit-testable with fakes.
 - **Tests:** unit reconcile/diff w/ fake; integration create/list/exec/delete; idempotent apply.
 - **Done-when:** launch a sandbox with users from config; re-apply is a no-op.
 
-### M3 — L3 enablement (the differentiator) — codifies spike phase 2
+### M3 — L3 enablement (the differentiator) — codifies spike phase 2  ⏸ DEFERRED (capability spike-proven)
 - **Deliverables:** bake nesting requirements into the image/bootstrap (apparmor sysctl,
   `security.nesting`, rootless deps `podman uidmap slirp4netns fuse-overlayfs`).
 - **Tests:** integration — a launched sandbox runs `podman build` rootless (spike phase 2 promoted to CI).
 - **Done-when:** rootless container build+run inside a product-launched sandbox, in CI.
+- **Status:** `security.nesting` is set on `llmsc launch` (M2). Image-baked rootless deps and the
+  CI nested-build test are deferred until the base system is functional (per the MVP cut line).
 
-### M4 — Networking (the deferred spike phase 3, built properly)
+### M4 — Networking (the deferred spike phase 3, built properly)  ⏸ DEFERRED
 - **Deliverables:** host-reachable VM network in the driver (**socket_vmnet** on macOS /
   bridge on Linux); routable container IPs; split-horizon `.llmsc` DNS (host resolver
   integration); SSH; `llmsctl net setup` for the privileged host steps.
 - **Tests:** integration — host reaches a sandbox by `<name>.llmsc` and SSHes in.
 - **Done-when:** `ssh operator@<name>.llmsc` works from the host.
+- **Status:** host-reachability deferred. Note: per-container *egress* network policy (the ACL
+  enforcement ring, `llmsc egress`) landed under M7 — that's a different concern from this
+  milestone's host↔sandbox routing.
 
-### M5 — Services (MVP set)
+### M5 — Services (MVP set)  🚧 IN PROGRESS
 - **Deliverables:** service model + placement (L1 vs own L2); **LiteLLM** (virtual keys) first,
   then observability (**Phoenix**, then VictoriaMetrics/Loki/Grafana); `llmsctl services enable`.
 - **Tests:** integration — an agent in a sandbox reaches LiteLLM via a virtual key and the call
   is traced in Phoenix.
 - **Done-when:** the MVP success criteria in [mvp.md](mvp.md) are met (virtual-key LLM call,
   traced, system metrics visible).
+- **Status:** service catalog + placement model done; deployers exist for **LiteLLM, Phoenix,
+  Grafana, SeaweedFS, mitmproxy, Zeek** (shared `ServiceContainer` helper); `services list|status|enable|
+  disable|up`, `keys ls|sync|set-provider`, and live container status read-back all implemented.
+  Remaining: the live virtual-key + traced-call integration test (the MVP done-when).
 
-### M6 — File transfer + shared storage
+### M6 — File transfer + shared storage  🚧 PARTIAL
 - **Deliverables:** `llmsc cp` (Incus file API; host↔L2, L2↔L2); SeaweedFS service + mount.
   See [file-transfer.md](file-transfer.md), [services/shared-storage.md](services/shared-storage.md).
+- **Status:** SeaweedFS deployer + `llmsc mount-shared` done; `llmsc cp` is still stubbed.
 
-### M7 — Security: profiles + guardrails
+### M7 — Security: profiles + guardrails  🚧 IN PROGRESS
 - **Deliverables:** agent-profile model compiling to Incus config + Tetragon policies + network
   ACLs + LiteLLM key scope; guardrail enforcement. See [agent-profiles.md](agent-profiles.md),
   [security-model.md](security-model.md).
+- **Status:** per-agent guardrail model + agent profiles in config; the per-container **egress
+  ACL** ring (`enforce` module, `llmsc egress`); per-UID **Tetragon** policy compile
+  (`llmsctl tetragon`); virtual-key scope (`llmsctl keys`). Live apply paths exist; profile→
+  policy compilation is still maturing.
 
-### M8 — GUI (Tauri + Svelte)
+### M8 — GUI (Tauri + Svelte)  🚧 IN PROGRESS
 - **Deliverables:** wire the mockups to `llmsc-core` via Tauri commands — VM status, wizard,
   sandbox management, observe/interrupt/steer. See [interfaces.md](interfaces.md).
 - **Tests:** Vitest + Testing Library (components), Playwright e2e.
+- **Status:** Tauri shell wired to `llmsc-core`; 16 screens (dashboard, sandboxes + detail,
+  services, fleet security posture, topology, agent control, settings, wizard, Incus surfaces),
+  command palette, live polling, confirm dialogs, toasts. Vitest suite green (64 tests);
+  Playwright e2e not yet added.
 
 ## MVP cut line
 
@@ -98,19 +116,19 @@ Per [mvp.md](mvp.md): **M0 → M1 → M2 → M5 (LiteLLM + observability) → a 
 - **M4 (networking/SSH)** — deferred (validate with the proper host-reachable mechanism later).
 - M6 (storage/cp), M7 (profiles/guardrails), full GUI — post-MVP.
 
-## Recommended first slice
+## Recommended first slice  ✅ DONE
 
-**M0 then M1** — stand up the workspace + test harness, then get `llmsctl up` bringing up the
-VM with Incus (the most-used control-plane verb, and it turns the manual spike into product
-code with integration tests). M2 follows immediately and gives the first end-to-end "launch a
-sandbox" demo.
+**M0 → M1 → M2** were built in order: workspace + test harness, then `llmsctl up` (VM + Incus),
+then the sandbox lifecycle (`llmsc launch`/`ls`/`shell`/`rm` + `apply`). Current focus is the
+post-MVP-base work — services (M5), security/enforcement (M7), and the GUI (M8) — in parallel.
 
 ## Open items
 
 - Reconcile/drift model specifics ([tech-stack.md](tech-stack.md)).
-- CI runners for integration (Linux now; macOS/self-hosted for networking + nested e2e).
-- ✅ **License: MIT OR Apache-2.0 dual** — `LICENSE-MIT` + `LICENSE-APACHE` added. At M0:
-  set Cargo `license = "MIT OR Apache-2.0"`, add a README "License" section, and adopt a
-  **DCO** (Developer Certificate of Origin; inbound = outbound). Copyright line currently
-  "Colin Harrington and llm-system-containers contributors" — adjust if you want an org name.
-- Top-level user-facing **README** still to write (separate from `planning/`).
+- CI runners for integration (Linux now; macOS/self-hosted for networking + nested e2e). CI
+  runs the Rust gates **and** a GUI job (svelte-check/test/build); still **unit-level only** —
+  real Lima+Incus integration e2e is not yet wired into CI.
+- ✅ **License: MIT OR Apache-2.0 dual** — `LICENSE-MIT` + `LICENSE-APACHE` added; Cargo
+  `license = "MIT OR Apache-2.0"` set; README "License" + DCO contributing note added.
+  Copyright line is "Colin Harrington and llm-system-containers contributors".
+- ✅ **Top-level user-facing README** written (separate from `planning/`).

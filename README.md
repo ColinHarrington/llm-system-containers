@@ -14,10 +14,14 @@ the agent's own (imperfect) permissions are never the only thing protecting your
 
 > ⚠️ **Status: pre-alpha — implementation underway.** Architecture, tech stack, and core
 > feasibility are settled (rootless container nesting is [proven](planning/spike-plan.md)).
-> **M0 is done** — the Rust workspace, TOML config model, and Incus/VM boundary traits, all
-> test-first ([buildout.md](planning/buildout.md)); the CLIs build but most subcommands are
-> stubs. Design docs live in [`planning/`](planning/), GUI explorations in
-> [`mockups/`](mockups/).
+> **M0–M2 are done** — the Rust workspace + TOML config model, platform bring-up (VM + Incus),
+> and sandbox lifecycle. Services, security/enforcement, and the GUI are **in progress**: the
+> shared `llmsc-core` library has a real Incus client, declarative reconcile, six service
+> deployers, and the first enforcement rings (per-container egress ACLs + per-UID Tetragon
+> policies); both CLIs are wired to it; and a Tauri + Svelte desktop GUI (16 screens) is live.
+> A few subcommands remain stubs (e.g. `llmsc cp`). All test-first — **114 Rust + 64 GUI
+> tests** pass. See [buildout.md](planning/buildout.md). Design docs live in
+> [`planning/`](planning/), GUI design explorations in [`mockups/`](mockups/).
 
 ## Why this is different
 
@@ -54,27 +58,44 @@ container. See [`planning/overview.md`](planning/overview.md).
 
 ## Interfaces
 
-- **`llmsc`** — manage individual sandboxes (`launch`, `ls`, `shell user@name`, `cp`, `rm`).
-- **`llmsctl`** — manage the platform (`init`, `up`, `down`, `status`, `services`).
-- A **GUI** (Tauri + Svelte) for the same, with at-a-glance status and agent observe/steer.
+- **`llmsc`** — manage individual sandboxes: `launch`, `ls`, `shell user@name`, `cp`, `rm`,
+  `apply` (reconcile config → Incus), `egress` (network policy), `agent pause|resume|stop|steer`,
+  `mount-shared`.
+- **`llmsctl`** — manage the platform: `init`, `up`, `down`, `destroy`, `status`,
+  `services {list|status|enable|disable|up}`, `keys {ls|sync|set-provider}`, `tetragon`,
+  `doctor` (one-shot health report).
+- A **GUI** (Tauri + Svelte) over the same core, with at-a-glance status, a service/sandbox
+  wizard, a fleet security-posture view, and agent observe/interrupt/steer.
 
 ## Tech stack
 
-Rust core (`llmsc-core` crate) shared by the CLIs and the Tauri GUI; declarative **TOML**
-config; **Incus** as the runtime source of truth (raw `incus` always usable underneath);
-**Svelte + TypeScript** frontend. Bootstrapping scripts are `uv` single-file Python. Built
-test-first (red-green TDD). See [`planning/tech-stack.md`](planning/tech-stack.md).
+Rust core (`llmsc-core` crate) shared by both CLIs and the Tauri GUI; declarative **TOML**
+config (`llmsc.toml`); **Incus** as the runtime source of truth (raw `incus` always usable
+underneath); **Svelte 5 + TypeScript** frontend. Bootstrapping scripts are `uv` single-file
+Python. Built test-first (red-green TDD). See [`planning/tech-stack.md`](planning/tech-stack.md).
+
+## Build & test
+
+```bash
+cargo build && cargo test --all      # Rust workspace (core + both CLIs)
+cd gui && pnpm install && pnpm test  # GUI (svelte-check via `pnpm check`)
+```
+
+See [`CLAUDE.md`](CLAUDE.md) for the full command list and pre-commit/CI gates.
 
 ## Project status & roadmap
 
 Pre-alpha; implementation sequenced into milestones (M0 workspace → M1 platform bring-up → M2
-sandbox lifecycle → M5 services → GUI). See [`planning/buildout.md`](planning/buildout.md) and
+sandbox lifecycle → M5 services → M7 security → M8 GUI). M0–M2 done; services, enforcement, and
+GUI in progress. See [`planning/buildout.md`](planning/buildout.md) and
 [`planning/mvp.md`](planning/mvp.md).
 
 ## Repository layout
 
 | Path | What |
 |---|---|
+| [`crates/`](crates/) | Rust workspace — `llmsc-core` (library), `llmsc` + `llmsctl` (CLIs) |
+| [`gui/`](gui/) | Tauri + Svelte desktop app (`src/` frontend, `src-tauri/` Rust shell) |
 | [`planning/`](planning/) | Design docs (architecture, security, networking, services, roadmap) |
 | [`mockups/`](mockups/) | Static HTML GUI explorations — open `mockups/index.html` |
 | [`scripts/`](scripts/) | `uv` bootstrapping scripts (e.g. the feasibility spike) |
