@@ -1,12 +1,27 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui } from "../lib/store.svelte";
-  import { topology, listServices, vmStatus, TOOL_LABELS } from "../lib/core";
-  import type { AgentState, ServiceEntry, TopoSandbox, VmStatus } from "../lib/types";
+  import { ui, live, openSandbox, showToast } from "../lib/store.svelte";
+  import { topology, listServices, vmStatus, fleetEnforcement, agentPause, agentResume, agentStop, TOOL_LABELS } from "../lib/core";
+  import type { AgentState, FleetEnforcement, ServiceEntry, TopoSandbox, VmStatus } from "../lib/types";
 
   let sandboxes = $state<TopoSandbox[]>([]);
   let services = $state<ServiceEntry[]>([]);
   let vm = $state<VmStatus | null>(null);
+  let fleet = $state<FleetEnforcement[]>([]);
+  let busyAgent = $state<string | null>(null);
+
+  const postureFor = $derived((name: string) => fleet.find((f) => f.sandbox === name)?.egressPosture ?? "");
+  const posturePill = (p: string) => (p === "allowlist" || p === "deny-all" ? "ok" : p === "open" ? "warn" : "");
+
+  async function control(sb: string, agent: string, fn: () => Promise<void>, msg: string) {
+    busyAgent = `${sb}/${agent}`;
+    try { await fn(); showToast(msg, "ok"); }
+    catch (e) { showToast(String(e), "danger"); }
+    finally { busyAgent = null; }
+  }
+  function steer(sb: string, agent: string) {
+    ui.steerAgent = { id: agent, name: agent, initials: initial(agent), kind: "agent", sandbox: sb, uid: 0, model: "", status: "idle", task: "" };
+  }
 
   const STATE: Record<AgentState, { dot: string; text: string }> = {
     active: { dot: "var(--ok)", text: "var(--ok)" },
@@ -22,9 +37,11 @@
 
   $effect(() => {
     ui.dataVersion;
+    live.tick; // auto-refresh on the live poll
     void (async () => {
       [sandboxes, services, vm] = await Promise.all([topology(), listServices(), vmStatus()]);
     })();
+    void fleetEnforcement().then((f) => (fleet = f)).catch(() => (fleet = []));
   });
 </script>
 
@@ -57,8 +74,11 @@
           <div class="sb-card" class:stopped={sb.status === "stopped"}>
             <div class="flex gap8 mb4">
               <span class="dot {sb.status === 'stopped' ? 'muted' : 'ok'}"></span>
-              <span class="strong mono small" style="color:var(--text)">{sb.name}</span>
+              <button class="namebtn strong mono small" style="color:var(--text)" onclick={() => openSandbox(sb.name)}>{sb.name}</button>
               <span class="tag">L2</span>
+              {#if postureFor(sb.name) && postureFor(sb.name) !== "unmanaged"}
+                <span class="pill {posturePill(postureFor(sb.name))}" title="Egress posture">{postureFor(sb.name)}</span>
+              {/if}
               <span class="right">
                 {#if sb.l3}
                   <span class="l3on"><Icon name="pkg" size={12} /> L3 enabled</span>
@@ -96,6 +116,15 @@
                           <div class="action muted">{a.kind === "human" ? "human operator" : "agent user"} · {a.state}</div>
                         {/if}
                       </div>
+                      {#if a.kind === "agent"}
+                        {@const busy = busyAgent === `${sb.name}/${a.name}`}
+                        <div class="ctl right flex gap4">
+                          <button class="btn sm" title="Pause" disabled={busy} onclick={() => control(sb.name, a.name, () => agentPause(sb.name, a.name), `Paused ${a.name}`)}><Icon name="pause" size={12} /></button>
+                          <button class="btn sm" title="Resume" disabled={busy} onclick={() => control(sb.name, a.name, () => agentResume(sb.name, a.name), `Resumed ${a.name}`)}><Icon name="play" size={12} /></button>
+                          <button class="btn sm" title="Stop" disabled={busy} onclick={() => control(sb.name, a.name, () => agentStop(sb.name, a.name), `Stopped ${a.name}`)}><Icon name="stop" size={12} /></button>
+                          <button class="btn sm" title="Steer" onclick={() => steer(sb.name, a.name)}><Icon name="steer" size={12} /></button>
+                        </div>
+                      {/if}
                     </div>
                     {#if a.tools.length > 0}
                       <div class="tools">
@@ -139,6 +168,9 @@
   .stopped-note { font-size: 12px; color: var(--text-3); font-style: italic; text-align: center; padding: 18px 0; }
   .agents { display: flex; flex-direction: column; gap: 8px; }
   .agent { border: 1px solid var(--border); border-radius: 10px; background: var(--card-2); padding: 10px; }
+  .namebtn { background: none; border: none; padding: 0; cursor: pointer; font-family: var(--mono); text-align: left; }
+  .namebtn:hover { color: var(--accent-text); text-decoration: underline; }
+  .ctl { flex: none; align-items: flex-start; }
   .ava-wrap { position: relative; flex: none; }
   .ava { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 650; border: 1px solid var(--border-strong); background: var(--card); color: var(--text-2); }
   .ava.human { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
