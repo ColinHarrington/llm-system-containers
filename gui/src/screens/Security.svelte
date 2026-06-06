@@ -37,7 +37,11 @@
   <div class="card">
     <div class="card-head"><h3>Per-sandbox posture</h3><span class="sub">configured intent · <span class="mono">llmsctl doctor</span></span></div>
     {#if fleet.length === 0}
-      <div class="empty"><div class="icon"><Icon name="shield" size={24} /></div>No config-managed sandboxes yet.</div>
+      <div class="empty">
+        <div class="icon"><Icon name="shield" size={24} /></div>
+        No config-managed sandboxes yet — create one to start enforcing policy.
+        <button class="btn sm primary mt12" onclick={() => (ui.newSandboxOpen = true)}><Icon name="plus" size={14} /><span>New sandbox</span></button>
+      </div>
     {:else}
       <table class="tbl">
         <thead><tr><th>Sandbox</th><th>Egress (L3/L4)</th><th>Domains (L7)</th><th>Agents</th><th>RO fs</th><th>Control-plane</th><th></th></tr></thead>

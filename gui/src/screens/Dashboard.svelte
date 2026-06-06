@@ -65,6 +65,21 @@
 </script>
 
 <div class="content">
+  <!-- First-run onboarding: the VM has not been created yet -->
+  {#if vm === "NotCreated"}
+    <div class="card pad onboard mb16">
+      <div class="ob-ico"><Icon name="layers" size={26} /></div>
+      <div class="ob-body">
+        <div class="strong" style="font-size:15px;color:var(--text)">Welcome to llmsc</div>
+        <p class="muted small mt4 mb0">No Playground VM yet. The setup wizard provisions a host-native VM running Incus, then your sandboxes and services live inside it. Takes a few minutes.</p>
+      </div>
+      <div class="right flex gap8">
+        <button class="btn primary" onclick={() => navigate("wizard")}><Icon name="cog" size={15} /><span>Run setup wizard</span></button>
+        <button class="btn" onclick={toggleVm} disabled={vmBusy}><Icon name="play" size={15} /><span>Quick start</span></button>
+      </div>
+    </div>
+  {/if}
+
   <!-- VM hero -->
   <div class="card pad mb16" style="display:flex; align-items:center; gap:20px;">
     <div style="width:54px;height:54px;border-radius:14px;background:var(--accent-soft);display:grid;place-items:center;color:var(--accent)">
@@ -204,7 +219,11 @@
       <button class="btn sm right" onclick={() => navigate("sandboxes")}><span>View all</span></button>
     </div>
     {#if sandboxes.length === 0}
-      <div class="empty"><div class="icon"><Icon name="box" size={26} /></div>No sandboxes yet.</div>
+      <div class="empty">
+        <div class="icon"><Icon name="box" size={26} /></div>
+        No sandboxes yet.
+        <button class="btn sm primary mt12" onclick={() => (ui.newSandboxOpen = true)}><Icon name="plus" size={14} /><span>Create your first sandbox</span></button>
+      </div>
     {:else}
       <table class="tbl">
         <thead><tr><th>Name</th><th>Image</th><th>Status</th><th></th></tr></thead>
@@ -229,6 +248,10 @@
 </div>
 
 <style>
+  .onboard { display: flex; align-items: center; gap: 16px; border-color: var(--accent); background: var(--accent-soft); }
+  .ob-ico { width: 48px; height: 48px; border-radius: 12px; background: var(--accent-soft-bg); color: var(--accent); display: grid; place-items: center; flex: none; }
+  .ob-body { min-width: 0; }
+  .mb0 { margin-bottom: 0; }
   .stat.clickable { text-align: left; cursor: pointer; font-family: inherit; }
   .stat.clickable:hover { border-color: var(--border-strong); }
   .svc-row { padding: 6px 0; border-bottom: 1px solid var(--border); }

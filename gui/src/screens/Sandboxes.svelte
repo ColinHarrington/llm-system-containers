@@ -97,9 +97,13 @@
     <button class="card pad newtile" onclick={() => (ui.newSandboxOpen = true)}>
       <div class="nt-ico"><Icon name="plus" size={22} /></div>
       <div class="strong" style="color:var(--text)">New sandbox</div>
-      <div class="xsmall muted">Launch a fresh LLMSC workspace</div>
+      <div class="xsmall muted">{sandboxes.length === 0 ? "Launch your first LLMSC workspace" : "Launch a fresh LLMSC workspace"}</div>
     </button>
   </div>
+
+  {#if sandboxes.length > 0 && shown.length === 0}
+    <div class="empty mt16"><div class="icon"><Icon name="search" size={22} /></div>No sandboxes match the current filter.</div>
+  {/if}
 </div>
 
 <style>
