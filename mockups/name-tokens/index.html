@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LLMSC · name as a sequence of tokens</title>
+<style>
+  :root {
+    --bg:        #0a0c10;
+    --panel:     #11141b;
+    --panel-2:   #161a23;
+    --ink:       #e7eaf1;
+    --muted:     #707a8c;
+    --faint:     #38404e;
+    --accent:    #7c9cff;   /* indigo — the "chosen" path */
+    --accent-2:  #ffb86b;   /* warm — the hovered candidate */
+    --line:      #2a3140;
+    --radius:    12px;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, #141926 0%, var(--bg) 60%);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+
+  header.top {
+    padding: 30px 32px 8px;
+    text-align: center;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .eyebrow b { color: var(--accent); font-weight: 600; }
+  .subtitle {
+    margin: 8px auto 0;
+    max-width: 620px;
+    color: var(--muted);
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+
+  /* ---- assembled name ribbon (the "generated sequence") ---- */
+  .ribbon-wrap { padding: 28px 24px 6px; }
+  .ribbon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    min-height: 86px;
+  }
+  .word {
+    position: relative;
+    font-family: var(--mono);
+    font-size: clamp(20px, 3.4vw, 38px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    padding: .28em .5em;
+    border-radius: var(--radius);
+    border: 1.5px solid transparent;
+    color: var(--ink);
+    transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease;
+    white-space: nowrap;
+  }
+  .word .lead {            /* the leading capital that spells the acronym */
+    color: var(--accent);
+  }
+  .word.preview {
+    color: var(--accent-2);
+    border-color: color-mix(in srgb, var(--accent-2) 55%, transparent);
+    background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+    transform: translateY(-2px);
+  }
+  .word.preview .lead { color: var(--accent-2); }
+  .word.just-set {
+    animation: pop .35s ease;
+  }
+  @keyframes pop {
+    0% { transform: scale(.9); opacity: .3; }
+    60% { transform: scale(1.04); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .connector {
+    width: 22px; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--line) 30%, var(--line) 70%, transparent);
+    border-radius: 2px;
+    flex: 0 0 auto;
+  }
+  .caret {
+    width: 3px;
+    height: clamp(26px, 3.6vw, 44px);
+    background: var(--accent);
+    border-radius: 2px;
+    margin-left: 6px;
+    animation: blink 1.05s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .acro {
+    text-align: center;
+    font-family: var(--mono);
+    color: var(--muted);
+    font-size: 12.5px;
+    letter-spacing: .35em;
+    padding-bottom: 6px;
+  }
+  .acro b { color: var(--ink); }
+
+  /* ---- toolbar ---- */
+  .toolbar {
+    display: flex; justify-content: center; gap: 10px;
+    padding: 10px 0 18px;
+  }
+  button {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    padding: 8px 14px;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s, transform .05s;
+  }
+  button:hover { border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button .k { color: var(--accent); }
+
+  /* ---- lattice ---- */
+  .stage {
+    position: relative;
+    flex: 1;
+    padding: 6px 24px 40px;
+  }
+  svg.wires {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    overflow: visible;
+  }
+  .lattice {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: clamp(10px, 2.4vw, 34px);
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .col-head {
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .col-head .slot-letter {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .col-head .slot-pos {
+    display:block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin-top: 2px;
+  }
+  .col { display: flex; flex-direction: column; }
+  .tokens { display: flex; flex-direction: column; gap: 8px; }
+  .token {
+    position: relative;
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--muted);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 12px;
+    cursor: pointer;
+    text-align: center;
+    transition: all .14s ease;
+    user-select: none;
+  }
+  .token:hover {
+    color: var(--accent-2);
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-2) 14%, transparent);
+    transform: translateY(-1px);
+  }
+  .token.selected {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+                0 6px 20px -8px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  .token .lead { color: var(--accent); font-weight: 600; }
+  .token:hover .lead { color: var(--accent-2); }
+  .token.disabled {
+    opacity: .62;
+    color: var(--muted);
+    background: var(--panel);
+    border: 1px dashed var(--faint);
+    box-shadow: none;
+    transform: none;
+    cursor: not-allowed;
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, var(--muted) 55%, transparent);
+  }
+  .token.disabled .lead { color: var(--muted); }
+  .token.disabled::after {
+    content: "⊘";
+    display: inline-block;
+    margin-left: 7px;
+    font-size: 11px;
+    text-decoration: none;
+    color: var(--muted);
+    opacity: .85;
+    vertical-align: 1px;
+  }
+
+  .hint {
+    text-align: center;
+    color: var(--faint);
+    font-size: 12px;
+    font-family: var(--mono);
+    padding: 8px 0 24px;
+  }
+  .hint kbd {
+    color: var(--muted);
+    border: 1px solid var(--faint);
+    border-radius: 5px;
+    padding: 1px 5px;
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+  <header class="top">
+    <div class="eyebrow">a name as a sequence of <b>tokens</b></div>
+    <p class="subtitle">
+      Five slots spell <b>L&middot;L&middot;M&middot;S&middot;C</b>. Each slot is a distribution over
+      candidate words. Hover a candidate to preview the next path; click to sample it into the name.
+    </p>
+  </header>
+
+  <div class="ribbon-wrap">
+    <div class="ribbon" id="ribbon"><!-- built by JS --></div>
+    <div class="acro" id="acro"></div>
+  </div>
+
+  <div class="toolbar">
+    <button id="sample">▷ <span class="k">sample</span> a name</button>
+    <button id="reset">↺ reset</button>
+  </div>
+
+  <div class="stage">
+    <svg class="wires" id="wires"></svg>
+    <div class="lattice" id="lattice"><!-- built by JS --></div>
+    <div class="hint">hover = preview &nbsp;·&nbsp; click = lock it in &nbsp;·&nbsp; <kbd>space</kbd> to sample &nbsp;·&nbsp; <s>greyed</s> = incompatible with your current pick</div>
+  </div>
+
+<script>
+const SLOTS = [
+  { letter:'L', pos:'token 1', tokens:['Layered','Lightweight','Local'] },
+  { letter:'L', pos:'token 2', tokens:['Linux','LXC'] },
+  { letter:'M', pos:'token 3', tokens:['Managed','Micro'] },
+  { letter:'S', pos:'token 4', tokens:['Sandbox','Segmented','System'] },
+  { letter:'C', pos:'token 5', tokens:['Compute','Containers'] },
+];
+const DEFAULT = [1,0,0,2,1]; // Lightweight Linux Managed System Containers
+
+let selected = [...DEFAULT];
+let preview  = null; // {slot, idx} while hovering
+
+// ---- combos that don't read right: [slotA, wordA, slotB, wordB, reason] ----
+const CONFLICTS = [
+  [3,'System', 4,'Compute',     '“System Compute” isn’t the term — system containers pair with “Containers.”'],
+  [1,'LXC',    4,'Containers',  'Redundant — LXC already means “Linux Containers.”'],
+  [1,'LXC',    3,'System',      'Redundant — LXC is itself a Linux system-container runtime.'],
+  [2,'Micro',  3,'System',      'Tension — system containers are full lightweight machines, not “micro.”'],
+];
+
+// reason token (s,i) is incompatible with the CURRENT selection, else null
+function disabledReason(s, i){
+  const word = SLOTS[s].tokens[i];
+  for (const [a, wa, b, wb, why] of CONFLICTS){
+    if (a === s && wa === word && SLOTS[b].tokens[selected[b]] === wb) return why;
+    if (b === s && wb === word && SLOTS[a].tokens[selected[a]] === wa) return why;
+  }
+  return null;
+}
+
+// after a pick, nudge any now-incompatible slot to its first valid token
+function repair(priority){
+  for (let pass = 0; pass < 4; pass++){
+    let moved = false;
+    for (let s = 0; s < SLOTS.length; s++){
+      if (s === priority) continue;
+      if (disabledReason(s, selected[s])){
+        const alt = SLOTS[s].tokens.findIndex((_, i) => !disabledReason(s, i));
+        if (alt >= 0 && alt !== selected[s]){ selected[s] = alt; moved = true; }
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+const lattice = document.getElementById('lattice');
+const ribbon  = document.getElementById('ribbon');
+const acroEl  = document.getElementById('acro');
+const wires   = document.getElementById('wires');
+
+// token DOM refs: tokenEls[slot][idx]
+const tokenEls = [];
+
+function leadMarkup(word){
+  return '<span class="lead">'+word[0]+'</span>'+word.slice(1);
+}
+
+// ---- build lattice ----
+SLOTS.forEach((slot, s) => {
+  const col = document.createElement('div');
+  col.className = 'col';
+  col.innerHTML = `<div class="col-head">
+      <span class="slot-letter">${slot.letter}</span>
+      <span class="slot-pos">${slot.pos}</span>
+    </div>`;
+  const tokens = document.createElement('div');
+  tokens.className = 'tokens';
+  tokenEls[s] = [];
+  slot.tokens.forEach((word, i) => {
+    const t = document.createElement('div');
+    t.className = 'token';
+    t.innerHTML = leadMarkup(word);
+    t.addEventListener('mouseenter', () => { if (disabledReason(s, i)) return; preview = {slot:s, idx:i}; render(); });
+    t.addEventListener('mouseleave', () => { preview = null; render(); });
+    t.addEventListener('click', () => { if (disabledReason(s, i)) return; selected[s] = i; repair(s); preview = null; render(true, s); });
+    tokens.appendChild(t);
+    tokenEls[s][i] = t;
+  });
+  col.appendChild(tokens);
+  lattice.appendChild(col);
+});
+
+// effective index for a slot, honoring a hover preview
+function effIdx(s){
+  return (preview && preview.slot === s) ? preview.idx : selected[s];
+}
+
+// ---- render the ribbon (assembled name) ----
+function render(animateSlot, setSlot){
+  // selected styling
+  tokenEls.forEach((arr, s) => arr.forEach((el, i) => {
+    el.classList.toggle('selected', selected[s] === i);
+    const why = disabledReason(s, i);
+    el.classList.toggle('disabled', !!why);
+    el.title = why || '';
+  }));
+
+  // ribbon words
+  ribbon.innerHTML = '';
+  SLOTS.forEach((slot, s) => {
+    const idx = effIdx(s);
+    const word = slot.tokens[idx];
+    const w = document.createElement('div');
+    w.className = 'word';
+    if (preview && preview.slot === s) w.classList.add('preview');
+    if (animateSlot && setSlot === s) w.classList.add('just-set');
+    w.innerHTML = leadMarkup(word);
+    ribbon.appendChild(w);
+    if (s < SLOTS.length - 1) {
+      const c = document.createElement('div');
+      c.className = 'connector';
+      ribbon.appendChild(c);
+    }
+  });
+  const caret = document.createElement('div');
+  caret.className = 'caret';
+  ribbon.appendChild(caret);
+
+  // acronym readout
+  acroEl.innerHTML = SLOTS.map((sl,s)=>'<b>'+sl.tokens[effIdx(s)][0]+'</b>').join(' ');
+
+  drawWires();
+}
+
+// ---- draw the lattice path (selected) + preview branch ----
+function center(el, ref){
+  const r = el.getBoundingClientRect();
+  const b = ref.getBoundingClientRect();
+  return {
+    left:  r.left - b.left,
+    right: r.right - b.left,
+    midY:  r.top - b.top + r.height/2,
+  };
+}
+
+function pathThrough(idxFor){
+  // build a smooth path connecting right edge of slot s to left edge of slot s+1
+  let d = '';
+  for (let s = 0; s < SLOTS.length - 1; s++){
+    const a = center(tokenEls[s][idxFor(s)], wires);
+    const b = center(tokenEls[s+1][idxFor(s+1)], wires);
+    const x1 = a.right + 4, y1 = a.midY;
+    const x2 = b.left - 4,  y2 = b.midY;
+    const dx = (x2 - x1) * 0.5;
+    d += `M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2} `;
+  }
+  return d;
+}
+
+function drawWires(){
+  const sel = (s)=>selected[s];
+  const selPath = pathThrough(sel);
+
+  let html = `
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="${cssVar('--accent')}" stop-opacity="0.25"/>
+        <stop offset="1" stop-color="${cssVar('--accent')}" stop-opacity="0.9"/>
+      </linearGradient>
+    </defs>
+    <path d="${selPath}" fill="none" stroke="url(#g)" stroke-width="2"
+          stroke-linecap="round" stroke-dasharray="6 7" class="flow"/>
+  `;
+
+  // preview branch: same path but routed through the hovered token
+  if (preview){
+    const prevPath = pathThrough(effIdx);
+    html += `<path d="${prevPath}" fill="none" stroke="${cssVar('--accent-2')}"
+              stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 6"
+              opacity="0.95"/>`;
+  }
+
+  // nodes on the selected path
+  for (let s = 0; s < SLOTS.length; s++){
+    const c = center(tokenEls[s][sel(s)], wires);
+    const isFirst = s === 0, isLast = s === SLOTS.length - 1;
+    if (!isFirst){
+      html += `<circle cx="${c.left-4}" cy="${c.midY}" r="3" fill="${cssVar('--accent')}"/>`;
+    }
+    if (!isLast){
+      html += `<circle cx="${c.right+4}" cy="${c.midY}" r="3" fill="${cssVar('--accent')}"/>`;
+    }
+  }
+  wires.innerHTML = html;
+}
+
+function cssVar(name){
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// animated flow on the selected wire
+const style = document.createElement('style');
+style.textContent = `.flow{animation:flow 1.1s linear infinite}@keyframes flow{to{stroke-dashoffset:-26}}`;
+document.head.appendChild(style);
+
+// ---- sample: walk the slots left-to-right, "generating" a name ----
+let sampling = false;
+function sample(){
+  if (sampling) return;
+  sampling = true;
+  preview = null;
+  let s = 0;
+  function step(){
+    if (s >= SLOTS.length){ sampling = false; return; }
+    const enabled = SLOTS[s].tokens.map((_, i) => i).filter(i => !disabledReason(s, i));
+    let flickers = 5 + Math.floor(Math.random()*4);
+    function flick(){
+      if (flickers-- <= 0){
+        selected[s] = enabled[Math.floor(Math.random()*enabled.length)];
+        render(true, s);
+        s++;
+        setTimeout(step, 90);
+        return;
+      }
+      selected[s] = enabled[Math.floor(Math.random()*enabled.length)];
+      render();
+      setTimeout(flick, 55);
+    }
+    flick();
+  }
+  step();
+}
+
+document.getElementById('sample').addEventListener('click', sample);
+document.getElementById('reset').addEventListener('click', () => {
+  selected = [...DEFAULT]; preview = null; render();
+});
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space'){ e.preventDefault(); sample(); }
+});
+window.addEventListener('resize', drawWires);
+
+render();
+// redraw once fonts settle
+setTimeout(drawWires, 60);
+</script>
+</body>
+</html>

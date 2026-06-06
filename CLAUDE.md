@@ -69,7 +69,7 @@ build).
 ## What this project is
 
 **llm-system-containers** is an open-source platform/tool that enables **LLM System
-Containers (LLMSC)** — *Little Linux Managed System Containers* — for AI agents. Built on
+Containers (LLMSC)** — *Lightweight Linux Managed System Containers* — for AI agents. Built on
 **Incus / unprivileged LXC**: *system* containers (full lightweight Linux machines), not
 application/process containers like Docker. Each LLMSC is typically run as an ephemeral,
 safer **sandbox** ("sandbox" is a mode, not the name). The goal is defense-in-depth
