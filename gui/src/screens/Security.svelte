@@ -22,6 +22,17 @@
 
   const posturePill = (p: string) =>
     p === "allowlist" || p === "deny-all" ? "ok" : p === "open" ? "warn" : "";
+
+  let query = $state("");
+  let pfilter = $state<"all" | "managed" | "unmanaged">("all");
+  const shown = $derived(
+    fleet
+      .filter((f) => f.sandbox.toLowerCase().includes(query.toLowerCase()))
+      .filter((f) => {
+        const managed = f.egressPosture !== "unmanaged" && f.egressPosture !== "open";
+        return pfilter === "all" || (pfilter === "managed" ? managed : !managed);
+      }),
+  );
 </script>
 
 <div class="content">
@@ -35,6 +46,17 @@
     <div class="card pad stat"><div class="label">Control-plane caps</div><div class="num">{cpAgents}</div><div class="delta t2">privileged agents</div></div>
   </div>
 
+  {#if !loading && fleet.length > 0}
+    <div class="flex gap12 mb16 wrap">
+      <div class="code-chip" style="flex:1;max-width:360px"><Icon name="search" size={16} /><input class="bare" placeholder="Search sandboxes…" bind:value={query} /></div>
+      <div class="seg right">
+        {#each [["all", "All"], ["managed", "Managed"], ["unmanaged", "Unmanaged"]] as [v, label]}
+          <button class:on={pfilter === v} onclick={() => (pfilter = v as typeof pfilter)}>{label}</button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
   <!-- Matrix -->
   <div class="card">
     <div class="card-head"><h3>Per-sandbox posture</h3><span class="sub">configured intent · <span class="mono">llmsctl doctor</span></span></div>
@@ -46,11 +68,13 @@
         No config-managed sandboxes yet — create one to start enforcing policy.
         <button class="btn sm primary mt12" onclick={() => (ui.newSandboxOpen = true)}><Icon name="plus" size={14} /><span>New sandbox</span></button>
       </div>
+    {:else if shown.length === 0}
+      <div class="empty"><div class="icon"><Icon name="search" size={22} /></div>No sandboxes match the current filter.</div>
     {:else}
       <table class="tbl">
         <thead><tr><th>Sandbox</th><th>Egress (L3/L4)</th><th>Domains (L7)</th><th>Agents</th><th>RO fs</th><th>Control-plane</th><th></th></tr></thead>
         <tbody>
-          {#each fleet as f (f.sandbox)}
+          {#each shown as f (f.sandbox)}
             <tr class="clickable" onclick={() => openSandbox(f.sandbox)}>
               <td class="mono small strong" style="color:var(--text)">{f.sandbox}</td>
               <td><span class="pill {posturePill(f.egressPosture)}">{f.egressPosture}</span></td>

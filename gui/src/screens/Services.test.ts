@@ -49,6 +49,15 @@ describe("Services", () => {
     expect(syncVirtualKeys).toHaveBeenCalled();
   });
 
+  it("filters the service cards by search", async () => {
+    render(Services);
+    await screen.findByText("Provision"); // litellm card present
+    expect(screen.getByText("svc-litellm")).toBeInTheDocument();
+    await fireEvent.input(screen.getByPlaceholderText("Search services…"), { target: { value: "phoenix" } });
+    expect(screen.getByText("svc-phoenix")).toBeInTheDocument();
+    expect(screen.queryByText("svc-litellm")).not.toBeInTheDocument();
+  });
+
   it("opens the service detail and restarts it", async () => {
     render(Services);
     await screen.findByText("Provision"); // litellm is enabled+deployable

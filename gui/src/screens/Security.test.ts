@@ -24,4 +24,18 @@ describe("Security", () => {
     expect(ui.selectedSandbox).toBe("web-agent-01");
     expect(ui.screen).toBe("sandbox-detail");
   });
+
+  it("filters the matrix by search and posture", async () => {
+    render(Security);
+    await screen.findByText("web-agent-01");
+    // Search narrows to the matching sandbox.
+    await fireEvent.input(screen.getByPlaceholderText("Search sandboxes…"), { target: { value: "scratch" } });
+    expect(screen.queryByText("web-agent-01")).not.toBeInTheDocument();
+    expect(screen.getByText("scratch")).toBeInTheDocument();
+    // Managed filter drops the unmanaged one.
+    await fireEvent.input(screen.getByPlaceholderText("Search sandboxes…"), { target: { value: "" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Managed" }));
+    expect(screen.getByText("web-agent-01")).toBeInTheDocument();
+    expect(screen.queryByText("scratch")).not.toBeInTheDocument();
+  });
 });

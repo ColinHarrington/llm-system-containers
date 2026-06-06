@@ -321,6 +321,7 @@ html[data-theme="light"] .tbl tr.clickable:hover td { background: var(--card-2);
 }
 .code-chip .copy { color: var(--text-3); cursor: pointer; }
 .code-chip .copy:hover { color: var(--accent-text); }
+.bare { border: none; background: transparent; outline: none; color: var(--text); font-family: inherit; font-size: 12.5px; width: 100%; }
 
 /* Stat tiles */
 .stat .label { font-size: 11px; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: .03em; }

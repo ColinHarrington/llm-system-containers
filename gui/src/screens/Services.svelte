@@ -90,11 +90,22 @@
   }
 
   const meta = (name: string) => SERVICE_META[name] ?? { initials: name.slice(0, 2), color: "#8a90a3", placement: "service" };
+
+  let query = $state("");
+  const shown = $derived(
+    services.filter((s) => (s.name + " " + s.description).toLowerCase().includes(query.toLowerCase())),
+  );
 </script>
 
 <div class="content">
   {#if error}
     <div class="banner warn mb16" role="alert"><Icon name="warn" size={18} /><span>{error}</span></div>
+  {/if}
+
+  {#if !loading}
+    <div class="flex gap12 mb16">
+      <div class="code-chip" style="flex:1;max-width:420px"><Icon name="search" size={16} /><input class="bare" placeholder="Search services…" bind:value={query} /></div>
+    </div>
   {/if}
 
   <div class="grid g-2 mb16">
@@ -106,7 +117,7 @@
         </div>
       {/each}
     {:else}
-    {#each services as s (s.name)}
+    {#each shown as s (s.name)}
       <div class="card pad">
         <div class="flex gap12 mb8">
           <div class="svc-ico" style="background:{meta(s.name).color}">{meta(s.name).initials}</div>
@@ -145,13 +156,19 @@
       </div>
     {/each}
 
-    <div class="card pad" style="border-style:dashed;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;color:var(--text-3)">
-      <div class="strong" style="color:var(--text)">Forgejo · NATS</div>
-      <div class="xsmall">Optional / future services — enable in the wizard</div>
-      <button class="btn sm mt8" onclick={() => (ui.screen = "wizard")}>Configure services</button>
-    </div>
+    {#if query.trim() === ""}
+      <div class="card pad" style="border-style:dashed;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;color:var(--text-3)">
+        <div class="strong" style="color:var(--text)">Forgejo · NATS</div>
+        <div class="xsmall">Optional / future services — enable in the wizard</div>
+        <button class="btn sm mt8" onclick={() => (ui.screen = "wizard")}>Configure services</button>
+      </div>
+    {/if}
     {/if}
   </div>
+
+  {#if !loading && query.trim() !== "" && shown.length === 0}
+    <div class="empty mb16"><div class="icon"><Icon name="search" size={22} /></div>No services match "{query}".</div>
+  {/if}
 
   <!-- LiteLLM virtual keys -->
   <div class="card">

@@ -125,7 +125,6 @@
 </div>
 
 <style>
-  .bare { border: none; background: transparent; outline: none; color: var(--text); font-family: inherit; font-size: 12.5px; width: 100%; }
   .namebtn { border: none; background: transparent; padding: 0; color: var(--text); font-family: inherit; font-size: 13px; cursor: pointer; text-align: left; }
   .namebtn:hover { color: var(--accent-text); }
   .sb-ico { width: 36px; height: 36px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex: none; }
