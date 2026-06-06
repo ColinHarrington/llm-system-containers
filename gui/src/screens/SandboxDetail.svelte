@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
   import Modal from "../lib/Modal.svelte";
-  import { ui, navigate, bump, openTerminal, showToast } from "../lib/store.svelte";
+  import { ui, navigate, bump, openTerminal, showToast, confirmAction } from "../lib/store.svelte";
   import {
     topology, removeSandbox, removeAgent, instanceConfig,
     instanceSetConfig, instanceUnsetConfig, instanceAddMount, instanceRemoveDevice,
@@ -115,6 +115,11 @@
 
   async function removeUser(agent: string) {
     if (!sb) return;
+    if (!(await confirmAction({
+      title: "Remove agent",
+      message: `Remove agent '${agent}' (its Linux user and home) from ${sb.name}?`,
+      confirmLabel: "Remove agent", danger: true,
+    }))) return;
     userBusy = agent;
     showToast(`$ llmsc agent rm ${agent}@${sb.name}`);
     try {
@@ -311,6 +316,11 @@
 
   async function remove() {
     if (!sb) return;
+    if (!(await confirmAction({
+      title: "Remove sandbox",
+      message: `Delete sandbox '${sb.name}' and everything inside it? This cannot be undone.`,
+      confirmLabel: "Remove sandbox", danger: true,
+    }))) return;
     busy = true;
     try {
       await removeSandbox(sb.name);

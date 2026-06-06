@@ -30,6 +30,7 @@ export const ui = $state({
   paletteOpen: false,
   activityOpen: false,
   shortcutsOpen: false,
+  confirm: null as ConfirmState | null,
   steerAgent: null as AgentInfo | null,
   terminalTarget: null as string | null,
   toast: null as { msg: string; color: ToastColor; id: number } | null,
@@ -69,6 +70,32 @@ export function initLivePolling(ms = 6000): () => void {
     if (liveTimer) clearInterval(liveTimer);
     liveTimer = null;
   };
+}
+
+// --- confirmation dialogs ---
+export interface ConfirmState {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger: boolean;
+  resolve: (ok: boolean) => void;
+}
+/** Ask the user to confirm a hard-to-reverse action. Resolves true if confirmed. */
+export function confirmAction(opts: { title: string; message: string; confirmLabel?: string; danger?: boolean }): Promise<boolean> {
+  return new Promise((resolve) => {
+    ui.confirm = {
+      title: opts.title,
+      message: opts.message,
+      confirmLabel: opts.confirmLabel ?? "Confirm",
+      danger: opts.danger ?? false,
+      resolve,
+    };
+  });
+}
+export function resolveConfirm(ok: boolean): void {
+  const c = ui.confirm;
+  ui.confirm = null;
+  c?.resolve(ok);
 }
 
 let toastId = 0;

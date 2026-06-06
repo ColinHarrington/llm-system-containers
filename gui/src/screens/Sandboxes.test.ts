@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, fireEvent } from "@testing-library/svelte";
+import { render, screen, fireEvent, waitFor } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
 const { removeSandbox } = vi.hoisted(() => ({ removeSandbox: vi.fn(async () => {}) }));
@@ -11,6 +11,7 @@ vi.mock("../lib/core", () => ({
   removeSandbox,
 }));
 
+import { ui, resolveConfirm } from "../lib/store.svelte";
 import Sandboxes from "./Sandboxes.svelte";
 
 describe("Sandboxes", () => {
@@ -25,10 +26,23 @@ describe("Sandboxes", () => {
     expect(screen.queryByText("scratch-01")).not.toBeInTheDocument();
   });
 
-  it("removes a sandbox", async () => {
+  it("removes a sandbox after confirming", async () => {
     render(Sandboxes);
     const removeButtons = await screen.findAllByRole("button", { name: "Remove" });
     await fireEvent.click(removeButtons[0]);
-    expect(removeSandbox).toHaveBeenCalledWith("web-agent-01");
+    // Gated by a confirm dialog.
+    expect(ui.confirm?.title).toBe("Remove sandbox");
+    resolveConfirm(true);
+    await waitFor(() => expect(removeSandbox).toHaveBeenCalledWith("web-agent-01"));
+  });
+
+  it("does not remove when the confirm is cancelled", async () => {
+    removeSandbox.mockClear();
+    render(Sandboxes);
+    const removeButtons = await screen.findAllByRole("button", { name: "Remove" });
+    await fireEvent.click(removeButtons[0]);
+    resolveConfirm(false);
+    await Promise.resolve();
+    expect(removeSandbox).not.toHaveBeenCalled();
   });
 });

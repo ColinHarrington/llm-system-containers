@@ -14,6 +14,7 @@
   import Terminal from "./lib/Terminal.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
   import ActivityDrawer from "./lib/ActivityDrawer.svelte";
+  import ConfirmModal from "./lib/ConfirmModal.svelte";
   import BuildImage from "./lib/BuildImage.svelte";
   import NewSandbox from "./lib/NewSandbox.svelte";
   import Icon from "./lib/Icon.svelte";
@@ -21,7 +22,7 @@
   import { onMount } from "svelte";
   import {
     ui, navigate, openSandbox, bump, toggleTheme, showToast, activity, logActivity,
-    live, toggleLive, initLivePolling, SCREEN_TITLES, type Screen,
+    live, toggleLive, initLivePolling, resolveConfirm, SCREEN_TITLES, type Screen,
   } from "./lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, addAgent, listProfiles, agentSteer, onProgress,
@@ -94,6 +95,7 @@
         ui.addAgentSandbox = null;
         ui.activityOpen = false;
         ui.shortcutsOpen = false;
+        if (ui.confirm) resolveConfirm(false);
         return;
       }
       const el = e.target as HTMLElement | null;
@@ -344,6 +346,7 @@
   <Terminal />
   <CommandPalette />
   <ActivityDrawer />
+  <ConfirmModal />
 </div>
 
 {#if ui.shortcutsOpen}

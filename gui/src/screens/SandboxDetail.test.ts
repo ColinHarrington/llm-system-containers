@@ -73,8 +73,8 @@ vi.mock("../lib/core", () => ({
   ]),
 }));
 
-import { fireEvent } from "@testing-library/svelte";
-import { ui } from "../lib/store.svelte";
+import { fireEvent, waitFor } from "@testing-library/svelte";
+import { ui, resolveConfirm } from "../lib/store.svelte";
 import SandboxDetail from "./SandboxDetail.svelte";
 
 describe("SandboxDetail", () => {
@@ -97,7 +97,10 @@ describe("SandboxDetail", () => {
 
     // Remove agent (the human has no remove button, so there's exactly one).
     await fireEvent.click(screen.getByTitle("Remove agent"));
-    expect(removeAgent).toHaveBeenCalledWith("web-agent-01", "agent-claude");
+    // Destructive — gated by a confirm dialog (rendered in App, resolved here).
+    expect(ui.confirm?.title).toBe("Remove agent");
+    resolveConfirm(true);
+    await waitFor(() => expect(removeAgent).toHaveBeenCalledWith("web-agent-01", "agent-claude"));
   });
 
   it("refines an agent's guardrails", async () => {

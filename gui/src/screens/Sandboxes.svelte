@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui, bump, openTerminal, openSandbox } from "../lib/store.svelte";
+  import { ui, bump, openTerminal, openSandbox, confirmAction } from "../lib/store.svelte";
   import { listSandboxes, removeSandbox } from "../lib/core";
   import type { Sandbox } from "../lib/types";
 
@@ -19,6 +19,11 @@
   }
 
   async function remove(n: string) {
+    if (!(await confirmAction({
+      title: "Remove sandbox",
+      message: `Delete sandbox '${n}' and everything inside it? This cannot be undone.`,
+      confirmLabel: "Remove sandbox", danger: true,
+    }))) return;
     busy = n;
     try {
       await removeSandbox(n);
