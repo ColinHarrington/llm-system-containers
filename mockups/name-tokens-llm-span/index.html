@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LLMSC · name as a sequence of tokens</title>
+<style>
+  :root {
+    --bg:        #0a0c10;
+    --glow:      #141926;   /* radial highlight behind the page */
+    --panel:     #11141b;
+    --panel-2:   #161a23;
+    --ink:       #e7eaf1;
+    --muted:     #707a8c;
+    --faint:     #38404e;
+    --accent:    #7c9cff;   /* indigo — the "chosen" path */
+    --accent-2:  #ffb86b;   /* warm — the hovered candidate */
+    --line:      #2a3140;
+    --radius:    12px;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+  }
+  :root.light {
+    --bg:        #f5f7fa;
+    --glow:      #ffffff;
+    --panel:     #ffffff;
+    --panel-2:   #eef1f6;
+    --ink:       #1b2230;
+    --muted:     #5a6573;
+    --faint:     #b8c0cc;
+    --accent:    #4361ee;   /* deeper indigo for contrast on light */
+    --accent-2:  #d97515;   /* deeper warm for contrast on light */
+    --line:      #d7deea;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, var(--glow) 0%, var(--bg) 60%);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    transition: background .25s ease, color .25s ease;
+  }
+
+  .theme-toggle {
+    position: fixed; top: 16px; right: 16px; z-index: 20;
+    width: 38px; height: 38px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 10px;
+    cursor: pointer; transition: border-color .15s ease, background .15s ease;
+  }
+  .theme-toggle:hover { border-color: var(--accent); }
+  .theme-toggle svg { width: 18px; height: 18px; }
+
+  header.top {
+    padding: 30px 32px 8px;
+    text-align: center;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .eyebrow b { color: var(--accent); font-weight: 600; }
+  .subtitle {
+    margin: 8px auto 0;
+    max-width: 620px;
+    color: var(--muted);
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+
+  /* ---- assembled name ribbon (the "generated sequence") ---- */
+  .ribbon-wrap { padding: 28px 24px 6px; }
+  .ribbon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    min-height: 86px;
+  }
+  .word {
+    position: relative;
+    font-family: var(--mono);
+    font-size: clamp(20px, 3.4vw, 38px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    padding: .28em .5em;
+    border-radius: var(--radius);
+    border: 1.5px solid transparent;
+    color: var(--ink);
+    transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease;
+    white-space: nowrap;
+  }
+  .word .lead {            /* the leading capital that spells the acronym */
+    color: var(--accent);
+  }
+  .word.preview {
+    color: var(--accent-2);
+    border-color: color-mix(in srgb, var(--accent-2) 55%, transparent);
+    background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+    transform: translateY(-2px);
+  }
+  .word.preview .lead { color: var(--accent-2); }
+  .word.just-set {
+    animation: pop .35s ease;
+  }
+  @keyframes pop {
+    0% { transform: scale(.9); opacity: .3; }
+    60% { transform: scale(1.04); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .connector {
+    width: 22px; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--line) 30%, var(--line) 70%, transparent);
+    border-radius: 2px;
+    flex: 0 0 auto;
+  }
+  .caret {
+    width: 3px;
+    height: clamp(26px, 3.6vw, 44px);
+    background: var(--accent);
+    border-radius: 2px;
+    margin-left: 6px;
+    animation: blink 1.05s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .acro {
+    text-align: center;
+    font-family: var(--mono);
+    color: var(--muted);
+    font-size: 12.5px;
+    letter-spacing: .35em;
+    padding-bottom: 6px;
+  }
+  .acro b { color: var(--ink); }
+
+  /* ---- toolbar ---- */
+  .toolbar {
+    display: flex; justify-content: center; gap: 10px;
+    padding: 10px 0 18px;
+  }
+  button {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    padding: 8px 14px;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s, transform .05s;
+  }
+  button:hover { border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button .k { color: var(--accent); }
+
+  /* ---- lattice ---- */
+  .stage {
+    position: relative;
+    flex: 1;
+    padding: 6px 24px 40px;
+  }
+  svg.wires {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    overflow: visible;
+  }
+  .lattice {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: clamp(10px, 2.4vw, 34px);
+    row-gap: 14px;
+    align-items: start;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .col-head {
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .col-head .slot-letter {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .col-head .slot-pos {
+    display:block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin-top: 2px;
+  }
+  .col { display: flex; flex-direction: column; }
+  .tokens { display: flex; flex-direction: column; gap: 8px; }
+  .token {
+    position: relative;
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--muted);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 12px;
+    cursor: pointer;
+    text-align: center;
+    transition: all .14s ease;
+    user-select: none;
+  }
+  .token:hover {
+    color: var(--accent-2);
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-2) 14%, transparent);
+    transform: translateY(-1px);
+  }
+  .token.selected {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+                0 6px 20px -8px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  .token .lead { color: var(--accent); font-weight: 600; }
+  .token:hover .lead { color: var(--accent-2); }
+  .token.disabled {
+    opacity: .62;
+    color: var(--muted);
+    background: var(--panel);
+    border: 1px dashed var(--faint);
+    box-shadow: none;
+    transform: none;
+    cursor: not-allowed;
+  }
+  .token.disabled .lead { color: var(--muted); }
+  .token.disabled::after {
+    content: "⊘";
+    display: inline-block;
+    margin-left: 7px;
+    font-size: 11px;
+    text-decoration: none;
+    color: var(--muted);
+    opacity: .85;
+    vertical-align: 1px;
+  }
+  .token.inactive { opacity: .3; filter: saturate(.35); }
+
+  /* per-token icon */
+  .tok-ico { height: 15px; width: auto; vertical-align: -2px; margin-right: 6px; }
+  /* LLM logo on the span token: a touch larger, accent-tinted so it reads as a mark */
+  .span-token .llm-ico { height: 19px; vertical-align: -4px; margin-right: 9px; color: var(--accent); }
+
+  /* the spanning "Large Language Model" token over L·L·M */
+  .span-wrap { display: flex; flex-direction: column; }
+  .span-token {
+    position: relative;
+    font-family: var(--mono);
+    font-size: clamp(13px, 1.5vw, 16px);
+    text-align: center;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    cursor: pointer;
+    user-select: none;
+    transition: all .14s ease;
+  }
+  .span-token .lead { color: var(--accent); font-weight: 600; }
+  .span-token .tag {
+    display: block;
+    margin-top: 6px;
+    font-size: 9.5px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .span-token:hover {
+    color: var(--accent-2);
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-2) 14%, transparent);
+    transform: translateY(-1px);
+  }
+  .span-token:hover .lead { color: var(--accent-2); }
+  .span-token.selected {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 15%, var(--panel));
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+                0 8px 22px -10px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  .span-token.just-set { animation: pop .35s ease; }
+  .span-or {
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin-bottom: 10px;
+  }
+
+  .hint {
+    text-align: center;
+    color: var(--faint);
+    font-size: 12px;
+    font-family: var(--mono);
+    padding: 8px 0 24px;
+  }
+  .hint kbd {
+    color: var(--muted);
+    border: 1px solid var(--faint);
+    border-radius: 5px;
+    padding: 1px 5px;
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" id="themeToggle" title="Toggle light / dark"></button>
+
+  <header class="top">
+    <div class="eyebrow">a name as a sequence of <b>tokens</b></div>
+    <p class="subtitle">
+      Five slots spell <b>L&middot;L&middot;M&middot;S&middot;C</b>. Each slot is a distribution over
+      candidate words. Hover a candidate to preview the next path; click to sample it into the name.
+    </p>
+  </header>
+
+  <div class="ribbon-wrap">
+    <div class="ribbon" id="ribbon"><!-- built by JS --></div>
+  </div>
+
+  <div class="stage">
+    <svg class="wires" id="wires"></svg>
+    <div class="lattice" id="lattice"><!-- built by JS --></div>
+  </div>
+
+
+<script>
+const SLOTS = [
+  { letter:'L', pos:'token 1', tokens:['Layered','Lightweight','Local'] },
+  { letter:'L', pos:'token 2', tokens:['Linux','LXC'] },
+  { letter:'M', pos:'token 3', tokens:['Managed','Micro'] },
+  { letter:'S', pos:'token 4', tokens:['Sandbox','Segmented','System'] },
+  { letter:'C', pos:'token 5', tokens:['Compute','Containers'] },
+];
+const DEFAULT = [1,0,0,2,1]; // Lightweight Linux Managed System Containers
+
+// per-word icons. Brand marks are <img>; concept icons are inline Lucide SVGs
+// (stroke=currentColor, so they recolor with the token's text state).
+const ICONS = {
+  'Linux': '<img class="tok-ico" src="icons/tux-color.svg" alt="">',
+  'LXC':   '<img class="tok-ico" src="icons/incus.png" alt="">',
+  'Layered': '<svg class="tok-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" /><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" /><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" /></svg>',
+  'Lightweight': '<svg class="tok-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z" /><path d="M16 8 2 22" /><path d="M17.5 15H9" /></svg>',
+  'Local': '<svg class="tok-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" /><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>',
+  'Managed': '<svg class="tok-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M10 5H3" /><path d="M12 19H3" /><path d="M14 3v4" /><path d="M16 17v4" /><path d="M21 12h-9" /><path d="M21 19h-5" /><path d="M21 5h-7" /><path d="M8 10v4" /><path d="M8 12H3" /></svg>',
+  'Micro': '<svg class="tok-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="m15 15 6 6m-6-6v4.8m0-4.8h4.8" /><path d="M9 19.8V15m0 0H4.2M9 15l-6 6" /><path d="M15 4.2V9m0 0h4.8M15 9l6-6" /><path d="M9 4.2V9m0 0H4.2M9 9 3 3" /></svg>',
+  'Sandbox': '<svg class="tok-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /></svg>',
+  'Segmented': '<svg class="tok-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M12 3v18" /><path d="M3 12h18" /><rect x="3" y="3" width="18" height="18" rx="2" /></svg>',
+  'System': '<svg class="tok-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><rect width="20" height="8" x="2" y="2" rx="2" ry="2" /><rect width="20" height="8" x="2" y="14" rx="2" ry="2" /><line x1="6" x2="6.01" y1="6" y2="6" /><line x1="6" x2="6.01" y1="18" y2="18" /></svg>',
+  'Compute': '<svg class="tok-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M12 20v2" /><path d="M12 2v2" /><path d="M17 20v2" /><path d="M17 2v2" /><path d="M2 12h2" /><path d="M2 17h2" /><path d="M2 7h2" /><path d="M20 12h2" /><path d="M20 17h2" /><path d="M20 7h2" /><path d="M7 20v2" /><path d="M7 2v2" /><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="8" y="8" width="8" height="8" rx="1" /></svg>',
+  'Containers': '<svg class="tok-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M22 7.7c0-.6-.4-1.2-.8-1.5l-6.3-3.9a1.72 1.72 0 0 0-1.7 0l-10.3 6c-.5.2-.9.8-.9 1.4v6.6c0 .5.4 1.2.8 1.5l6.3 3.9a1.72 1.72 0 0 0 1.7 0l10.3-6c.5-.3.9-1 .9-1.5Z" /><path d="M10 21.9V14L2.1 9.1" /><path d="m10 14 11.9-6.9" /><path d="M14 19.8v-8.1" /><path d="M18 17.5V9.4" /></svg>',
+};
+
+// logo for the spanning "Large Language Model" token (brain-circuit by default)
+const LLM_ICON = '<svg class="tok-ico llm-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" /><path d="M9 13a4.5 4.5 0 0 0 3-4" /><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" /><path d="M3.477 10.896a4 4 0 0 1 .585-.396" /><path d="M6 18a4 4 0 0 1-1.967-.516" /><path d="M12 13h4" /><path d="M12 18h6a2 2 0 0 1 2 2v1" /><path d="M12 8h8" /><path d="M16 8V5a2 2 0 0 1 2-2" /><circle cx="16" cy="13" r=".5" /><circle cx="18" cy="3" r=".5" /><circle cx="20" cy="21" r=".5" /><circle cx="20" cy="8" r=".5" /></svg>';
+
+let selected    = [...DEFAULT];
+let preview     = null;  // {slot, idx} while hovering an individual token
+let spanActive  = false; // true → slots 0–2 collapse into the "Large Language Model" token
+let previewSpan = false;  // hovering the spanning token
+
+// which slots actually contribute to the name right now
+function slotActive(s){ return s > 2 || !spanActive; }
+
+// ---- combos that don't read right: [slotA, wordA, slotB, wordB, reason] ----
+const CONFLICTS = [
+  [3,'System', 4,'Compute',     '“System Compute” isn’t the term — system containers pair with “Containers.”'],
+  [1,'LXC',    4,'Containers',  'Redundant — LXC already means “Linux Containers.”'],
+  [1,'LXC',    3,'System',      'Redundant — LXC is itself a Linux system-container runtime.'],
+  [2,'Micro',  3,'System',      'Tension — system containers are full lightweight machines, not “micro.”'],
+];
+
+// reason token (s,i) is incompatible with the CURRENT selection, else null
+function disabledReason(s, i){
+  if (!slotActive(s)) return null;            // spanned-out slots can't conflict
+  const word = SLOTS[s].tokens[i];
+  for (const [a, wa, b, wb, why] of CONFLICTS){
+    if (a === s && wa === word && slotActive(b) && SLOTS[b].tokens[selected[b]] === wb) return why;
+    if (b === s && wb === word && slotActive(a) && SLOTS[a].tokens[selected[a]] === wa) return why;
+  }
+  return null;
+}
+
+// after a pick, nudge any now-incompatible slot to its first valid token
+function repair(priority){
+  for (let pass = 0; pass < 4; pass++){
+    let moved = false;
+    for (let s = 0; s < SLOTS.length; s++){
+      if (s === priority) continue;
+      if (disabledReason(s, selected[s])){
+        const alt = SLOTS[s].tokens.findIndex((_, i) => !disabledReason(s, i));
+        if (alt >= 0 && alt !== selected[s]){ selected[s] = alt; moved = true; }
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+const lattice = document.getElementById('lattice');
+const ribbon  = document.getElementById('ribbon');
+const wires   = document.getElementById('wires');
+
+// token DOM refs: tokenEls[slot][idx]
+const tokenEls = [];
+
+function leadMarkup(word){
+  return '<span class="lead">'+word[0]+'</span>'+word.slice(1);
+}
+// highlight the leading capital of every word in a phrase (e.g. L·L·M of "Large Language Model")
+function phraseLeadMarkup(phrase){
+  return phrase.split(' ').map(w => '<span class="lead">'+w[0]+'</span>'+w.slice(1)).join(' ');
+}
+
+// ---- cols 1–3 group: the three L·L·M stacks, with the span token directly beneath them ----
+const llmGroup = document.createElement('div');
+llmGroup.style.gridColumn = '1 / span 3';
+llmGroup.style.gridRow = '1';
+llmGroup.style.display = 'flex';
+llmGroup.style.flexDirection = 'column';
+const llmStacks = document.createElement('div');           // nested 3-col grid, aligned with the L·L·M headers
+llmStacks.style.display = 'grid';
+llmStacks.style.gridTemplateColumns = 'repeat(3, 1fr)';
+llmStacks.style.gap = 'clamp(10px, 2.4vw, 34px)';
+llmStacks.style.alignItems = 'start';
+llmGroup.appendChild(llmStacks);
+
+const spanWrap = document.createElement('div');
+spanWrap.className = 'span-wrap';
+spanWrap.style.marginTop = '8px';                          // same gap as between stacked tokens
+const spanTokenEl = document.createElement('div');
+spanTokenEl.className = 'span-token';
+spanTokenEl.innerHTML = LLM_ICON + phraseLeadMarkup('Large Language Model');
+spanTokenEl.addEventListener('mouseenter', () => { previewSpan = true; render(); });
+spanTokenEl.addEventListener('mouseleave', () => { previewSpan = false; render(); });
+spanTokenEl.addEventListener('click', () => { spanActive = true; preview = null; previewSpan = false; render(true, 'span'); });
+spanWrap.appendChild(spanTokenEl);
+llmGroup.appendChild(spanWrap);
+lattice.appendChild(llmGroup);
+
+// ---- token stacks: L·L·M go inside the group above; S·C are full-height columns 4–5 ----
+SLOTS.forEach((slot, s) => {
+  const tokens = document.createElement('div');
+  tokens.className = 'tokens';
+  if (s > 2){
+    tokens.style.gridColumn = String(s + 1);
+    tokens.style.gridRow = '1';
+  }
+  tokenEls[s] = [];
+  slot.tokens.forEach((word, i) => {
+    const t = document.createElement('div');
+    t.className = 'token';
+    t.innerHTML = (ICONS[word] || '') + leadMarkup(word);
+    t.addEventListener('mouseenter', () => { if (disabledReason(s, i)) return; preview = {slot:s, idx:i}; previewSpan = false; render(); });
+    t.addEventListener('mouseleave', () => { preview = null; render(); });
+    t.addEventListener('click', () => {
+      if (disabledReason(s, i)) return;
+      if (s <= 2) spanActive = false;   // picking an individual word breaks the span
+      selected[s] = i; repair(s); preview = null; render(true, s);
+    });
+    tokens.appendChild(t);
+    tokenEls[s][i] = t;
+  });
+  (s <= 2 ? llmStacks : lattice).appendChild(tokens);
+});
+
+// effective index for a slot, honoring a hover preview
+function effIdx(s){
+  return (preview && preview.slot === s) ? preview.idx : selected[s];
+}
+// is the span token the active path right now (honoring hover preview)?
+function effSpan(){
+  if (previewSpan) return true;
+  if (preview && preview.slot <= 2) return false;
+  return spanActive;
+}
+
+// ---- render the ribbon (assembled name) ----
+function render(animateSlot, setSlot){
+  // individual-token styling
+  tokenEls.forEach((arr, s) => arr.forEach((el, i) => {
+    const isSel = (s <= 2) ? (!spanActive && selected[s] === i) : (selected[s] === i);
+    el.classList.toggle('selected', isSel);
+    el.classList.toggle('inactive', s <= 2 && spanActive); // superseded by the span
+    const why = disabledReason(s, i);
+    el.classList.toggle('disabled', !!why);
+    el.title = why || '';
+  }));
+  spanTokenEl.classList.toggle('selected', spanActive);
+  spanTokenEl.classList.toggle('preview', previewSpan);
+  if (animateSlot && setSlot === 'span') spanTokenEl.classList.remove('just-set'),
+    void spanTokenEl.offsetWidth, spanTokenEl.classList.add('just-set');
+
+  // ribbon: a sequence of "word" boxes — either [span, S, C] or [L,L,M,S,C]
+  ribbon.innerHTML = '';
+  const parts = effSpan() ? [{span:true},{s:3},{s:4}] : [{s:0},{s:1},{s:2},{s:3},{s:4}];
+  parts.forEach((p, pi) => {
+    const w = document.createElement('div');
+    w.className = 'word';
+    if (p.span){
+      if (previewSpan) w.classList.add('preview');
+      if (animateSlot && setSlot === 'span') w.classList.add('just-set');
+      w.innerHTML = phraseLeadMarkup('Large Language Model');
+    } else {
+      if (preview && preview.slot === p.s) w.classList.add('preview');
+      if (animateSlot && setSlot === p.s) w.classList.add('just-set');
+      w.innerHTML = leadMarkup(SLOTS[p.s].tokens[effIdx(p.s)]);
+    }
+    ribbon.appendChild(w);
+    if (pi < parts.length - 1){
+      const c = document.createElement('div');
+      c.className = 'connector';
+      ribbon.appendChild(c);
+    }
+  });
+  const caret = document.createElement('div');
+  caret.className = 'caret';
+  ribbon.appendChild(caret);
+
+  drawWires();
+}
+
+// ---- draw the lattice path (selected) + preview branch ----
+function center(el, ref){
+  const r = el.getBoundingClientRect();
+  const b = ref.getBoundingClientRect();
+  return {
+    left:  r.left - b.left,
+    right: r.right - b.left,
+    midY:  r.top - b.top + r.height/2,
+  };
+}
+
+// the ordered list of token elements the path runs through
+function pathElements(span, idxFor){
+  return span
+    ? [spanTokenEl, tokenEls[3][idxFor(3)], tokenEls[4][idxFor(4)]]
+    : [0,1,2,3,4].map(s => tokenEls[s][idxFor(s)]);
+}
+
+function pathD(els){
+  let d = '';
+  for (let k = 0; k < els.length - 1; k++){
+    const a = center(els[k], wires);
+    const b = center(els[k+1], wires);
+    const x1 = a.right + 4, y1 = a.midY;
+    const x2 = b.left - 4,  y2 = b.midY;
+    const dx = (x2 - x1) * 0.5;
+    d += `M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2} `;
+  }
+  return d;
+}
+
+function drawWires(){
+  const selEls = pathElements(spanActive, (s)=>selected[s]);
+
+  let html = `
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="${cssVar('--accent')}" stop-opacity="0.25"/>
+        <stop offset="1" stop-color="${cssVar('--accent')}" stop-opacity="0.9"/>
+      </linearGradient>
+    </defs>
+    <path d="${pathD(selEls)}" fill="none" stroke="url(#g)" stroke-width="2"
+          stroke-linecap="round" stroke-dasharray="6 7" class="flow"/>
+  `;
+
+  // preview branch: routed through the hovered token / span
+  if (preview || previewSpan){
+    const prevEls = pathElements(effSpan(), effIdx);
+    html += `<path d="${pathD(prevEls)}" fill="none" stroke="${cssVar('--accent-2')}"
+              stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 6"
+              opacity="0.95"/>`;
+  }
+
+  // nodes on the selected path
+  selEls.forEach((el, k) => {
+    const c = center(el, wires);
+    if (k > 0)               html += `<circle cx="${c.left-4}"  cy="${c.midY}" r="3" fill="${cssVar('--accent')}"/>`;
+    if (k < selEls.length-1) html += `<circle cx="${c.right+4}" cy="${c.midY}" r="3" fill="${cssVar('--accent')}"/>`;
+  });
+  wires.innerHTML = html;
+}
+
+function cssVar(name){
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// animated flow on the selected wire
+const style = document.createElement('style');
+style.textContent = `.flow{animation:flow 1.1s linear infinite}@keyframes flow{to{stroke-dashoffset:-26}}`;
+document.head.appendChild(style);
+
+// ---- sample: walk the slots left-to-right, "generating" a name ----
+let sampling = false;
+function sample(){
+  if (sampling) return;
+  sampling = true;
+  preview = null; previewSpan = false;
+  spanActive = Math.random() < 0.4;          // sometimes generate the "Large Language Model" name
+  const order = spanActive ? [3,4] : [0,1,2,3,4];
+  render(true, spanActive ? 'span' : undefined);
+  let k = 0;
+  function step(){
+    if (k >= order.length){ sampling = false; return; }
+    const s = order[k];
+    const enabled = SLOTS[s].tokens.map((_, i) => i).filter(i => !disabledReason(s, i));
+    let flickers = 5 + Math.floor(Math.random()*4);
+    function flick(){
+      if (flickers-- <= 0){
+        selected[s] = enabled[Math.floor(Math.random()*enabled.length)];
+        render(true, s);
+        k++;
+        setTimeout(step, 90);
+        return;
+      }
+      selected[s] = enabled[Math.floor(Math.random()*enabled.length)];
+      render();
+      setTimeout(flick, 55);
+    }
+    flick();
+  }
+  step();
+}
+
+// ---- light / dark toggle ----
+const SUN  = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>';
+const MOON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></svg>';
+const themeBtn = document.getElementById('themeToggle');
+function applyTheme(){
+  const light = document.documentElement.classList.contains('light');
+  themeBtn.innerHTML = light ? MOON : SUN;   // show the mode you'd switch TO
+  drawWires();                               // wire colors are read from CSS vars at draw time
+}
+themeBtn.addEventListener('click', () => {
+  document.documentElement.classList.toggle('light');
+  applyTheme();
+});
+applyTheme();
+
+window.addEventListener('resize', drawWires);
+render();
+// redraw once fonts settle
+setTimeout(drawWires, 60);
+</script>
+</body>
+</html>

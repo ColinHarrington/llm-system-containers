@@ -1,16 +1,24 @@
-# Little Linux Managed System Containers
+# Lightweight Linux Managed System Containers
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)"  srcset="mockups/name-banner/name-lattice-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="mockups/name-banner/name-lattice-light.svg">
+    <img alt="LLMSC — Lightweight Linux Managed System Containers" src="mockups/name-banner/name-lattice-dark.svg" width="720">
+  </picture>
+</p>
 
 **Sandboxed Linux system-container environments for AI agents.**
 
 > Repo & package: **`llm-system-containers`** · CLIs: **`llmsc`** (containers) ·
 > **`llmsctl`** (platform).
 
-Give an AI agent its own *little Linux machine* — a real, isolated, observable environment it
+Give an AI agent its own *lightweight Linux machine* — a real, isolated, observable environment it
 can work in like a developer would — with infrastructure-level safety backstops underneath, so
 the agent's own (imperfect) permissions are never the only thing protecting your host.
 
-> **"LLM"** = *Little Linux Managed* + *Large Language Model*. The unit is an **LLMSC** — a
-> Little Linux Managed System Container.
+> **"LLM"** = *Lightweight Linux Managed* + *Large Language Model*. The unit is an **LLMSC** — a
+> Lightweight Linux Managed System Container.
 
 > ⚠️ **Status: pre-alpha — implementation underway.** Architecture, tech stack, and core
 > feasibility are settled (rootless container nesting is [proven](planning/spike-plan.md)).
