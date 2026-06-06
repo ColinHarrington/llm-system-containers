@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui, navigate, openSandbox, bump, openTerminal, showToast } from "../lib/store.svelte";
+  import { ui, live, navigate, openSandbox, bump, openTerminal, showToast } from "../lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, topology, hostResources,
     serviceStates, fleetEnforcement,
@@ -20,6 +20,7 @@
 
   $effect(() => {
     ui.dataVersion;
+    live.tick; // auto-refresh on the live poll
     void refresh();
   });
 

@@ -49,6 +49,27 @@ export function clearActivity(): void {
   activity.length = 0;
 }
 
+// --- live polling ---
+// A `tick` counter incremented on an interval (paused when the tab is hidden or the user toggles
+// it off). Live screens read `live.tick` in their refresh effect to stay current automatically.
+export const live = $state({ tick: 0, paused: false });
+export function toggleLive(): void {
+  live.paused = !live.paused;
+}
+let liveTimer: ReturnType<typeof setInterval> | null = null;
+export function initLivePolling(ms = 6000): () => void {
+  if (liveTimer) clearInterval(liveTimer);
+  liveTimer = setInterval(() => {
+    if (live.paused) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    live.tick++;
+  }, ms);
+  return () => {
+    if (liveTimer) clearInterval(liveTimer);
+    liveTimer = null;
+  };
+}
+
 let toastId = 0;
 export function showToast(msg: string, color: ToastColor = "accent"): void {
   toastId += 1;

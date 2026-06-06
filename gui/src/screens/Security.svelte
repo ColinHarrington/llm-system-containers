@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from "../lib/Icon.svelte";
-  import { ui, openSandbox } from "../lib/store.svelte";
+  import { ui, live, openSandbox } from "../lib/store.svelte";
   import { fleetEnforcement } from "../lib/core";
   import type { FleetEnforcement } from "../lib/types";
 
@@ -8,6 +8,7 @@
 
   $effect(() => {
     ui.dataVersion;
+    live.tick; // auto-refresh on the live poll
     void fleetEnforcement().then((f) => (fleet = f)).catch(() => (fleet = []));
   });
 

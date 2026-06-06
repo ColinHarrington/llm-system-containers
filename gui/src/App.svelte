@@ -20,14 +20,19 @@
   import Modal from "./lib/Modal.svelte";
   import { onMount } from "svelte";
   import {
-    ui, navigate, openSandbox, bump, toggleTheme, showToast, activity, logActivity, SCREEN_TITLES, type Screen,
+    ui, navigate, openSandbox, bump, toggleTheme, showToast, activity, logActivity,
+    live, toggleLive, initLivePolling, SCREEN_TITLES, type Screen,
   } from "./lib/store.svelte";
   import {
     vmStatus, vmUp, vmDown, listSandboxes, listServices, listAgents, addAgent, listProfiles, agentSteer, onProgress,
   } from "./lib/core";
 
-  // Mirror progress steps into the activity log so long operations leave a reviewable trail.
-  onMount(() => onProgress((msg) => logActivity(msg, "progress")));
+  // Mirror progress steps into the activity log + drive live polling for auto-refreshing screens.
+  onMount(() => {
+    const offProgress = onProgress((msg) => logActivity(msg, "progress"));
+    const stopLive = initLivePolling();
+    return () => { offProgress(); stopLive(); };
+  });
   import type { Guardrails, ProfileInfo, Sandbox, VmStatus } from "./lib/types";
 
   const EMPTY_GUARDRAILS: Guardrails = { filesystem: "", network: "", l3: false, llmBudget: "", controlPlane: "" };
@@ -275,6 +280,10 @@
         <Icon name="search" size={14} />
         <span>Search sandboxes, users, traces…</span>
         <kbd>⌘K</kbd>
+      </button>
+      <button class="livebtn" class:paused={live.paused} title={live.paused ? "Live updates paused — click to resume" : "Live updates on — click to pause"} onclick={toggleLive}>
+        <span class="dot {live.paused ? 'muted' : 'ok'}" class:pulse={!live.paused}></span>
+        <span>{live.paused ? "Paused" : "Live"}</span>
       </button>
       <button class="iconbtn" class:on={ui.activityOpen} title="Activity log" aria-label="Activity log" onclick={() => (ui.activityOpen = !ui.activityOpen)}>
         <Icon name="bell" />

@@ -6,7 +6,7 @@
     listServices, setService, provisionService, listVirtualKeys, syncVirtualKeys, setProviderKey,
     serviceStates, restartService, stopService, SERVICE_PORTS, DEPLOYABLE_SERVICES, SERVICE_META,
   } from "../lib/core";
-  import { ui, showToast } from "../lib/store.svelte";
+  import { ui, live, showToast } from "../lib/store.svelte";
   import type { ServiceEntry, ServiceState, VirtualKey } from "../lib/types";
 
   let services = $state<ServiceEntry[]>([]);
@@ -18,6 +18,7 @@
 
   $effect(() => {
     ui.dataVersion;
+    live.tick; // auto-refresh on the live poll
     void refresh();
   });
 
