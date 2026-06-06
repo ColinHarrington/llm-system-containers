@@ -31,6 +31,14 @@ export interface ServiceEntry {
 
 export type ServiceState = "running" | "stopped" | "not-provisioned";
 
+export interface Settings {
+  operator: string;
+  vmName: string;
+  cpus: number;
+  memoryGib: number;
+  diskGib: number;
+}
+
 export interface FleetEnforcement {
   sandbox: string;
   egressPosture: string; // "unmanaged" | "deny-all" | "allowlist" | "open"

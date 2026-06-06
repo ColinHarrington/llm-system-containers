@@ -8,6 +8,7 @@
   import Agent from "./screens/Agent.svelte";
   import Profiles from "./screens/Profiles.svelte";
   import Security from "./screens/Security.svelte";
+  import Settings from "./screens/Settings.svelte";
   import Wizard from "./screens/Wizard.svelte";
   import Progress from "./lib/Progress.svelte";
   import Toast from "./lib/Toast.svelte";
@@ -50,6 +51,7 @@
     { id: "services", label: "Services", icon: "store" },
     { id: "security", label: "Security posture", icon: "shield" },
     { id: "profiles", label: "Agent profiles", icon: "shield" },
+    { id: "settings", label: "Settings", icon: "cog" },
     { id: "wizard", label: "Setup wizard", icon: "cog" },
   ];
 
@@ -335,6 +337,8 @@
       <Profiles />
     {:else if ui.screen === "security"}
       <Security />
+    {:else if ui.screen === "settings"}
+      <Settings />
     {:else if ui.screen === "wizard"}
       <Wizard />
     {/if}

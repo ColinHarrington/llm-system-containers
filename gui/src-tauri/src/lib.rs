@@ -109,6 +109,12 @@ fn vm_down() -> Result<(), String> {
     vm_driver().down().map_err(|e| e.to_string())
 }
 
+/// Stop and delete the VM (destructive — removes the Playground and everything in it).
+#[tauri::command]
+fn vm_destroy() -> Result<(), String> {
+    vm_driver().destroy().map_err(|e| e.to_string())
+}
+
 #[derive(Serialize)]
 struct SandboxDto {
     name: String,
@@ -279,6 +285,44 @@ fn operator_default() -> String {
     Config::load_effective()
         .map(|c| c.operator)
         .unwrap_or_else(|_| config::default_operator_username())
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsDto {
+    operator: String,
+    vm_name: String,
+    cpus: u32,
+    memory_gib: u32,
+    disk_gib: u32,
+}
+
+/// Read the platform settings (operator + VM resources) from the effective config.
+#[tauri::command]
+fn get_settings() -> Result<SettingsDto, String> {
+    let c = Config::load_effective().map_err(|e| e.to_string())?;
+    Ok(SettingsDto {
+        operator: c.operator,
+        vm_name: c.vm.name,
+        cpus: c.vm.cpus,
+        memory_gib: c.vm.memory_gib,
+        disk_gib: c.vm.disk_gib,
+    })
+}
+
+/// Persist platform settings to the user config. VM resource changes apply when the VM is next
+/// (re)created — they do not resize a running VM.
+#[tauri::command]
+fn save_settings(settings: SettingsDto) -> Result<(), String> {
+    let mut c = load_user_config()?;
+    if !settings.operator.trim().is_empty() {
+        c.operator = settings.operator.trim().to_string();
+    }
+    c.vm.cpus = settings.cpus.max(1);
+    c.vm.memory_gib = settings.memory_gib.max(1);
+    c.vm.disk_gib = settings.disk_gib.max(1);
+    c.save(&config::user_config_path())
+        .map_err(|e| e.to_string())
 }
 
 /// Add an agent (one Linux user) to a running sandbox, with an optional profile.
@@ -1916,6 +1960,7 @@ pub fn run() {
             vm_status,
             vm_up,
             vm_down,
+            vm_destroy,
             sandbox_list,
             sandbox_launch,
             sandbox_rm,
@@ -1933,6 +1978,8 @@ pub fn run() {
             snapshot_restore,
             snapshot_delete,
             operator_default,
+            get_settings,
+            save_settings,
             add_agent,
             remove_agent,
             set_agent_guardrails,

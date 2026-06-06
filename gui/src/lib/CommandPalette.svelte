@@ -42,6 +42,7 @@
     gotoCmd("services", "Services", "cog", "6"),
     gotoCmd("security", "Security posture", "shield", ""),
     gotoCmd("profiles", "Agent profiles", "shield", ""),
+    gotoCmd("settings", "Settings", "cog", ""),
     gotoCmd("wizard", "Setup wizard", "cog", ""),
   ];
 

@@ -24,6 +24,7 @@ import type {
   Sandbox,
   ServiceEntry,
   ServiceState,
+  Settings,
   SnapshotInfo,
   StoragePoolInfo,
   TetragonPolicy,
@@ -166,6 +167,22 @@ export async function launchSandbox(input: NewSandboxInput): Promise<void> {
 export async function operatorDefault(): Promise<string> {
   if (inTauri()) return invokeCmd<string>("operator_default");
   return "operator";
+}
+
+// --- settings ---
+export async function getSettings(): Promise<Settings> {
+  if (inTauri()) return invokeCmd<Settings>("get_settings");
+  await delay(60);
+  return { operator: "operator", vmName: "llmsc", cpus: 4, memoryGib: 8, diskGib: 60 };
+}
+export async function saveSettings(settings: Settings): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("save_settings", { settings });
+  await delay(80);
+}
+// Stop and delete the VM (destructive).
+export async function vmDestroy(): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("vm_destroy");
+  await mockSteps(["Stopping VM", "Deleting VM", "VM destroyed"], 180);
 }
 
 // --- Control-plane actions (observe / interrupt / re-steer) ---

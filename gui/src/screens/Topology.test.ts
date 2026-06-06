@@ -37,12 +37,12 @@ describe("Topology", () => {
   });
 
   it("pauses an agent inline and opens steer", async () => {
-    ui.steerAgent = null;
     render(Topology);
     await screen.findByText("agent-claude");
     await fireEvent.click(screen.getByTitle("Pause"));
     expect(agentPause).toHaveBeenCalledWith("web-agent-01", "agent-claude");
     await fireEvent.click(screen.getByTitle("Steer"));
     expect(ui.steerAgent?.name).toBe("agent-claude");
+    expect(ui.steerAgent?.sandbox).toBe("web-agent-01");
   });
 });
