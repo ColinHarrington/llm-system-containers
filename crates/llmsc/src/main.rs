@@ -62,6 +62,9 @@ enum Command {
     Display {
         /// Sandbox name.
         name: String,
+        /// Apply the display transport (add/remove the xpra Incus proxy device).
+        #[arg(long)]
+        apply: bool,
     },
     /// Control an agent: pause / resume / stop / steer (target is `agent@sandbox`).
     Agent {
@@ -181,11 +184,26 @@ fn run() -> Result<(), String> {
                 }
             }
         }
-        Command::Display { name } => {
+        Command::Display { name, apply } => {
             let cfg = Config::load_effective().map_err(|e| e.to_string())?;
             let sb = cfg
                 .sandbox(&name)
                 .ok_or_else(|| format!("'{name}' is not config-managed"))?;
+            if apply {
+                let n = incus
+                    .reconcile_display(sb, &ConsoleReporter)
+                    .map_err(|e| e.to_string())?;
+                println!(
+                    "{}",
+                    match (sb.display.id(), n) {
+                        ("xpra", _) =>
+                            "display transport applied (xpra proxy device bound)".to_string(),
+                        (_, 0) => "no display transport (none/x11 — nothing to bind)".to_string(),
+                        (_, _) => "display transport torn down".to_string(),
+                    }
+                );
+                return Ok(());
+            }
             let ctx = DisplayCtx {
                 vm_ssh: format!("lima-{}", cfg.vm.name),
                 ..Default::default()

@@ -4,6 +4,26 @@
 //! so it is fully unit-testable and shared verbatim by the CLI (`llmsc display`) and the GUI.
 
 use crate::config::{DisplayMethod, Sandbox};
+use std::collections::BTreeMap;
+
+/// The in-container TCP port the xpra server binds (fixed by our launch convention).
+pub const XPRA_CONTAINER_PORT: u16 = 14500;
+
+/// The Incus **proxy device** that bridges the VM-side `port` to the container's xpra server,
+/// so reconcile can manage the transport declaratively (vs. a manual `incus config device add`).
+/// Returns `(device-name, device-keys)` ready for `incus config device add`.
+pub fn xpra_proxy_device(port: u16) -> (&'static str, BTreeMap<String, String>) {
+    let keys = BTreeMap::from([
+        ("type".to_string(), "proxy".to_string()),
+        ("listen".to_string(), format!("tcp:127.0.0.1:{port}")),
+        (
+            "connect".to_string(),
+            format!("tcp:127.0.0.1:{XPRA_CONTAINER_PORT}"),
+        ),
+        ("bind".to_string(), "host".to_string()),
+    ]);
+    ("xpra", keys)
+}
 
 /// Host/VM specifics needed to render a display recipe.
 #[derive(Debug, Clone)]
@@ -55,9 +75,10 @@ pub fn display_plan(sandbox: &Sandbox, ctx: &DisplayCtx) -> Option<DisplayPlan> 
                 note: "expose the in-container xpra port to the VM (Incus proxy device)",
                 cmd: format!(
                     "incus config device add {name} xpra proxy \
-                     listen=tcp:127.0.0.1:{port} connect=tcp:127.0.0.1:14500 bind=host",
+                     listen=tcp:127.0.0.1:{port} connect=tcp:127.0.0.1:{cport} bind=host",
                     name = sandbox.name,
                     port = ctx.xpra_port,
+                    cport = XPRA_CONTAINER_PORT,
                 ),
             },
             DisplayStep {
@@ -143,6 +164,19 @@ mod tests {
         };
         let plan = display_plan(&sandbox(DisplayMethod::Xpra), &ctx).unwrap();
         assert_eq!(plan.steps[2].cmd, "xpra attach tcp://127.0.0.1:14500");
+    }
+
+    #[test]
+    fn xpra_proxy_device_keys() {
+        let (name, keys) = xpra_proxy_device(14500);
+        assert_eq!(name, "xpra");
+        assert_eq!(keys["type"], "proxy");
+        assert_eq!(keys["listen"], "tcp:127.0.0.1:14500");
+        assert_eq!(
+            keys["connect"],
+            format!("tcp:127.0.0.1:{XPRA_CONTAINER_PORT}")
+        );
+        assert_eq!(keys["bind"], "host");
     }
 
     #[test]

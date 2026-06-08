@@ -1648,6 +1648,34 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     /// to the nic (default-drop), then route HTTP(S) through mitmproxy if an L7 domain allowlist is
     /// set. Open/unmanaged tears down (unbind + delete the managed ACL, clear proxy env). Returns
     /// the number of ACL ops applied. Shared by the GUI command and the CLI.
+    /// Reconcile the xpra display transport for a sandbox: add the Incus **proxy device** when
+    /// `display = xpra`, or remove it for `none` / `x11` (x11 reaches the container's sshd over the
+    /// bridge — no proxy device needed). Returns the number of device changes applied.
+    pub fn reconcile_display(
+        &self,
+        sandbox_cfg: &crate::config::Sandbox,
+        reporter: &dyn Reporter,
+    ) -> Result<usize> {
+        let name = &sandbox_cfg.name;
+        match sandbox_cfg.display {
+            crate::config::DisplayMethod::Xpra => {
+                let (dev, keys) =
+                    crate::display::xpra_proxy_device(crate::display::XPRA_CONTAINER_PORT);
+                reporter.step(&format!(
+                    "Binding xpra display proxy on {name} (VM 127.0.0.1:{})",
+                    crate::display::XPRA_CONTAINER_PORT
+                ));
+                let _ = self.remove_device(name, dev); // idempotent: drop any prior device first
+                self.add_device(name, dev, &keys)?;
+                Ok(1)
+            }
+            _ => {
+                reporter.step(&format!("Removing any xpra display proxy from {name}"));
+                Ok(self.remove_device(name, "xpra").is_ok() as usize)
+            }
+        }
+    }
+
     pub fn reconcile_egress(
         &self,
         sandbox_cfg: &crate::config::Sandbox,
@@ -2024,6 +2052,31 @@ mod tests {
             users: vec![],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn reconcile_display_xpra_adds_proxy_device() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let c = CliIncus::new("llmsc", &r);
+        let mut s = sb("web");
+        s.display = crate::config::DisplayMethod::Xpra;
+        // xpra → one device change (the proxy device add).
+        assert_eq!(c.reconcile_display(&s, &SilentReporter).unwrap(), 1);
+    }
+
+    #[test]
+    fn reconcile_display_none_removes_proxy_device() {
+        // `remove` fails (no such device) → 0 changes; the add path is not taken for `none`.
+        let r = FakeRunner::new(|_, args| {
+            if args.contains(&"remove") {
+                out(1, "")
+            } else {
+                out(0, "")
+            }
+        });
+        let c = CliIncus::new("llmsc", &r);
+        let s = sb("web"); // display defaults to None
+        assert_eq!(c.reconcile_display(&s, &SilentReporter).unwrap(), 0);
     }
 
     #[test]
