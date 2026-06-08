@@ -159,6 +159,38 @@ fn harden_persists_nic_filtering() {
 }
 
 #[test]
+fn help_lists_image_subcommands() {
+    llmsc()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(contains("images"))
+        .stdout(contains("publish"))
+        .stdout(contains("rmi"));
+}
+
+#[test]
+fn publish_requires_an_alias() {
+    // sandbox + alias are positional; omitting the alias is a clap error (no Incus I/O).
+    llmsc()
+        .args(["publish", "web"])
+        .assert()
+        .failure()
+        .stderr(contains("ALIAS"));
+}
+
+#[test]
+fn publish_help_lists_flags() {
+    llmsc()
+        .args(["publish", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--reuse"))
+        .stdout(contains("--stopped"))
+        .stdout(contains("--description"));
+}
+
+#[test]
 fn harden_requires_a_flag() {
     in_project(
         "[[sandbox]]\nname = \"web\"\nimage = \"images:alpine/3.21\"\n",
