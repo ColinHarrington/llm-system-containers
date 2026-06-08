@@ -165,6 +165,12 @@ pub struct Sandbox {
     /// later Tetragon ring that compiles from each agent's [`Guardrails::network`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub egress: Option<EgressPolicy>,
+    /// How GUI apps in this sandbox are surfaced to the host: `xpra` (seamless windows via an
+    /// xpra server — persistence + isolation), `x11` (ssh -X — renders on the host X server,
+    /// macOS-viable), or `none` (default — no remote display). See
+    /// `planning/spikes/remote-display-gui.md`.
+    #[serde(default, skip_serializing_if = "DisplayMethod::is_none")]
+    pub display: DisplayMethod,
 }
 
 /// A container-level network egress policy — the legible intent that compiles to an Incus
@@ -204,6 +210,37 @@ impl EgressPosture {
             EgressPosture::Allowlist => "allowlist",
             EgressPosture::Open => "open",
         }
+    }
+}
+
+/// How a sandbox's GUI apps are surfaced to the host. See `planning/spikes/remote-display-gui.md`
+/// for the spike that backs each method.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DisplayMethod {
+    /// No remote display configured (default).
+    #[default]
+    None,
+    /// xpra seamless server in the container → native host windows; persistent + isolated.
+    Xpra,
+    /// X11 forwarding (`ssh -X`) → apps render on the host X server; simple, macOS-viable.
+    #[serde(rename = "x11")]
+    X11,
+}
+
+impl DisplayMethod {
+    /// Stable id (`none` / `xpra` / `x11`).
+    pub fn id(&self) -> &'static str {
+        match self {
+            DisplayMethod::None => "none",
+            DisplayMethod::Xpra => "xpra",
+            DisplayMethod::X11 => "x11",
+        }
+    }
+
+    /// True for [`DisplayMethod::None`] (used to skip serializing the default).
+    pub fn is_none(&self) -> bool {
+        matches!(self, DisplayMethod::None)
     }
 }
 
@@ -457,6 +494,17 @@ impl Config {
         match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
             Some(s) => {
                 s.egress = Some(policy);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Set a declared sandbox's display method. Returns true if the sandbox exists.
+    pub fn set_sandbox_display(&mut self, sandbox: &str, method: DisplayMethod) -> bool {
+        match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
+            Some(s) => {
+                s.display = method;
                 true
             }
             None => false,
@@ -824,6 +872,33 @@ mod tests {
             c.sandbox("sb").unwrap().egress.as_ref().unwrap().posture,
             EgressPosture::DenyAll
         );
+    }
+
+    #[test]
+    fn display_method_set_and_serde_roundtrip() {
+        let mut c = Config::default();
+        c.upsert_sandbox("sb", "images:alpine/3.21", false);
+        // Default is None and is omitted from the serialized TOML.
+        assert_eq!(c.sandbox("sb").unwrap().display, DisplayMethod::None);
+        assert!(!c.to_toml().unwrap().contains("display"));
+
+        // Setting it: returns true for a real sandbox, false for an unknown one.
+        assert!(c.set_sandbox_display("sb", DisplayMethod::X11));
+        assert!(!c.set_sandbox_display("nope", DisplayMethod::Xpra));
+        assert_eq!(c.sandbox("sb").unwrap().display, DisplayMethod::X11);
+
+        // Round-trips through TOML with the stable kebab-case id.
+        let toml = c.to_toml().unwrap();
+        assert!(toml.contains("display = \"x11\""));
+        let back = Config::from_toml(&toml).unwrap();
+        assert_eq!(back.sandbox("sb").unwrap().display, DisplayMethod::X11);
+
+        // xpra serializes as "xpra"; the ids match the serde tags.
+        c.set_sandbox_display("sb", DisplayMethod::Xpra);
+        assert!(c.to_toml().unwrap().contains("display = \"xpra\""));
+        assert_eq!(DisplayMethod::Xpra.id(), "xpra");
+        assert_eq!(DisplayMethod::X11.id(), "x11");
+        assert!(DisplayMethod::None.is_none());
     }
 
     #[test]
