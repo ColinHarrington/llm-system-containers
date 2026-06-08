@@ -37,6 +37,7 @@ export interface Settings {
   cpus: number;
   memoryGib: number;
   diskGib: number;
+  target?: string; // deployment target id (vm|local|remote), read-only
 }
 
 export interface FleetEnforcement {
