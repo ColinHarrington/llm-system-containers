@@ -5,10 +5,12 @@ Guiding convictions live in [principles.md](principles.md); items below are the 
 those principles don't yet settle.
 
 ## Decision direction (from the Incus-ecosystem evaluation, 2026-06)
-- ⬜ **`host` → `target`/`context` rename (do early).** Model a "host" as an **Incus remote**
-  (`local` metal socket / `vm` the L1 VM / `remote` endpoint), not "the metal it's installed
-  on". Unifies local/nested/remote and keeps multi-host *possible* later. Cheap now, expensive
-  after the model/CLI/GUI ossify. See [principles.md](principles.md) §6.
+- 🚧 **`host` → `target`/`context` (in progress).** Modeled as `config.mode`
+  (`DeploymentMode { vm, local, remote }`); the CLIs/GUI resolve the target from the loaded
+  config (`Config::vm_target`), and `CliIncus` is transport-aware. `vm` (default) + `local`
+  (host Incus, no VM) are wired in `llmsc`; `remote` is reserved. ⬜ Remaining: `llmsctl`/GUI
+  `local` (their deployers are still VM-bound), the `remote` endpoint model, and a GUI target
+  picker. See [principles.md](principles.md) §6 and [architecture/vm.md](architecture/vm.md).
 - ✅ **Adopt as principles:** cattle-not-pets (images are the durable artifact, no OS-drive
   backup/restore), respect-the-ecosystem (Incus-native state only), localhost-only API,
   single-operator-owns-the-VM (no RBAC yet). See [principles.md](principles.md).
