@@ -9,8 +9,10 @@
 //! and model in the generated config are placeholders.
 
 use crate::error::{Error, Result};
+use crate::keystore::{key_token, random_suffix};
 use crate::process::{CommandRunner, RunOutput};
 use crate::progress::Reporter;
+use std::collections::BTreeMap;
 
 /// Pinned LiteLLM version. PyPI `litellm` **1.82.7 / 1.82.8 shipped credential-stealing malware**
 /// (BerriAI/litellm#24518); a proxy that will hold real provider/subscription credentials must
@@ -169,16 +171,27 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
     }
 
     /// Mint/refresh per-agent virtual keys (compiled by `enforce::virtual_key_specs`) against the
-    /// running proxy's admin API. Idempotent-ish: a duplicate `key_alias` is treated as success
-    /// (true upsert + usage read-back is a follow-up). Requires the proxy to be up. Returns the
-    /// aliases synced.
+    /// running proxy's admin API. Each key's **token** is `sk-llmsc-<sandbox>-<agent>-<random>` and
+    /// is supplied to `/key/generate` (LiteLLM accepts a caller-provided `key`), so we know the
+    /// secret at mint time without scraping the response — the token can't be re-read afterward.
+    ///
+    /// Pass already-minted tokens via `existing` (`key_alias -> token`, e.g. from the
+    /// [`crate::keystore::KeyStore`]): an alias present there reuses its token so a re-sync is a
+    /// stable no-op rather than a rotation. A duplicate-alias error from the proxy is tolerated.
+    /// Returns the minted/reused [`MintedKey`]s for the caller to persist.
     pub fn sync_virtual_keys(
         &self,
         specs: &[crate::enforce::VirtualKeySpec],
+        existing: &BTreeMap<String, String>,
         reporter: &dyn Reporter,
-    ) -> Result<Vec<String>> {
-        let mut synced = Vec::new();
+    ) -> Result<Vec<MintedKey>> {
+        let mut minted = Vec::new();
         for s in specs {
+            // Reuse a stored token if we have one; otherwise mint a fresh random-suffixed token.
+            let token = existing
+                .get(&s.key_alias)
+                .cloned()
+                .unwrap_or_else(|| key_token(&s.sandbox, &s.agent, &random_suffix()));
             reporter.step(&format!(
                 "Virtual key {} — ${:.0}/{}",
                 s.key_alias, s.max_budget_usd, s.budget_duration
@@ -196,8 +209,8 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
                 )
             };
             let body = format!(
-                "{{\"key_alias\":\"{}\",\"max_budget\":{},\"budget_duration\":\"{}\",\"models\":{}}}",
-                s.key_alias, s.max_budget_usd, s.budget_duration, models
+                "{{\"key\":\"{}\",\"key_alias\":\"{}\",\"max_budget\":{},\"budget_duration\":\"{}\",\"models\":{}}}",
+                token, s.key_alias, s.max_budget_usd, s.budget_duration, models
             );
             let curl = format!(
                 "curl -sS -X POST http://127.0.0.1:{}/key/generate \
@@ -214,9 +227,12 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
                     o.stderr.trim()
                 )));
             }
-            synced.push(s.key_alias.clone());
+            minted.push(MintedKey {
+                alias: s.key_alias.clone(),
+                token,
+            });
         }
-        Ok(synced)
+        Ok(minted)
     }
 
     /// Set the upstream **provider** API key (e.g. OpenAI/Anthropic) — written ONLY into the
@@ -265,7 +281,8 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
     }
 
     /// Point LiteLLM's tracing at a Phoenix collector (`http://<host>:6006`). Writes the endpoint
-    /// to the env file and enables the arize_phoenix callback so every LLM call is traced. Idempotent.
+    /// to the env file and restarts the proxy; the `arize_phoenix` callback that consumes it is
+    /// registered in [`config_script`]. Idempotent.
     pub fn enable_phoenix(&self, phoenix_host: &str, reporter: &dyn Reporter) -> Result<()> {
         reporter.step(&format!("Wiring LiteLLM traces → Phoenix ({phoenix_host})"));
         let endpoint = format!("http://{phoenix_host}:6006");
@@ -281,6 +298,14 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         let _ = self.exec("systemctl restart litellm 2>/dev/null || true");
         Ok(())
     }
+}
+
+/// A virtual key minted (or reused) by [`LiteLlmDeployer::sync_virtual_keys`]. The caller persists
+/// these (e.g. in the [`crate::keystore::KeyStore`]) to inject into agents and rotate later.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MintedKey {
+    pub alias: String,
+    pub token: String,
 }
 
 /// Per-key spend read back from LiteLLM.
@@ -322,8 +347,15 @@ pub fn parse_key_usage(json: &str) -> Result<Vec<KeyUsage>> {
         .collect())
 }
 
-/// Minimal proxy config for a given model. The provider key is supplied separately via
-/// [`LiteLlmDeployer::set_provider_key`] (env file), never stored in this config or in llmsc.toml.
+/// Proxy config for a given provider model, plus:
+/// - a built-in `mock` model (`mock_response`) that serves replies with **no provider key** — the
+///   hermetic path the M5 done-when asserts on (and a smoke test for a fresh deploy);
+/// - the `arize_phoenix` callback, so every call is traced once
+///   [`LiteLlmDeployer::enable_phoenix`] points `PHOENIX_COLLECTOR_ENDPOINT` at the collector
+///   (the endpoint env var alone does not enable tracing — the callback must be registered).
+///
+/// The provider key is supplied separately via [`LiteLlmDeployer::set_provider_key`] (env file),
+/// never stored in this config or in `llmsc.toml`.
 fn config_script(model: &str) -> String {
     format!(
         "mkdir -p /etc/litellm && cat > /etc/litellm/config.yaml <<'EOF'\n\
@@ -331,6 +363,12 @@ fn config_script(model: &str) -> String {
          \x20 - model_name: default\n\
          \x20   litellm_params:\n\
          \x20     model: {model}\n\
+         \x20 - model_name: mock\n\
+         \x20   litellm_params:\n\
+         \x20     model: gpt-3.5-turbo\n\
+         \x20     mock_response: \"llmsc mock — proxy reachable, key valid, trace emitted\"\n\
+         litellm_settings:\n\
+         \x20 callbacks: [\"arize_phoenix\"]\n\
          general_settings:\n\
          \x20 master_key: {MASTER_KEY}  # TODO: rotate\n\
          EOF"
@@ -854,20 +892,43 @@ mod tests {
     }
 
     #[test]
-    fn sync_virtual_keys_posts_specs_to_admin_api() {
+    fn sync_virtual_keys_mints_token_with_identifiable_prefix() {
         let r = FakeRunner::new(|_, _| out(0, "{\"key\":\"sk-...\"}"));
         let specs = vec![crate::enforce::virtual_key_spec(
             "web-agent-01",
             "agent-claude",
             "small",
         )];
-        let synced = LiteLlmDeployer::new("llmsc", &r)
-            .sync_virtual_keys(&specs, &SilentReporter)
+        let minted = LiteLlmDeployer::new("llmsc", &r)
+            .sync_virtual_keys(&specs, &BTreeMap::new(), &SilentReporter)
             .unwrap();
-        assert_eq!(synced, vec!["llmsc-web-agent-01-agent-claude"]);
+        assert_eq!(minted.len(), 1);
+        assert_eq!(minted[0].alias, "llmsc-web-agent-01-agent-claude");
+        // Fresh mint → identifiable prefix + a random suffix supplied as the proxy `key`.
+        assert!(minted[0]
+            .token
+            .starts_with("sk-llmsc-web-agent-01-agent-claude-"));
         assert!(r.called_with("key/generate"));
+        assert!(r.called_with(&format!("\"key\":\"{}\"", minted[0].token)));
         assert!(r.called_with("llmsc-web-agent-01-agent-claude"));
         assert!(r.called_with("\"max_budget\":5"));
+    }
+
+    #[test]
+    fn sync_virtual_keys_reuses_an_existing_token() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        let specs = vec![crate::enforce::virtual_key_spec("sb", "agent-x", "medium")];
+        let mut existing = BTreeMap::new();
+        existing.insert(
+            "llmsc-sb-agent-x".to_string(),
+            "sk-llmsc-sb-agent-x-cafef00d".to_string(),
+        );
+        let minted = LiteLlmDeployer::new("llmsc", &r)
+            .sync_virtual_keys(&specs, &existing, &SilentReporter)
+            .unwrap();
+        // Re-sync is a stable no-op: the stored token is reused, not rotated.
+        assert_eq!(minted[0].token, "sk-llmsc-sb-agent-x-cafef00d");
+        assert!(r.called_with("sk-llmsc-sb-agent-x-cafef00d"));
     }
 
     #[test]
@@ -876,8 +937,24 @@ mod tests {
         let specs = vec![crate::enforce::virtual_key_spec("sb", "agent-x", "medium")];
         // duplicate → treated as success.
         LiteLlmDeployer::new("llmsc", &r)
-            .sync_virtual_keys(&specs, &SilentReporter)
+            .sync_virtual_keys(&specs, &BTreeMap::new(), &SilentReporter)
             .unwrap();
+    }
+
+    #[test]
+    fn config_script_enables_tracing_and_a_hermetic_mock_model() {
+        let s = config_script("openai/gpt-4o-mini");
+        // The provider-backed default model is still present.
+        assert!(s.contains("model_name: default"));
+        assert!(s.contains("model: openai/gpt-4o-mini"));
+        // Phoenix tracing is wired via the callback (the env endpoint alone is not enough).
+        assert!(s.contains("callbacks:"));
+        assert!(s.contains("arize_phoenix"));
+        // A built-in mock model serves responses with no provider key (hermetic done-when path).
+        assert!(s.contains("model_name: mock"));
+        assert!(s.contains("mock_response"));
+        // Admin master key still set.
+        assert!(s.contains(&format!("master_key: {MASTER_KEY}")));
     }
 
     #[test]

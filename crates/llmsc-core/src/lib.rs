@@ -11,6 +11,7 @@ pub mod display;
 pub mod enforce;
 pub mod error;
 pub mod incus;
+pub mod keystore;
 pub mod process;
 pub mod profile;
 pub mod progress;

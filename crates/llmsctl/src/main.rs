@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 use llmsc_core::bootstrap::IncusBootstrap;
 use llmsc_core::config::{user_config_path, Config};
 use llmsc_core::deploy::LiteLlmDeployer;
+use llmsc_core::keystore;
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
 use llmsc_core::service::{catalog, lookup};
@@ -379,10 +380,18 @@ fn keys(action: KeysAction) -> Result<(), String> {
                 println!("no agent keys to sync");
                 return Ok(());
             }
-            let synced = LiteLlmDeployer::new(cfg.vm.name.clone(), &SystemRunner)
-                .sync_virtual_keys(&specs, &ConsoleReporter)
+            // Reuse already-minted tokens (stable re-sync), then persist the results so they can be
+            // injected into agents and rotated later. Tokens are 0600 in the host key store.
+            let store_path = keystore::default_key_store_path();
+            let mut store = keystore::KeyStore::load(&store_path).map_err(|e| e.to_string())?;
+            let minted = LiteLlmDeployer::new(cfg.vm.name.clone(), &SystemRunner)
+                .sync_virtual_keys(&specs, store.tokens(), &ConsoleReporter)
                 .map_err(|e| e.to_string())?;
-            println!("synced {} virtual key(s)", synced.len());
+            for k in &minted {
+                store.upsert(k.alias.clone(), k.token.clone());
+            }
+            store.save(&store_path).map_err(|e| e.to_string())?;
+            println!("synced {} virtual key(s)", minted.len());
         }
         KeysAction::SetProvider { provider, key } => {
             LiteLlmDeployer::new(cfg.vm.name.clone(), &SystemRunner)
