@@ -1972,6 +1972,30 @@ impl<R: CommandRunner> IncusClient for CliIncus<'_, R> {
     }
 }
 
+impl<'a, R: CommandRunner> CliIncus<'a, R> {
+    /// Push a file into a container: `incus file push <local> <name>/<path>`. `container_path` is
+    /// absolute (leading `/`). For the `vm` target, `local` is resolved where Incus runs (inside
+    /// the VM — so it must be under a VM-mounted dir); for `local` it's a plain host path.
+    pub fn push_file(&self, local: &str, name: &str, container_path: &str) -> Result<()> {
+        let target = format!("{name}{container_path}");
+        let o = self.incus_run(&["file", "push", local, &target])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("file push: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Pull a file out of a container: `incus file pull <name>/<path> <local>`.
+    pub fn pull_file(&self, name: &str, container_path: &str, local: &str) -> Result<()> {
+        let src = format!("{name}{container_path}");
+        let o = self.incus_run(&["file", "pull", &src, local])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("file pull: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2132,6 +2156,34 @@ mod tests {
             }
         });
         assert!(CliIncus::local(&r).delete("web").is_ok());
+    }
+
+    #[test]
+    fn push_pull_file_build_incus_file_args() {
+        // push: `incus file push <local> <name>/<path>`
+        let r = FakeRunner::new(|cmd, args| {
+            if cmd == "incus" && args[..3] == ["file", "push", "/host/f"] && args[3] == "web/work/f"
+            {
+                out(0, "")
+            } else {
+                out(1, "")
+            }
+        });
+        assert!(CliIncus::local(&r)
+            .push_file("/host/f", "web", "/work/f")
+            .is_ok());
+
+        // pull: `incus file pull <name>/<path> <local>`
+        let r = FakeRunner::new(|cmd, args| {
+            if cmd == "incus" && args[..2] == ["file", "pull"] && args[2] == "web/work/f" {
+                out(0, "")
+            } else {
+                out(1, "")
+            }
+        });
+        assert!(CliIncus::local(&r)
+            .pull_file("web", "/work/f", "/host/f")
+            .is_ok());
     }
 
     #[test]

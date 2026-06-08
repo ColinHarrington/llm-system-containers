@@ -18,14 +18,22 @@ fn help_lists_subcommands() {
 }
 
 #[test]
-fn cp_is_stub() {
-    // launch/ls/rm now do real I/O (Incus in the VM); cp is still a stub, so it's the
-    // deterministic command to smoke-test here.
+fn cp_rejects_two_host_paths() {
+    // Both args are host paths → error before any Incus I/O (deterministic, no VM needed).
     llmsc()
         .args(["cp", "a", "b"])
         .assert()
-        .success()
-        .stdout(contains("not yet implemented"));
+        .failure()
+        .stderr(contains("container ref"));
+}
+
+#[test]
+fn cp_rejects_container_to_container() {
+    llmsc()
+        .args(["cp", "web:/a", "other:/b"])
+        .assert()
+        .failure()
+        .stderr(contains("not supported yet"));
 }
 
 #[test]
