@@ -33,3 +33,31 @@ fn init_prints_default_config() {
 fn unknown_subcommand_fails() {
     llmsctl().arg("bogus").assert().failure();
 }
+
+// A `[vm]` with a name that doesn't exist, so `doctor` finds the VM not-running and skips the
+// slow live Incus checks — keeping the test fast and deterministic.
+const VM_TOML: &str =
+    "[vm]\nname = \"llmsctl-doctor-test\"\ncpus = 4\nmemory_gib = 8\ndisk_gib = 100\n\n";
+
+fn in_project(sandboxes: &str, args: &[&str]) -> assert_cmd::assert::Assert {
+    let dir = std::env::temp_dir().join(format!(
+        "llmsctl-cli-{}-{}",
+        std::process::id(),
+        args.join("_")
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("llmsc.toml"), format!("{VM_TOML}{sandboxes}")).unwrap();
+    let out = llmsctl().current_dir(&dir).args(args).assert();
+    let _ = std::fs::remove_dir_all(&dir);
+    out
+}
+
+#[test]
+fn doctor_reports_remote_display() {
+    let toml = "[[sandbox]]\nname = \"web-agent-01\"\nimage = \"images:alpine/3.21\"\ndisplay = \"xpra\"\n";
+    in_project(toml, &["doctor"])
+        .success()
+        .stdout(contains("Remote display:"))
+        .stdout(contains("web-agent-01"))
+        .stdout(contains("xpra"));
+}

@@ -299,6 +299,25 @@ fn doctor() -> Result<(), String> {
             s.control_plane_agents
         );
     }
+    println!("\nRemote display:");
+    let with_display: Vec<_> = cfg
+        .sandboxes
+        .iter()
+        .filter(|s| !s.display.is_none())
+        .collect();
+    if with_display.is_empty() {
+        println!(
+            "  (none — set `display = \"xpra\"|\"x11\"` under [[sandbox]] to surface GUI apps)"
+        );
+    } else {
+        for sb in &with_display {
+            println!("  {:<20} {}", sb.name, sb.display.id());
+        }
+        println!(
+            "  host needs: xpra \u{2265} 6 for `xpra` (`xpra --version`); an X server for `x11` (XQuartz on macOS)."
+        );
+    }
+
     println!("\n(run `llmsc egress <name>` for live ACL state; the GUI Enforcement panel shows live rings)");
     Ok(())
 }
