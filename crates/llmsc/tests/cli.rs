@@ -108,3 +108,27 @@ fn display_none_when_unset() {
         .success()
         .stdout(contains("display: none"));
 }
+
+#[test]
+fn info_shows_sandbox_summary() {
+    let toml = "[[sandbox]]\nname = \"web-agent-01\"\nimage = \"images:alpine/3.21\"\ndisplay = \"xpra\"\n";
+    in_project(toml, &["info", "web-agent-01"])
+        .success()
+        .stdout(contains("sandbox: web-agent-01"))
+        .stdout(contains("image:"))
+        .stdout(contains("display:       xpra"));
+}
+
+#[test]
+fn info_unknown_sandbox_fails() {
+    in_project("", &["info", "nope"])
+        .failure()
+        .stderr(contains("not config-managed"));
+}
+
+#[test]
+fn exec_requires_a_command() {
+    in_project("", &["exec", "web"])
+        .failure()
+        .stderr(contains("no command given"));
+}
