@@ -96,17 +96,18 @@ enum AgentAction {
     Steer { target: String, message: String },
 }
 
-fn vm_name() -> String {
-    // M2 follow-up will load this from the on-disk config.
-    Config::default().vm.name
-}
-
 fn run() -> Result<(), String> {
     let runner = SystemRunner;
-    let vm = vm_name();
-    let incus = CliIncus::new(vm, &runner);
+    // Parse first so --help/--version work without touching config; then resolve the deployment
+    // target from the effective config (honors a configured VM name; errors on local/remote).
+    let command = Cli::parse().command;
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let incus = CliIncus::new(
+        cfg.vm_target().map_err(|e| e.to_string())?.to_string(),
+        &runner,
+    );
 
-    match Cli::parse().command {
+    match command {
         Command::Launch {
             name,
             image,
@@ -149,7 +150,6 @@ fn run() -> Result<(), String> {
             std::process::exit(code);
         }
         Command::Apply => {
-            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
             let report = reconcile(&cfg, &incus, &ConsoleReporter).map_err(|e| e.to_string())?;
             println!("created:  {:?}", report.created);
             println!("existing: {:?}", report.existing);
@@ -158,7 +158,6 @@ fn run() -> Result<(), String> {
             }
         }
         Command::Egress { name, apply } => {
-            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
             let sb = cfg
                 .sandbox(&name)
                 .ok_or_else(|| format!("'{name}' is not config-managed"))?;
@@ -195,7 +194,6 @@ fn run() -> Result<(), String> {
             }
         }
         Command::Display { name, apply } => {
-            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
             let sb = cfg
                 .sandbox(&name)
                 .ok_or_else(|| format!("'{name}' is not config-managed"))?;
