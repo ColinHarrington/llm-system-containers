@@ -97,6 +97,18 @@ impl<'a, R: CommandRunner> ServiceContainer<'a, R> {
 }
 
 /// Provisions LiteLLM in its own L2 container.
+/// Port the LiteLLM proxy listens on inside its container.
+pub const LITELLM_PORT: u16 = 4000;
+
+/// The proxy base URL as reachable from a sandbox on the Incus bridge (`http://svc-litellm:4000`).
+/// Agents get this (with the OpenAI `/v1` route) plus their virtual key injected into their env.
+pub fn litellm_base_url() -> String {
+    format!(
+        "http://{}:{LITELLM_PORT}",
+        crate::service::container_name("litellm")
+    )
+}
+
 pub struct LiteLlmDeployer<'a, R: CommandRunner> {
     svc: ServiceContainer<'a, R>,
     port: u16,
@@ -107,7 +119,7 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         Self {
             // debian/13 (trixie) systemd hangs at boot under this Incus → no networking; bookworm works.
             svc: ServiceContainer::new(vm, "litellm", "images:debian/12", runner),
-            port: 4000,
+            port: LITELLM_PORT,
         }
     }
 
@@ -939,6 +951,11 @@ mod tests {
         LiteLlmDeployer::new("llmsc", &r)
             .sync_virtual_keys(&specs, &BTreeMap::new(), &SilentReporter)
             .unwrap();
+    }
+
+    #[test]
+    fn litellm_base_url_points_at_the_service_container() {
+        assert_eq!(litellm_base_url(), "http://svc-litellm:4000");
     }
 
     #[test]

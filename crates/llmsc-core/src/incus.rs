@@ -1759,6 +1759,44 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         Ok(())
     }
 
+    /// Inject the LiteLLM proxy endpoint + an agent's **virtual key** into a single sandbox user's
+    /// shell environment. Per-user (not container-wide like [`Self::set_proxy_env`]) because each
+    /// agent holds its own key. Writes `~/.config/llmsc/env` (0600, owned by the user) with the
+    /// exports and makes the user's `~/.profile` source it — login shells (`su - <user>`, how
+    /// agents are invoked) pick it up. `base_url` is the proxy base (e.g. `http://svc-litellm:4000`);
+    /// `OPENAI_BASE_URL` gets the OpenAI-compatible `/v1` route. The key is a **virtual** key, never
+    /// a provider credential (credential isolation).
+    pub fn set_litellm_env(
+        &self,
+        sandbox: &str,
+        user: &str,
+        base_url: &str,
+        key: &str,
+    ) -> Result<()> {
+        // Inputs are single-quoted in the script; strip any stray quotes defensively (proxy URLs
+        // and virtual-key tokens never contain them).
+        let base = base_url.replace('\'', "");
+        let key = key.replace('\'', "");
+        let script = format!(
+            "set -e; home=$(getent passwd '{user}' | cut -d: -f6); \
+             test -n \"$home\" || {{ echo 'no such user: {user}' >&2; exit 1; }}; \
+             mkdir -p \"$home/.config/llmsc\"; umask 077; \
+             printf 'export OPENAI_BASE_URL=%s\\nexport OPENAI_API_KEY=%s\\nexport LLMSC_PROXY_URL=%s\\n' \
+               '{base}/v1' '{key}' '{base}' > \"$home/.config/llmsc/env\"; \
+             grep -q 'llmsc/env' \"$home/.profile\" 2>/dev/null || \
+               printf '\\n. \"$HOME/.config/llmsc/env\"\\n' >> \"$home/.profile\"; \
+             chown -R '{user}' \"$home/.config/llmsc\" \"$home/.profile\""
+        );
+        let o = self.incus_run(&["exec", sandbox, "--", "sh", "-c", &script])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "injecting LiteLLM env into {user}@{sandbox}: {}",
+                o.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
     /// Set/clear `readonly` on a sandbox's workspace mounts — instance-local **disk** devices with
     /// a `path` other than `/` (the root disk is left alone). Returns the number of devices changed.
     /// The real per-container filesystem backstop; per-UID path rules are Tetragon's job.
@@ -3067,6 +3105,30 @@ mod cli_tests {
                 .any(|c| c.contains(&"delete".to_string())
                     && c.contains(&"llmsc-publish".to_string()))
         );
+    }
+
+    #[test]
+    fn set_litellm_env_injects_per_user_proxy_and_key() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        CliIncus::new("llmsc", &r)
+            .set_litellm_env(
+                "web-agent-01",
+                "agent-claude",
+                "http://svc-litellm:4000",
+                "sk-llmsc-web-agent-01-agent-claude-cafe",
+            )
+            .unwrap();
+        assert!(r.called_with("exec"));
+        assert!(r.called_with("web-agent-01"));
+        // Per-user: keyed off the user's home, not container-wide environment.* config.
+        assert!(r.called_with("agent-claude"));
+        assert!(r.called_with(".config/llmsc"));
+        assert!(r.called_with(".profile"));
+        // OpenAI-compatible endpoint + the virtual key as the exported values.
+        assert!(r.called_with("OPENAI_BASE_URL"));
+        assert!(r.called_with("http://svc-litellm:4000/v1"));
+        assert!(r.called_with("sk-llmsc-web-agent-01-agent-claude-cafe"));
+        assert!(!r.called_with("environment.OPENAI_API_KEY")); // not the container-wide path
     }
 
     #[test]

@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use llmsc_core::config::{effective_config_path, Config, DeploymentMode, DisplayMethod, Sandbox};
 use llmsc_core::display::{display_plan, DisplayCtx};
 use llmsc_core::incus::{CliIncus, IncusClient};
+use llmsc_core::keystore;
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
 use llmsc_core::reconcile::reconcile;
@@ -136,6 +137,9 @@ enum AgentAction {
     Stop { target: String },
     /// Inject a steering message into the agent's mailbox.
     Steer { target: String, message: String },
+    /// Inject the agent's LiteLLM proxy URL + virtual key into its shell env
+    /// (run `llmsctl keys sync` first to mint the key).
+    Env { target: String },
 }
 
 fn run() -> Result<(), String> {
@@ -411,6 +415,19 @@ fn run() -> Result<(), String> {
                         .steer_user(&s, &a, &message)
                         .map_err(|e| e.to_string())?;
                     println!("steered {a}@{s}");
+                }
+                AgentAction::Env { target } => {
+                    let (a, s) = split(&target)?;
+                    let alias = llmsc_core::enforce::key_alias(&s, &a);
+                    let store = keystore::KeyStore::load(&keystore::default_key_store_path())
+                        .map_err(|e| e.to_string())?;
+                    let token = store.get(&alias).ok_or_else(|| {
+                        format!("no virtual key for {a}@{s} — run `llmsctl keys sync` first")
+                    })?;
+                    incus
+                        .set_litellm_env(&s, &a, &llmsc_core::deploy::litellm_base_url(), token)
+                        .map_err(|e| e.to_string())?;
+                    println!("injected LiteLLM proxy URL + virtual key into {a}@{s}");
                 }
             }
         }

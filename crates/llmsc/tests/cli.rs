@@ -159,6 +159,23 @@ fn harden_persists_nic_filtering() {
 }
 
 #[test]
+fn agent_env_requires_agent_at_sandbox() {
+    // Validated before any Incus I/O: a target without `@` fails deterministically.
+    in_project("", &["agent", "env", "nope"])
+        .failure()
+        .stderr(contains("agent@sandbox"));
+}
+
+#[test]
+fn agent_help_lists_env() {
+    llmsc()
+        .args(["agent", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("env"));
+}
+
+#[test]
 fn help_lists_image_subcommands() {
     llmsc()
         .arg("--help")
