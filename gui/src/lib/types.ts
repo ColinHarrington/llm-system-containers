@@ -211,6 +211,13 @@ export interface AclRule {
   description: string;
 }
 
+// --- Display method (how a sandbox's GUI reaches the host) ---
+export type DisplayMethod = "none" | "xpra" | "x11";
+export interface DisplayStep {
+  note: string;
+  cmd: string;
+}
+
 // --- Egress policy (per-container enforcement ring) ---
 export type EgressPosture = "deny-all" | "allowlist" | "open";
 

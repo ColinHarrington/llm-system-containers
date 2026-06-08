@@ -5,8 +5,9 @@
 //! for now (streaming progress to the GUI is a follow-up).
 
 use llmsc_core::bootstrap::IncusBootstrap;
-use llmsc_core::config::{self, Config, Sandbox, User, UserRole};
+use llmsc_core::config::{self, Config, DisplayMethod, Sandbox, User, UserRole};
 use llmsc_core::deploy::LiteLlmDeployer;
+use llmsc_core::display::{display_plan, DisplayCtx};
 use llmsc_core::incus::{CliIncus, IncusClient, InstanceStatus};
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
@@ -267,6 +268,8 @@ fn sandbox_launch(app: AppHandle, spec: NewSandboxSpec) -> Result<(), String> {
         }],
         // Managed by default: agents may reach the LLM proxy and nothing else, until enforced.
         egress: Some(llmsc_core::config::EgressPolicy::default_managed()),
+        // Remote display is opt-in (set later via the Display section / `set_sandbox_display`).
+        display: DisplayMethod::None,
     };
 
     incus
@@ -1063,6 +1066,64 @@ fn set_egress_policy(sandbox: String, policy: EgressPolicyDto) -> Result<(), Str
     } else {
         Err(format!("'{sandbox}' is not config-managed"))
     }
+}
+
+// --- Display method (how a sandbox's GUI reaches the host) ---
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DisplayStepDto {
+    note: String,
+    cmd: String,
+}
+
+/// A sandbox's display method id (`none` | `xpra` | `x11`). `none` for unknown/unset.
+#[tauri::command]
+fn sandbox_display(sandbox: String) -> Result<String, String> {
+    let cfg = load_user_config()?;
+    Ok(cfg
+        .sandbox(&sandbox)
+        .map(|s| s.display.id().to_string())
+        .unwrap_or_else(|| DisplayMethod::None.id().to_string()))
+}
+
+/// Set a sandbox's display method (`none` | `xpra` | `x11`).
+#[tauri::command]
+fn set_sandbox_display(sandbox: String, method: String) -> Result<(), String> {
+    let m = DisplayMethod::from_id(&method)
+        .ok_or_else(|| format!("unknown display method '{method}'"))?;
+    let mut cfg = load_user_config()?;
+    if cfg.set_sandbox_display(&sandbox, m) {
+        save_user_config(&cfg);
+        Ok(())
+    } else {
+        Err(format!("'{sandbox}' is not config-managed"))
+    }
+}
+
+/// The host recipe (steps) to view a sandbox's GUI, compiled from its display method. Empty when
+/// display is `none`.
+#[tauri::command]
+fn sandbox_display_plan(sandbox: String) -> Result<Vec<DisplayStepDto>, String> {
+    let cfg = load_user_config()?;
+    let sb = cfg
+        .sandbox(&sandbox)
+        .ok_or_else(|| format!("'{sandbox}' is not config-managed"))?;
+    let ctx = DisplayCtx {
+        vm_ssh: format!("lima-{}", cfg.vm.name),
+        ..Default::default()
+    };
+    Ok(display_plan(sb, &ctx)
+        .map(|p| {
+            p.steps
+                .into_iter()
+                .map(|s| DisplayStepDto {
+                    note: s.note.to_string(),
+                    cmd: s.cmd,
+                })
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 /// The compiled Incus ACL for a sandbox's egress policy (for display). `None` if open/unmanaged.
@@ -1998,6 +2059,9 @@ pub fn run() {
             egress_acl_preview,
             apply_egress,
             egress_status,
+            sandbox_display,
+            set_sandbox_display,
+            sandbox_display_plan,
             virtual_keys,
             sync_virtual_keys,
             set_provider_key,

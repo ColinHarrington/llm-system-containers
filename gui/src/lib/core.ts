@@ -8,6 +8,8 @@
 // return representative demo data in BOTH environments for now — clearly marked until those land.
 import type {
   AgentInfo,
+  DisplayMethod,
+  DisplayStep,
   EgressPolicy,
   EgressStatus,
   FleetEnforcement,
@@ -358,6 +360,25 @@ export async function applyIncusProfile(name: string): Promise<void> {
 export async function setAgentGuardrails(sandbox: string, name: string, guardrails: Guardrails): Promise<void> {
   if (inTauri()) return invokeCmd<void>("set_agent_guardrails", { sandbox, name, guardrails });
   await delay(80);
+}
+
+// --- Display method (how a sandbox's GUI reaches the host) ---
+// Read a sandbox's display method (config). "none" = no remote display.
+export async function sandboxDisplay(sandbox: string): Promise<DisplayMethod> {
+  if (inTauri()) return invokeCmd<DisplayMethod>("sandbox_display", { sandbox });
+  await delay(60);
+  return "none";
+}
+// Set a sandbox's display method (config; does not start a session).
+export async function setSandboxDisplay(sandbox: string, method: DisplayMethod): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("set_sandbox_display", { sandbox, method });
+  await delay(60);
+}
+// The host recipe (steps) to view a sandbox's GUI. Empty when display is "none".
+export async function sandboxDisplayPlan(sandbox: string): Promise<DisplayStep[]> {
+  if (inTauri()) return invokeCmd<DisplayStep[]>("sandbox_display_plan", { sandbox });
+  await delay(60);
+  return [];
 }
 
 // --- Egress policy (per-container enforcement ring) ---

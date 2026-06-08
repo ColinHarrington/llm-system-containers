@@ -238,6 +238,16 @@ impl DisplayMethod {
         }
     }
 
+    /// Parse a [`DisplayMethod`] from its [`id`](Self::id) string.
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s {
+            "none" => Some(DisplayMethod::None),
+            "xpra" => Some(DisplayMethod::Xpra),
+            "x11" => Some(DisplayMethod::X11),
+            _ => None,
+        }
+    }
+
     /// True for [`DisplayMethod::None`] (used to skip serializing the default).
     pub fn is_none(&self) -> bool {
         matches!(self, DisplayMethod::None)
@@ -899,6 +909,12 @@ mod tests {
         assert_eq!(DisplayMethod::Xpra.id(), "xpra");
         assert_eq!(DisplayMethod::X11.id(), "x11");
         assert!(DisplayMethod::None.is_none());
+
+        // from_id is the inverse of id().
+        for m in [DisplayMethod::None, DisplayMethod::Xpra, DisplayMethod::X11] {
+            assert_eq!(DisplayMethod::from_id(m.id()), Some(m));
+        }
+        assert_eq!(DisplayMethod::from_id("bogus"), None);
     }
 
     #[test]
