@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 
 const { saveSettings } = vi.hoisted(() => ({ saveSettings: vi.fn(async () => {}) }));
 vi.mock("../lib/core", () => ({
-  getSettings: vi.fn(async () => ({ operator: "colin", vmName: "llmsc", cpus: 4, memoryGib: 8, diskGib: 60 })),
+  getSettings: vi.fn(async () => ({ operator: "colin", vmName: "llmsc", cpus: 4, memoryGib: 8, diskGib: 60, target: "vm" })),
   saveSettings,
   vmStatus: vi.fn(async () => "Running"),
   vmDestroy: vi.fn(async () => {}),

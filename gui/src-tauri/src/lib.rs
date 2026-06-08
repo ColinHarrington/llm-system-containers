@@ -305,9 +305,12 @@ struct SettingsDto {
     cpus: u32,
     memory_gib: u32,
     disk_gib: u32,
+    /// Deployment target id (`vm` | `local` | `remote`) — read-only here.
+    #[serde(default)]
+    target: String,
 }
 
-/// Read the platform settings (operator + VM resources) from the effective config.
+/// Read the platform settings (operator + VM resources + deployment target) from the config.
 #[tauri::command]
 fn get_settings() -> Result<SettingsDto, String> {
     let c = Config::load_effective().map_err(|e| e.to_string())?;
@@ -317,6 +320,7 @@ fn get_settings() -> Result<SettingsDto, String> {
         cpus: c.vm.cpus,
         memory_gib: c.vm.memory_gib,
         disk_gib: c.vm.disk_gib,
+        target: c.mode.id().to_string(),
     })
 }
 
@@ -1082,6 +1086,28 @@ fn set_egress_policy(sandbox: String, policy: EgressPolicyDto) -> Result<(), Str
 struct DisplayStepDto {
     note: String,
     cmd: String,
+}
+
+/// A sandbox's NIC anti-spoof filtering flag.
+#[tauri::command]
+fn sandbox_net_filtering(sandbox: String) -> Result<bool, String> {
+    let cfg = load_user_config()?;
+    Ok(cfg
+        .sandbox(&sandbox)
+        .map(|s| s.net_filtering)
+        .unwrap_or(false))
+}
+
+/// Set a sandbox's NIC anti-spoof filtering flag (config only; apply via egress enforcement).
+#[tauri::command]
+fn set_sandbox_net_filtering(sandbox: String, on: bool) -> Result<(), String> {
+    let mut cfg = load_user_config()?;
+    if cfg.set_sandbox_net_filtering(&sandbox, on) {
+        save_user_config(&cfg);
+        Ok(())
+    } else {
+        Err(format!("'{sandbox}' is not config-managed"))
+    }
 }
 
 /// A sandbox's display method id (`none` | `xpra` | `x11`). `none` for unknown/unset.
@@ -2085,6 +2111,8 @@ pub fn run() {
             set_sandbox_display,
             sandbox_display_plan,
             apply_display,
+            sandbox_net_filtering,
+            set_sandbox_net_filtering,
             virtual_keys,
             sync_virtual_keys,
             set_provider_key,

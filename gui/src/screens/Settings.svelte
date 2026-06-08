@@ -79,6 +79,8 @@
   <div class="card mb16">
     <div class="card-head"><h3>Playground VM</h3><span class="sub"><span class="mono">{form.vmName}</span> · {vm ? vm.toLowerCase() : "…"}</span></div>
     <div class="pad">
+      <div class="row mb8"><div><div class="strong small">Deployment target</div><div class="muted xsmall">Where Incus runs (vm = this VM; local = host Incus)</div></div>
+        <span class="pill right mono">{loaded?.target ?? "vm"}</span></div>
       <div class="grid g-3" style="gap:12px">
         <div class="field"><label for="cpu">CPU cores</label><input id="cpu" class="input mono" type="number" min="1" bind:value={form.cpus} /></div>
         <div class="field"><label for="mem">Memory (GiB)</label><input id="mem" class="input mono" type="number" min="1" bind:value={form.memoryGib} /></div>

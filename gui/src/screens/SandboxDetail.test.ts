@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly, enforceAll, agentPause, setSandboxDisplay, applyDisplay } = vi.hoisted(() => ({
+const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly, enforceAll, agentPause, setSandboxDisplay, applyDisplay, setSandboxNetFiltering } = vi.hoisted(() => ({
   removeAgent: vi.fn(async () => {}),
   instanceRemoveProfile: vi.fn(async () => {}),
   setAgentGuardrails: vi.fn(async () => {}),
@@ -16,6 +16,7 @@ const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy,
   agentPause: vi.fn(async () => {}),
   setSandboxDisplay: vi.fn(async () => {}),
   applyDisplay: vi.fn(async () => 1),
+  setSandboxNetFiltering: vi.fn(async () => {}),
 }));
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
@@ -39,6 +40,8 @@ vi.mock("../lib/core", () => ({
   snapshotRestore: vi.fn(async () => {}),
   snapshotDelete: vi.fn(async () => {}),
   setAgentGuardrails,
+  sandboxNetFiltering: vi.fn(async () => false),
+  setSandboxNetFiltering,
   sandboxDisplay: vi.fn(async () => "none"),
   setSandboxDisplay,
   sandboxDisplayPlan: vi.fn(async () => [
@@ -167,6 +170,16 @@ describe("SandboxDetail", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Apply" })).not.toBeDisabled());
     await fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     expect(applyDisplay).toHaveBeenCalledWith("web-agent-01");
+  });
+
+  it("toggles NIC anti-spoof filtering", async () => {
+    setSandboxNetFiltering.mockClear();
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    await tab("Enforcement");
+    await screen.findByText("NIC anti-spoof filtering");
+    await fireEvent.click(screen.getByRole("button", { name: "Off" }));
+    expect(setSandboxNetFiltering).toHaveBeenCalledWith("web-agent-01", true);
   });
 
   it("adds an L7 domain to the egress policy", async () => {

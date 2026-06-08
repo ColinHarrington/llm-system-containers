@@ -175,7 +175,7 @@ export async function operatorDefault(): Promise<string> {
 export async function getSettings(): Promise<Settings> {
   if (inTauri()) return invokeCmd<Settings>("get_settings");
   await delay(60);
-  return { operator: "operator", vmName: "llmsc", cpus: 4, memoryGib: 8, diskGib: 60 };
+  return { operator: "operator", vmName: "llmsc", cpus: 4, memoryGib: 8, diskGib: 60, target: "vm" };
 }
 export async function saveSettings(settings: Settings): Promise<void> {
   if (inTauri()) return invokeCmd<void>("save_settings", { settings });
@@ -380,6 +380,18 @@ export async function sandboxDisplayPlan(sandbox: string): Promise<DisplayStep[]
   await delay(60);
   return [];
 }
+// Read a sandbox's NIC anti-spoof filtering flag (config).
+export async function sandboxNetFiltering(sandbox: string): Promise<boolean> {
+  if (inTauri()) return invokeCmd<boolean>("sandbox_net_filtering", { sandbox });
+  await delay(60);
+  return false;
+}
+// Set a sandbox's NIC anti-spoof filtering flag (config; apply via egress enforcement).
+export async function setSandboxNetFiltering(sandbox: string, on: boolean): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("set_sandbox_net_filtering", { sandbox, on });
+  await delay(60);
+}
+
 // Apply the display transport (add/remove the xpra Incus proxy device). Returns device changes.
 export async function applyDisplay(sandbox: string): Promise<number> {
   if (inTauri()) return invokeCmd<number>("apply_display", { sandbox });

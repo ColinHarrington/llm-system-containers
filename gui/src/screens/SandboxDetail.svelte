@@ -12,6 +12,7 @@
     tetragonPolicies, tetragonPolicyYaml, applyTetragonPolicies, setWorkspaceReadonly,
     enforcementOverview, enforceAll, agentPause, agentResume, agentStop, mountShared,
     sandboxDisplay, setSandboxDisplay, sandboxDisplayPlan, applyDisplay,
+    sandboxNetFiltering, setSandboxNetFiltering,
   } from "../lib/core";
   import type {
     DisplayMethod, DisplayStep,
@@ -244,6 +245,29 @@
       showToast(String(e), "danger");
     } finally {
       displayBusy = false;
+    }
+  }
+
+  // --- NIC anti-spoof filtering (opt-in hardening) ---
+  let netFiltering = $state(false);
+  let netFilteringBusy = $state(false);
+  $effect(() => {
+    ui.dataVersion;
+    const sel = ui.selectedSandbox;
+    netFiltering = false;
+    if (sel) void sandboxNetFiltering(sel).then((v) => (netFiltering = v)).catch(() => (netFiltering = false));
+  });
+  async function toggleNetFiltering() {
+    if (!sb) return;
+    netFilteringBusy = true;
+    try {
+      await setSandboxNetFiltering(sb.name, !netFiltering);
+      netFiltering = !netFiltering;
+      showToast(`NIC anti-spoof filtering ${netFiltering ? "on" : "off"} (applies on egress enforce)`, "ok");
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally {
+      netFilteringBusy = false;
     }
   }
 
@@ -668,6 +692,9 @@
       </div>
       <div class="pad">
         <p class="hint mb12">Compiles to an Incus network ACL bound to the nic. <strong>Container-level</strong> — applies to every UID in the sandbox. Per-agent egress is a later Tetragon ring. ACLs are L3/L4 only; domain allowlists (mitmproxy) come later, so <span class="mono">web</span> is coarse.</p>
+
+        <div class="row mb12"><div><div class="strong small">NIC anti-spoof filtering</div><div class="muted xsmall">Blocks MAC/IP spoofing on the bridge (applied on egress enforce)</div></div>
+          <button class="btn sm right" class:primary={netFiltering} disabled={netFilteringBusy} onclick={toggleNetFiltering}>{netFiltering ? "On" : "Off"}</button></div>
 
         {#if egress === null}
           <div class="flex gap8" style="align-items:center">
