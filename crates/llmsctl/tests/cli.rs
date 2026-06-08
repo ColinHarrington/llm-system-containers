@@ -91,6 +91,8 @@ fn doctor_reports_target_and_remote_display() {
     in_project(toml, &["doctor"])
         .success()
         .stdout(contains("Target: vm"))
+        .stdout(contains("Control surface:"))
+        .stdout(contains("filtering=off"))
         .stdout(contains("Remote display:"))
         .stdout(contains("web-agent-01"))
         .stdout(contains("xpra"));

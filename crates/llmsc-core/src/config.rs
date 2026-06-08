@@ -614,6 +614,17 @@ impl Config {
         issues
     }
 
+    /// Set a declared sandbox's NIC anti-spoof filtering flag. Returns true if the sandbox exists.
+    pub fn set_sandbox_net_filtering(&mut self, sandbox: &str, on: bool) -> bool {
+        match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
+            Some(s) => {
+                s.net_filtering = on;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Set a declared sandbox's display method. Returns true if the sandbox exists.
     pub fn set_sandbox_display(&mut self, sandbox: &str, method: DisplayMethod) -> bool {
         match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
@@ -686,6 +697,17 @@ impl Config {
 /// Per-project config path (`./llmsc.toml`).
 pub fn project_config_path() -> PathBuf {
     PathBuf::from("llmsc.toml")
+}
+
+/// The path [`Config::load_effective`] reads/writes: the project config if present, else the user
+/// config. Use this when persisting a mutation so it lands where the effective config came from.
+pub fn effective_config_path() -> PathBuf {
+    let project = project_config_path();
+    if project.exists() {
+        project
+    } else {
+        user_config_path()
+    }
 }
 
 /// User/global config path (`$XDG_CONFIG_HOME/llmsc/config.toml`, falling back to `~/.config`).
@@ -1056,6 +1078,15 @@ mod tests {
             issues.iter().any(|i| i.contains("human operators")),
             "{issues:?}"
         );
+    }
+
+    #[test]
+    fn set_sandbox_net_filtering_toggles() {
+        let mut c = Config::default();
+        c.upsert_sandbox("a", "images:alpine/3.21", false);
+        assert!(c.set_sandbox_net_filtering("a", true));
+        assert!(c.sandbox("a").unwrap().net_filtering);
+        assert!(!c.set_sandbox_net_filtering("nope", true));
     }
 
     #[test]
