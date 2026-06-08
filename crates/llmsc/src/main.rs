@@ -5,6 +5,7 @@
 
 use clap::{Parser, Subcommand};
 use llmsc_core::config::{Config, Sandbox};
+use llmsc_core::display::{display_plan, DisplayCtx};
 use llmsc_core::incus::{CliIncus, IncusClient};
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
@@ -56,6 +57,11 @@ enum Command {
         /// Compile + apply the policy (default just shows the compiled ACL).
         #[arg(long)]
         apply: bool,
+    },
+    /// Show how to view a sandbox's GUI on the host (the display recipe).
+    Display {
+        /// Sandbox name.
+        name: String,
     },
     /// Control an agent: pause / resume / stop / steer (target is `agent@sandbox`).
     Agent {
@@ -172,6 +178,34 @@ fn run() -> Result<(), String> {
                         println!("(use --apply to enforce)");
                     }
                     None => println!("egress is open/unmanaged — no ACL"),
+                }
+            }
+        }
+        Command::Display { name } => {
+            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+            let sb = cfg
+                .sandbox(&name)
+                .ok_or_else(|| format!("'{name}' is not config-managed"))?;
+            let ctx = DisplayCtx {
+                vm_ssh: format!("lima-{}", cfg.vm.name),
+                ..Default::default()
+            };
+            match display_plan(sb, &ctx) {
+                None => {
+                    println!("display: none — no remote display configured for '{name}'");
+                    println!(
+                        "  set `display = \"xpra\"` or `\"x11\"` under [[sandbox]] in llmsc.toml"
+                    );
+                }
+                Some(plan) => {
+                    println!(
+                        "display: {} — view {name}'s GUI on the host:",
+                        plan.method.id()
+                    );
+                    for (i, step) in plan.steps.iter().enumerate() {
+                        println!("  {}. {}", i + 1, step.note);
+                        println!("     $ {}", step.cmd);
+                    }
                 }
             }
         }

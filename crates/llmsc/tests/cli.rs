@@ -32,3 +32,38 @@ fn cp_is_stub() {
 fn unknown_subcommand_fails() {
     llmsc().arg("bogus").assert().failure();
 }
+
+/// A minimal valid `[vm]` block (required by the config) the sandbox fixtures are appended to.
+const VM_TOML: &str = "[vm]\nname = \"llmsc\"\ncpus = 4\nmemory_gib = 8\ndisk_gib = 100\n\n";
+
+/// Run `llmsc <args>` in a throwaway dir holding `VM_TOML + sandboxes` as `llmsc.toml` (so
+/// `load_effective` picks up the project config), returning the assert handle.
+fn in_project(sandboxes: &str, args: &[&str]) -> assert_cmd::assert::Assert {
+    let dir = std::env::temp_dir().join(format!(
+        "llmsc-cli-{}-{}",
+        std::process::id(),
+        args.join("_")
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("llmsc.toml"), format!("{VM_TOML}{sandboxes}")).unwrap();
+    let out = llmsc().current_dir(&dir).args(args).assert();
+    let _ = std::fs::remove_dir_all(&dir);
+    out
+}
+
+#[test]
+fn display_shows_xpra_recipe() {
+    let toml = "[[sandbox]]\nname = \"web-agent-01\"\nimage = \"images:alpine/3.21\"\ndisplay = \"xpra\"\n";
+    in_project(toml, &["display", "web-agent-01"])
+        .success()
+        .stdout(contains("display: xpra"))
+        .stdout(contains("xpra attach tcp://127.0.0.1:14500"));
+}
+
+#[test]
+fn display_none_when_unset() {
+    let toml = "[[sandbox]]\nname = \"plain\"\nimage = \"images:alpine/3.21\"\n";
+    in_project(toml, &["display", "plain"])
+        .success()
+        .stdout(contains("display: none"));
+}
