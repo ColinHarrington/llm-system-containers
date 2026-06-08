@@ -80,7 +80,13 @@ core logic is unit-testable with fakes.
 - **Status:** service catalog + placement model done; deployers exist for **LiteLLM, Phoenix,
   Grafana, SeaweedFS, mitmproxy, Zeek** (shared `ServiceContainer` helper); `services list|status|enable|
   disable|up`, `keys ls|sync|set-provider`, and live container status read-back all implemented.
-  Remaining: the live virtual-key + traced-call integration test (the MVP done-when).
+  The done-when path is now wired end-to-end: LiteLLM emits Phoenix traces (the `arize_phoenix`
+  callback + a hermetic `mock` model are in the generated config); virtual keys are
+  rotation-ready (`sk-llmsc-<sandbox>-<agent>-<random>`, minted + persisted 0600);
+  `llmsc agent env` injects the proxy URL + key per-user; and `services up` auto-wires traces. The
+  live integration test is built as `scripts/m5_litellm_phoenix.py` (see
+  [services/m5-done-when-testplan.md](services/m5-done-when-testplan.md)). Remaining: run it green
+  on a live VM (mock path) to mark the MVP done-when met, and promote it into CI.
 
 ### M6 — File transfer + shared storage  🚧 PARTIAL
 - **Deliverables:** `llmsc cp` (Incus file API; host↔L2, L2↔L2); SeaweedFS service + mount.
