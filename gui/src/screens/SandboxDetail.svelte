@@ -11,8 +11,10 @@
     egressPolicy, setEgressPolicy, egressAclPreview, applyEgress, egressStatus,
     tetragonPolicies, tetragonPolicyYaml, applyTetragonPolicies, setWorkspaceReadonly,
     enforcementOverview, enforceAll, agentPause, agentResume, agentStop, mountShared,
+    sandboxDisplay, setSandboxDisplay, sandboxDisplayPlan,
   } from "../lib/core";
   import type {
+    DisplayMethod, DisplayStep,
     EgressPolicy, EgressPosture, EgressStatus, Guardrails, InstanceConfig, NetworkAclInfo,
     RingStatus, SnapshotInfo, TetragonPolicy, TopoAgent, TopoSandbox,
   } from "../lib/types";
@@ -200,6 +202,35 @@
   }
   const ringPill = (s: RingStatus["state"]) =>
     s === "enforced" ? "ok" : s === "off" ? "" : "warn";
+
+  // --- Remote display (how this sandbox's GUI reaches the host) ---
+  let displayMethod = $state<DisplayMethod>("none");
+  let displaySteps = $state<DisplayStep[]>([]);
+  let displayBusy = $state(false);
+  $effect(() => {
+    ui.dataVersion;
+    const sel = ui.selectedSandbox;
+    displayMethod = "none";
+    displaySteps = [];
+    if (sel) {
+      void sandboxDisplay(sel).then((m) => (displayMethod = m)).catch(() => (displayMethod = "none"));
+      void sandboxDisplayPlan(sel).then((s) => (displaySteps = s)).catch(() => (displaySteps = []));
+    }
+  });
+  async function setDisplay(method: DisplayMethod) {
+    if (!sb || method === displayMethod) return;
+    displayBusy = true;
+    try {
+      await setSandboxDisplay(sb.name, method);
+      displayMethod = method;
+      displaySteps = await sandboxDisplayPlan(sb.name).catch(() => []);
+      showToast(method === "none" ? "Remote display disabled" : `Display set to ${method}`, "ok");
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally {
+      displayBusy = false;
+    }
+  }
 
   // --- Network egress (per-container enforcement ring) ---
   let egress = $state<EgressPolicy | null>(null);
@@ -573,6 +604,31 @@
     {/if}
 
     {#if detailTab === "enforcement"}
+    <!-- Remote display (how this sandbox's GUI reaches the host) -->
+    <div class="card mb16">
+      <div class="card-head"><h3>Remote display</h3>
+        <span class="sub">view GUI apps on the host · <span class="mono">llmsc display</span></span>
+      </div>
+      <div class="pad">
+        <p class="hint mb12">Surface this sandbox's GUI apps as <strong>native host windows</strong>. <strong>xpra</strong> — seamless, persistent + isolated; <strong>x11</strong> — <span class="mono">ssh -X</span>, renders on the host X server (macOS needs XQuartz). See the spike for trade-offs.</p>
+        <div class="sub2">Method</div>
+        <div class="flex gap6 mb12">
+          {#each (["none", "xpra", "x11"] as DisplayMethod[]) as m}
+            <button class="btn sm" class:primary={displayMethod === m} disabled={displayBusy} onclick={() => setDisplay(m)}>{m}</button>
+          {/each}
+        </div>
+        {#if displaySteps.length > 0}
+          <div class="sub2">View on the host</div>
+          {#each displaySteps as step, i}
+            <div class="muted xsmall mt8">{i + 1}. {step.note}</div>
+            <div class="code-chip mono small"><span style="flex:1">{step.cmd}</span><Copy value={step.cmd} label="command" /></div>
+          {/each}
+        {:else}
+          <p class="muted small">No remote display — pick <span class="mono">xpra</span> or <span class="mono">x11</span> above.</p>
+        {/if}
+      </div>
+    </div>
+
     <!-- Network egress (per-container enforcement ring) -->
     <div class="card">
       <div class="card-head"><h3>Network egress</h3>

@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly, enforceAll, agentPause } = vi.hoisted(() => ({
+const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly, enforceAll, agentPause, setSandboxDisplay } = vi.hoisted(() => ({
   removeAgent: vi.fn(async () => {}),
   instanceRemoveProfile: vi.fn(async () => {}),
   setAgentGuardrails: vi.fn(async () => {}),
@@ -14,6 +14,7 @@ const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy,
     { ring: "Egress (L3/L4)", state: "enforced", detail: "allowlist · bound" },
   ]),
   agentPause: vi.fn(async () => {}),
+  setSandboxDisplay: vi.fn(async () => {}),
 }));
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
@@ -37,6 +38,11 @@ vi.mock("../lib/core", () => ({
   snapshotRestore: vi.fn(async () => {}),
   snapshotDelete: vi.fn(async () => {}),
   setAgentGuardrails,
+  sandboxDisplay: vi.fn(async () => "none"),
+  setSandboxDisplay,
+  sandboxDisplayPlan: vi.fn(async () => [
+    { note: "attach — native windows on the host", cmd: "xpra attach tcp://127.0.0.1:14500 --dpi=160" },
+  ]),
   egressPolicy: vi.fn(async () => ({ posture: "allowlist", allow: ["llm"], domains: [] })),
   setEgressPolicy,
   applyEgress,
@@ -141,6 +147,19 @@ describe("SandboxDetail", () => {
     // Apply (enforce) → applyEgress.
     await fireEvent.click(screen.getByRole("button", { name: /Apply \(enforce\)/ }));
     expect(applyEgress).toHaveBeenCalledWith("web-agent-01");
+  });
+
+  it("sets the remote display method and shows the recipe", async () => {
+    setSandboxDisplay.mockClear();
+    ui.selectedSandbox = "web-agent-01";
+    render(SandboxDetail);
+    await tab("Enforcement");
+    await screen.findByText("Remote display");
+    // The compiled recipe (from sandboxDisplayPlan) is shown.
+    expect(await screen.findByText("xpra attach tcp://127.0.0.1:14500 --dpi=160")).toBeInTheDocument();
+    // Picking a method persists it via setSandboxDisplay.
+    await fireEvent.click(screen.getByRole("button", { name: "xpra" }));
+    expect(setSandboxDisplay).toHaveBeenCalledWith("web-agent-01", "xpra");
   });
 
   it("adds an L7 domain to the egress policy", async () => {
