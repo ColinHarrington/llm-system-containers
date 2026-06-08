@@ -957,32 +957,61 @@ impl IncusClient for FakeIncus {
     }
 }
 
-/// Real client: drives `incus` inside the VM via `limactl shell`.
+/// How the client reaches `incus`: inside the Lima VM (the `vm` target) or directly on the host
+/// (the `local` target — host metal with its own Incus). See `planning/principles.md` §6.
+enum Transport {
+    /// `limactl shell <vm> sudo incus …`
+    Vm(String),
+    /// `incus …` directly on the host.
+    Local,
+}
+
+/// Real client: drives `incus` either inside the VM via `limactl shell` (`vm` target) or directly
+/// on the host (`local` target).
 pub struct CliIncus<'a, R: CommandRunner> {
-    vm: String,
+    transport: Transport,
     runner: &'a R,
 }
 
 impl<'a, R: CommandRunner> CliIncus<'a, R> {
+    /// Client for the `vm` target — runs `incus` inside the named Lima VM.
     pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
         Self {
-            vm: vm.into(),
+            transport: Transport::Vm(vm.into()),
             runner,
         }
     }
 
-    /// Run `incus <args>` inside the VM, captured.
-    fn incus_run(&self, args: &[&str]) -> Result<RunOutput> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run("limactl", &full)
+    /// Client for the `local` target — runs `incus` directly on the host (no VM).
+    pub fn local(runner: &'a R) -> Self {
+        Self {
+            transport: Transport::Local,
+            runner,
+        }
     }
 
-    /// Run `incus <args>` inside the VM with streamed output (for slow ops like image pulls).
+    /// Build the (program, args) for an `incus` invocation under the active transport.
+    fn argv<'b>(&'b self, args: &[&'b str]) -> (&'static str, Vec<&'b str>) {
+        match &self.transport {
+            Transport::Vm(vm) => {
+                let mut full = vec!["shell", vm.as_str(), "sudo", "incus"];
+                full.extend_from_slice(args);
+                ("limactl", full)
+            }
+            Transport::Local => ("incus", args.to_vec()),
+        }
+    }
+
+    /// Run `incus <args>`, captured.
+    fn incus_run(&self, args: &[&str]) -> Result<RunOutput> {
+        let (prog, full) = self.argv(args);
+        self.runner.run(prog, &full)
+    }
+
+    /// Run `incus <args>` with streamed output (for slow ops like image pulls).
     fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run_streamed("limactl", &full)
+        let (prog, full) = self.argv(args);
+        self.runner.run_streamed(prog, &full)
     }
 
     /// Real topology: every sandbox (services excluded) with its status, image, nesting flag,
@@ -1501,6 +1530,44 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     }
 
     /// Bind an egress ACL to a sandbox's nic with a default-drop egress posture, idempotently.
+    /// Enable Incus NIC anti-spoof filtering (`security.mac_filtering` / `ipv4_filtering` /
+    /// `ipv6_filtering`) on a sandbox's nic — stops the container spoofing MAC/IP on the bridge.
+    /// Same override-or-set dance as [`Self::bind_egress_acl`] (the nic is usually profile-provided).
+    pub fn set_nic_filtering(&self, sandbox: &str, nic: &str, enabled: bool) -> Result<()> {
+        let v = if enabled { "true" } else { "false" };
+        const KEYS: [&str; 3] = [
+            "security.mac_filtering",
+            "security.ipv4_filtering",
+            "security.ipv6_filtering",
+        ];
+        let pairs: Vec<String> = KEYS.iter().map(|k| format!("{k}={v}")).collect();
+        let mut args = vec!["config", "device", "override", sandbox, nic];
+        args.extend(pairs.iter().map(String::as_str));
+        let o = self.incus_run(&args)?;
+        if o.ok() {
+            return Ok(());
+        }
+        let exists = format!("{} {}", o.stderr, o.stdout)
+            .to_lowercase()
+            .contains("already exists");
+        if !exists {
+            return Err(Error::Incus(format!(
+                "nic filtering on {nic}: {}",
+                o.stderr.trim()
+            )));
+        }
+        for k in KEYS {
+            let s = self.incus_run(&["config", "device", "set", sandbox, nic, k, v])?;
+            if !s.ok() {
+                return Err(Error::Incus(format!(
+                    "nic filtering set {k}: {}",
+                    s.stderr.trim()
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// The nic is usually inherited from a profile, so we `config device override` it (copies the
     /// inherited device instance-local with our keys); if it is already instance-local, `override`
     /// reports it exists and we fall back to `config device set` for each key.
@@ -1684,6 +1751,11 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         let name = &sandbox_cfg.name;
         let ctx = self.enforce_ctx(name);
         let nic = self.nic_device_name(name);
+        // Anti-spoof NIC filtering (opt-in) — applied for any posture when enabled.
+        if sandbox_cfg.net_filtering {
+            reporter.step(&format!("Applying NIC anti-spoof filtering on {nic}"));
+            self.set_nic_filtering(name, &nic, true)?;
+        }
         let Some(desired) = crate::enforce::egress_acl(sandbox_cfg, &ctx) else {
             let acl_name = crate::enforce::egress_acl_name(name);
             reporter.step(&format!("Egress open — unbinding {acl_name} from {nic}"));
@@ -1943,6 +2015,30 @@ impl<R: CommandRunner> IncusClient for CliIncus<'_, R> {
     }
 }
 
+impl<'a, R: CommandRunner> CliIncus<'a, R> {
+    /// Push a file into a container: `incus file push <local> <name>/<path>`. `container_path` is
+    /// absolute (leading `/`). For the `vm` target, `local` is resolved where Incus runs (inside
+    /// the VM — so it must be under a VM-mounted dir); for `local` it's a plain host path.
+    pub fn push_file(&self, local: &str, name: &str, container_path: &str) -> Result<()> {
+        let target = format!("{name}{container_path}");
+        let o = self.incus_run(&["file", "push", local, &target])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("file push: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+
+    /// Pull a file out of a container: `incus file pull <name>/<path> <local>`.
+    pub fn pull_file(&self, name: &str, container_path: &str, local: &str) -> Result<()> {
+        let src = format!("{name}{container_path}");
+        let o = self.incus_run(&["file", "pull", &src, local])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("file pull: {}", o.stderr.trim())));
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2077,6 +2173,80 @@ mod tests {
         let c = CliIncus::new("llmsc", &r);
         let s = sb("web"); // display defaults to None
         assert_eq!(c.reconcile_display(&s, &SilentReporter).unwrap(), 0);
+    }
+
+    #[test]
+    fn vm_transport_wraps_with_limactl() {
+        // The vm target runs `limactl shell <vm> sudo incus …`.
+        let r = FakeRunner::new(|cmd, args| {
+            if cmd == "limactl" && args.first() == Some(&"shell") {
+                out(0, "")
+            } else {
+                out(1, "wrong transport")
+            }
+        });
+        assert!(CliIncus::new("llmsc", &r).delete("web").is_ok());
+    }
+
+    #[test]
+    fn local_transport_runs_incus_directly() {
+        // The local target runs `incus …` directly on the host (no limactl/VM).
+        let r = FakeRunner::new(|cmd, _| {
+            if cmd == "incus" {
+                out(0, "")
+            } else {
+                out(1, "wrong transport")
+            }
+        });
+        assert!(CliIncus::local(&r).delete("web").is_ok());
+    }
+
+    #[test]
+    fn nic_filtering_sets_security_keys() {
+        // Enabling sets the three security.*_filtering keys to true on the nic.
+        let r = FakeRunner::new(|cmd, args| {
+            if cmd == "limactl"
+                && args.contains(&"override")
+                && args.contains(&"security.mac_filtering=true")
+                && args.contains(&"security.ipv4_filtering=true")
+                && args.contains(&"security.ipv6_filtering=true")
+            {
+                out(0, "")
+            } else {
+                out(1, "")
+            }
+        });
+        assert!(CliIncus::new("vm", &r)
+            .set_nic_filtering("web", "eth0", true)
+            .is_ok());
+    }
+
+    #[test]
+    fn push_pull_file_build_incus_file_args() {
+        // push: `incus file push <local> <name>/<path>`
+        let r = FakeRunner::new(|cmd, args| {
+            if cmd == "incus" && args[..3] == ["file", "push", "/host/f"] && args[3] == "web/work/f"
+            {
+                out(0, "")
+            } else {
+                out(1, "")
+            }
+        });
+        assert!(CliIncus::local(&r)
+            .push_file("/host/f", "web", "/work/f")
+            .is_ok());
+
+        // pull: `incus file pull <name>/<path> <local>`
+        let r = FakeRunner::new(|cmd, args| {
+            if cmd == "incus" && args[..2] == ["file", "pull"] && args[2] == "web/work/f" {
+                out(0, "")
+            } else {
+                out(1, "")
+            }
+        });
+        assert!(CliIncus::local(&r)
+            .pull_file("web", "/work/f", "/host/f")
+            .is_ok());
     }
 
     #[test]

@@ -275,6 +275,8 @@ fn sandbox_launch(app: AppHandle, spec: NewSandboxSpec) -> Result<(), String> {
         egress: Some(llmsc_core::config::EgressPolicy::default_managed()),
         // Remote display is opt-in (set later via the Display section / `set_sandbox_display`).
         display: DisplayMethod::None,
+        // NIC anti-spoof filtering is opt-in (off by default).
+        net_filtering: false,
     };
 
     incus

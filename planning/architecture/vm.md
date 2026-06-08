@@ -8,6 +8,22 @@ to host this project's Incus-based system containers and services.
 > Terminology: **Host** = your actual computer (macOS/Linux) where `llmsc`/`llmsctl` are
 > installed. The **VM** is L1, created *on* the host. See [../naming.md](../naming.md).
 
+## Deployment target (`vm` / `local` / `remote`)
+
+Where Incus runs is the **deployment target** — a logical concept (an Incus remote), not "the
+metal" (see [../principles.md](../principles.md) §6). It's `config.mode` (`DeploymentMode`):
+
+| target | what | status |
+|---|---|---|
+| `vm` (default) | Incus inside the Lima VM; the macOS path and the portable default | wired |
+| `local` | Incus directly on the host (Linux metal) — no VM, lowest overhead, GPU-capable | wired (`llmsc`) |
+| `remote` | Incus on a remote endpoint | reserved |
+
+The runtime client (`CliIncus`) is **transport-aware**: `vm` runs `limactl shell <vm> sudo incus
+…`; `local` runs `incus …` directly. The L1 VM described below applies only to the `vm` target;
+in `local` mode there is no VM (the user runs their own Incus), so the VM-lifecycle verbs
+(`llmsctl up`/`down`/`status`) are `vm`-only. macOS is always `vm` (no native Linux Incus).
+
 ## Responsibilities
 
 - Run a native VM matching the **host architecture** (no cross-arch emulation in the common

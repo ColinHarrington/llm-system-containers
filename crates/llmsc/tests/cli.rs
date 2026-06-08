@@ -18,14 +18,22 @@ fn help_lists_subcommands() {
 }
 
 #[test]
-fn cp_is_stub() {
-    // launch/ls/rm now do real I/O (Incus in the VM); cp is still a stub, so it's the
-    // deterministic command to smoke-test here.
+fn cp_rejects_two_host_paths() {
+    // Both args are host paths → error before any Incus I/O (deterministic, no VM needed).
     llmsc()
         .args(["cp", "a", "b"])
         .assert()
-        .success()
-        .stdout(contains("not yet implemented"));
+        .failure()
+        .stderr(contains("container ref"));
+}
+
+#[test]
+fn cp_rejects_container_to_container() {
+    llmsc()
+        .args(["cp", "web:/a", "other:/b"])
+        .assert()
+        .failure()
+        .stderr(contains("not supported yet"));
 }
 
 #[test]
@@ -81,10 +89,11 @@ fn launch_help_lists_display_flag() {
 
 #[test]
 fn rejects_unsupported_deployment_target() {
-    // `mode` is a top-level key, so it must precede the [vm] table.
+    // `local` is now wired (runs incus directly); `remote` is still reserved. `mode` is a
+    // top-level key, so it must precede the [vm] table.
     let toml =
-        "mode = \"local\"\n[vm]\nname = \"llmsc\"\ncpus = 4\nmemory_gib = 8\ndisk_gib = 100\n";
-    let dir = std::env::temp_dir().join(format!("llmsc-cli-{}-modelocal", std::process::id()));
+        "mode = \"remote\"\n[vm]\nname = \"llmsc\"\ncpus = 4\nmemory_gib = 8\ndisk_gib = 100\n";
+    let dir = std::env::temp_dir().join(format!("llmsc-cli-{}-moderemote", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("llmsc.toml"), toml).unwrap();
     let out = llmsc().current_dir(&dir).args(["ls"]).assert();

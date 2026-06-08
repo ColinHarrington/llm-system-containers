@@ -106,6 +106,11 @@ virt only applies to the rare VM-in-sandbox case.
   analogue) running Incus. VM backend is a **pluggable driver abstraction**
   (docker-machine-style); MVP uses **Lima** on both platforms (Linux: QEMU+KVM; macOS: Apple
   Virtualization/QEMU). Future: Parallels, libvirt, Proxmox.
+- **Deployment target** (`config.mode`, `DeploymentMode`): *where Incus runs* — the
+  "target" (modeled as an Incus remote, not "the metal"; see `planning/principles.md` §6).
+  `vm` (default — Incus in the Lima VM; the macOS path) and `local` (Incus directly on the host;
+  Linux metal, no VM) are wired; `remote` is reserved. `CliIncus` is transport-aware
+  accordingly. The CLIs/GUI resolve the target from the **loaded** config (not `Config::default`).
 - **L2 — System containers / LLMSC** (`planning/architecture/system-containers.md`):
   **unprivileged** Incus/LXC system containers (never privileged) with a **two-user model**
   (one Linux user per agent + one human operator login). The workspace units, run as
