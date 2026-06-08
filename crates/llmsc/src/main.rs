@@ -44,8 +44,18 @@ enum Command {
     },
     /// List sandboxes.
     Ls,
+    /// Show a sandbox's configured intent (target, image, display, egress, users).
+    Info { name: String },
     /// Open a shell as `user@sandbox`.
     Shell { target: String },
+    /// Run a command in a sandbox: `llmsc exec [user@]sandbox -- <cmd>`.
+    Exec {
+        /// `user@sandbox` (runs via that user) or `sandbox` (runs as root).
+        target: String,
+        /// The command to run (everything after `--`).
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        cmd: Vec<String>,
+    },
     /// Copy a file host↔container. One side is a container ref `name:/abs/path`, the other a
     /// host path, e.g. `llmsc cp ./f web:/work/f` or `llmsc cp web:/work/f ./f`.
     Cp { src: String, dst: String },
@@ -144,9 +154,43 @@ fn run() -> Result<(), String> {
                 }
             }
         }
+        Command::Info { name } => {
+            let sb = cfg
+                .sandbox(&name)
+                .ok_or_else(|| format!("'{name}' is not config-managed"))?;
+            println!("sandbox: {}", sb.name);
+            println!("  image:         {}", sb.image);
+            println!("  target:        {}", cfg.mode.id());
+            println!("  display:       {}", sb.display.id());
+            println!("  nesting (L3):  {}", sb.nesting);
+            println!("  net-filtering: {}", sb.net_filtering);
+            println!(
+                "  egress:        {}",
+                sb.egress
+                    .as_ref()
+                    .map(|e| e.posture.id())
+                    .unwrap_or("unmanaged")
+            );
+            if !sb.users.is_empty() {
+                let users: Vec<&str> = sb.users.iter().map(|u| u.name.as_str()).collect();
+                println!("  users:         {}", users.join(", "));
+            }
+        }
         Command::Rm { name } => {
             incus.delete(&name).map_err(|e| e.to_string())?;
             println!("sandbox '{name}' removed");
+        }
+        Command::Exec { target, cmd } => {
+            if cmd.is_empty() {
+                return Err("no command given (usage: llmsc exec [user@]sandbox -- <cmd>)".into());
+            }
+            let (user, name) = match target.split_once('@') {
+                Some((u, n)) => (Some(u), n),
+                None => (None, target.as_str()),
+            };
+            let argv: Vec<&str> = cmd.iter().map(String::as_str).collect();
+            let code = incus.exec(name, user, &argv).map_err(|e| e.to_string())?;
+            std::process::exit(code);
         }
         Command::Shell { target } => {
             let (user, sandbox) = target

@@ -2016,6 +2016,18 @@ impl<R: CommandRunner> IncusClient for CliIncus<'_, R> {
 }
 
 impl<'a, R: CommandRunner> CliIncus<'a, R> {
+    /// Run a command in a container (streamed). `user`, if given, runs it via that user's login
+    /// shell (`su - <user> -c "<cmd>"`); otherwise it runs as the container default (root).
+    pub fn exec(&self, name: &str, user: Option<&str>, cmd: &[&str]) -> Result<i32> {
+        let joined = user.map(|_| cmd.join(" "));
+        let mut args = vec!["exec", name, "--"];
+        match (user, &joined) {
+            (Some(u), Some(j)) => args.extend_from_slice(&["su", "-", u, "-c", j]),
+            _ => args.extend_from_slice(cmd),
+        }
+        self.incus_streamed(&args)
+    }
+
     /// Push a file into a container: `incus file push <local> <name>/<path>`. `container_path` is
     /// absolute (leading `/`). For the `vm` target, `local` is resolved where Incus runs (inside
     /// the VM — so it must be under a VM-mounted dir); for `local` it's a plain host path.
@@ -2219,6 +2231,42 @@ mod tests {
         assert!(CliIncus::new("vm", &r)
             .set_nic_filtering("web", "eth0", true)
             .is_ok());
+    }
+
+    #[test]
+    fn exec_builds_args_with_and_without_user() {
+        // no user → `incus exec <name> -- <cmd...>`
+        let r = FakeRunner::new(|cmd, args| {
+            if cmd == "incus" && args[..3] == ["exec", "web", "--"] && args[3] == "ls" {
+                out(0, "")
+            } else {
+                out(1, "")
+            }
+        });
+        assert_eq!(
+            CliIncus::local(&r)
+                .exec("web", None, &["ls", "-la"])
+                .unwrap(),
+            0
+        );
+        // with user → `… -- su - <user> -c "<cmd>"`
+        let r = FakeRunner::new(|cmd, args| {
+            if cmd == "incus"
+                && args.contains(&"su")
+                && args.contains(&"agent")
+                && args.contains(&"ls -la")
+            {
+                out(0, "")
+            } else {
+                out(1, "")
+            }
+        });
+        assert_eq!(
+            CliIncus::local(&r)
+                .exec("web", Some("agent"), &["ls", "-la"])
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
