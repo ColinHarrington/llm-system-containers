@@ -1530,6 +1530,44 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
     }
 
     /// Bind an egress ACL to a sandbox's nic with a default-drop egress posture, idempotently.
+    /// Enable Incus NIC anti-spoof filtering (`security.mac_filtering` / `ipv4_filtering` /
+    /// `ipv6_filtering`) on a sandbox's nic — stops the container spoofing MAC/IP on the bridge.
+    /// Same override-or-set dance as [`Self::bind_egress_acl`] (the nic is usually profile-provided).
+    pub fn set_nic_filtering(&self, sandbox: &str, nic: &str, enabled: bool) -> Result<()> {
+        let v = if enabled { "true" } else { "false" };
+        const KEYS: [&str; 3] = [
+            "security.mac_filtering",
+            "security.ipv4_filtering",
+            "security.ipv6_filtering",
+        ];
+        let pairs: Vec<String> = KEYS.iter().map(|k| format!("{k}={v}")).collect();
+        let mut args = vec!["config", "device", "override", sandbox, nic];
+        args.extend(pairs.iter().map(String::as_str));
+        let o = self.incus_run(&args)?;
+        if o.ok() {
+            return Ok(());
+        }
+        let exists = format!("{} {}", o.stderr, o.stdout)
+            .to_lowercase()
+            .contains("already exists");
+        if !exists {
+            return Err(Error::Incus(format!(
+                "nic filtering on {nic}: {}",
+                o.stderr.trim()
+            )));
+        }
+        for k in KEYS {
+            let s = self.incus_run(&["config", "device", "set", sandbox, nic, k, v])?;
+            if !s.ok() {
+                return Err(Error::Incus(format!(
+                    "nic filtering set {k}: {}",
+                    s.stderr.trim()
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// The nic is usually inherited from a profile, so we `config device override` it (copies the
     /// inherited device instance-local with our keys); if it is already instance-local, `override`
     /// reports it exists and we fall back to `config device set` for each key.
@@ -1713,6 +1751,11 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
         let name = &sandbox_cfg.name;
         let ctx = self.enforce_ctx(name);
         let nic = self.nic_device_name(name);
+        // Anti-spoof NIC filtering (opt-in) — applied for any posture when enabled.
+        if sandbox_cfg.net_filtering {
+            reporter.step(&format!("Applying NIC anti-spoof filtering on {nic}"));
+            self.set_nic_filtering(name, &nic, true)?;
+        }
         let Some(desired) = crate::enforce::egress_acl(sandbox_cfg, &ctx) else {
             let acl_name = crate::enforce::egress_acl_name(name);
             reporter.step(&format!("Egress open — unbinding {acl_name} from {nic}"));
@@ -2156,6 +2199,26 @@ mod tests {
             }
         });
         assert!(CliIncus::local(&r).delete("web").is_ok());
+    }
+
+    #[test]
+    fn nic_filtering_sets_security_keys() {
+        // Enabling sets the three security.*_filtering keys to true on the nic.
+        let r = FakeRunner::new(|cmd, args| {
+            if cmd == "limactl"
+                && args.contains(&"override")
+                && args.contains(&"security.mac_filtering=true")
+                && args.contains(&"security.ipv4_filtering=true")
+                && args.contains(&"security.ipv6_filtering=true")
+            {
+                out(0, "")
+            } else {
+                out(1, "")
+            }
+        });
+        assert!(CliIncus::new("vm", &r)
+            .set_nic_filtering("web", "eth0", true)
+            .is_ok());
     }
 
     #[test]
