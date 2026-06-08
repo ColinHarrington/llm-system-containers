@@ -3,7 +3,7 @@
 //! launch/ls/rm/cp drive Incus via `llmsc-core` (the `vm` or `local` deployment target).
 
 use clap::{Parser, Subcommand};
-use llmsc_core::config::{Config, DeploymentMode, DisplayMethod, Sandbox};
+use llmsc_core::config::{effective_config_path, Config, DeploymentMode, DisplayMethod, Sandbox};
 use llmsc_core::display::{display_plan, DisplayCtx};
 use llmsc_core::incus::{CliIncus, IncusClient};
 use llmsc_core::process::SystemRunner;
@@ -78,6 +78,14 @@ enum Command {
         /// Apply the display transport (add/remove the xpra Incus proxy device).
         #[arg(long)]
         apply: bool,
+    },
+    /// Toggle a sandbox's security hardening (persisted to the effective config).
+    Harden {
+        /// Sandbox name.
+        name: String,
+        /// NIC anti-spoof filtering: `on` | `off`.
+        #[arg(long)]
+        nic_filtering: Option<String>,
     },
     /// Control an agent: pause / resume / stop / steer (target is `agent@sandbox`).
     Agent {
@@ -284,6 +292,26 @@ fn run() -> Result<(), String> {
                     }
                 }
             }
+        }
+        Command::Harden {
+            name,
+            nic_filtering,
+        } => {
+            let on = match nic_filtering.as_deref() {
+                Some("on") => true,
+                Some("off") => false,
+                Some(other) => {
+                    return Err(format!("--nic-filtering must be on|off (got '{other}')"))
+                }
+                None => return Err("nothing to harden (use --nic-filtering on|off)".into()),
+            };
+            let mut c = Config::load_effective().map_err(|e| e.to_string())?;
+            if !c.set_sandbox_net_filtering(&name, on) {
+                return Err(format!("'{name}' is not config-managed"));
+            }
+            c.save(&effective_config_path())
+                .map_err(|e| e.to_string())?;
+            println!("{name}: nic-filtering {}", if on { "on" } else { "off" });
         }
         Command::Agent { action } => {
             let split = |t: &str| -> Result<(String, String), String> {

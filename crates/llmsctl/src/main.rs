@@ -285,6 +285,7 @@ fn doctor() -> Result<(), String> {
     } else {
         println!(" — reserved, not wired yet (only 'vm' is supported)");
     }
+    println!("Control surface: Incus API is local-only (not exposed on the network)");
 
     let vm_state = LimaVmDriver::new(cfg.vm.clone(), SystemRunner)
         .status()
@@ -325,13 +326,14 @@ fn doctor() -> Result<(), String> {
     for sb in &cfg.sandboxes {
         let s = llmsc_core::enforce::sandbox_enforcement(sb);
         println!(
-            "  {:<20} egress={} domains={} agents={} ro-fs={} control-plane={}",
+            "  {:<20} egress={} domains={} agents={} ro-fs={} control-plane={} filtering={}",
             sb.name,
             s.egress_posture,
             s.domains,
             s.agents,
             s.read_only_agents,
-            s.control_plane_agents
+            s.control_plane_agents,
+            if sb.net_filtering { "on" } else { "off" }
         );
     }
     println!("\nRemote display:");

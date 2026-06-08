@@ -135,3 +135,35 @@ fn exec_requires_a_command() {
         .failure()
         .stderr(contains("no command given"));
 }
+
+#[test]
+fn harden_persists_nic_filtering() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static N: AtomicU32 = AtomicU32::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "llmsc-harden-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let toml = format!("{VM_TOML}[[sandbox]]\nname = \"web\"\nimage = \"images:alpine/3.21\"\n");
+    std::fs::write(dir.join("llmsc.toml"), toml).unwrap();
+    llmsc()
+        .current_dir(&dir)
+        .args(["harden", "web", "--nic-filtering", "on"])
+        .assert()
+        .success();
+    let written = std::fs::read_to_string(dir.join("llmsc.toml")).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(written.contains("net_filtering = true"), "{written}");
+}
+
+#[test]
+fn harden_requires_a_flag() {
+    in_project(
+        "[[sandbox]]\nname = \"web\"\nimage = \"images:alpine/3.21\"\n",
+        &["harden", "web"],
+    )
+    .failure()
+    .stderr(contains("nothing to harden"));
+}
