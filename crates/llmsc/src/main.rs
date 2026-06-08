@@ -4,7 +4,7 @@
 //! are still stubs.
 
 use clap::{Parser, Subcommand};
-use llmsc_core::config::{Config, DisplayMethod, Sandbox};
+use llmsc_core::config::{Config, DeploymentMode, DisplayMethod, Sandbox};
 use llmsc_core::display::{display_plan, DisplayCtx};
 use llmsc_core::incus::{CliIncus, IncusClient};
 use llmsc_core::process::SystemRunner;
@@ -102,10 +102,16 @@ fn run() -> Result<(), String> {
     // target from the effective config (honors a configured VM name; errors on local/remote).
     let command = Cli::parse().command;
     let cfg = Config::load_effective().map_err(|e| e.to_string())?;
-    let incus = CliIncus::new(
-        cfg.vm_target().map_err(|e| e.to_string())?.to_string(),
-        &runner,
-    );
+    // Build the Incus client for the configured deployment target.
+    let incus = match cfg.mode {
+        DeploymentMode::Vm => CliIncus::new(cfg.vm.name.clone(), &runner),
+        DeploymentMode::Local => CliIncus::local(&runner),
+        DeploymentMode::Remote => {
+            return Err(
+                "deployment target 'remote' is not supported yet (use 'vm' or 'local')".into(),
+            )
+        }
+    };
 
     match command {
         Command::Launch {
