@@ -29,7 +29,7 @@ struct HostResourcesDto {
 /// Live host/VM resource usage for the Dashboard meters (CPU in cores; memory & disk in bytes).
 #[tauri::command]
 fn host_resources() -> Result<HostResourcesDto, String> {
-    let r = LimaVmDriver::new(Config::default().vm, SystemRunner)
+    let r = LimaVmDriver::new(effective().vm, SystemRunner)
         .resources()
         .map_err(|e| e.to_string())?;
     Ok(HostResourcesDto {
@@ -66,12 +66,17 @@ impl Reporter for EventReporter {
     }
 }
 
+/// The effective on-disk config (the configured deployment target), or defaults if unreadable.
+fn effective() -> Config {
+    Config::load_effective().unwrap_or_default()
+}
+
 fn vm_name() -> String {
-    Config::default().vm.name
+    effective().vm.name
 }
 
 fn vm_driver() -> LimaVmDriver<SystemRunner> {
-    LimaVmDriver::new(Config::default().vm, SystemRunner)
+    LimaVmDriver::new(effective().vm, SystemRunner)
 }
 
 fn status_str(s: VmStatus) -> String {
@@ -95,7 +100,7 @@ fn vm_status() -> Result<String, String> {
 #[tauri::command]
 fn vm_up(app: AppHandle) -> Result<(), String> {
     let reporter = EventReporter { app };
-    let cfg = Config::default();
+    let cfg = effective();
     let name = cfg.vm.name.clone();
     LimaVmDriver::new(cfg.vm, SystemRunner)
         .up(&reporter)
