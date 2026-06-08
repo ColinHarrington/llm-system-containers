@@ -171,6 +171,7 @@ mod tests {
             sandboxes: names.iter().map(|n| sandbox(n)).collect(),
             services: vec![],
             incus_profiles: vec![],
+            ..Default::default()
         }
     }
 
