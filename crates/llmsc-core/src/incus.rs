@@ -957,32 +957,61 @@ impl IncusClient for FakeIncus {
     }
 }
 
-/// Real client: drives `incus` inside the VM via `limactl shell`.
+/// How the client reaches `incus`: inside the Lima VM (the `vm` target) or directly on the host
+/// (the `local` target — host metal with its own Incus). See `planning/principles.md` §6.
+enum Transport {
+    /// `limactl shell <vm> sudo incus …`
+    Vm(String),
+    /// `incus …` directly on the host.
+    Local,
+}
+
+/// Real client: drives `incus` either inside the VM via `limactl shell` (`vm` target) or directly
+/// on the host (`local` target).
 pub struct CliIncus<'a, R: CommandRunner> {
-    vm: String,
+    transport: Transport,
     runner: &'a R,
 }
 
 impl<'a, R: CommandRunner> CliIncus<'a, R> {
+    /// Client for the `vm` target — runs `incus` inside the named Lima VM.
     pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
         Self {
-            vm: vm.into(),
+            transport: Transport::Vm(vm.into()),
             runner,
         }
     }
 
-    /// Run `incus <args>` inside the VM, captured.
-    fn incus_run(&self, args: &[&str]) -> Result<RunOutput> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run("limactl", &full)
+    /// Client for the `local` target — runs `incus` directly on the host (no VM).
+    pub fn local(runner: &'a R) -> Self {
+        Self {
+            transport: Transport::Local,
+            runner,
+        }
     }
 
-    /// Run `incus <args>` inside the VM with streamed output (for slow ops like image pulls).
+    /// Build the (program, args) for an `incus` invocation under the active transport.
+    fn argv<'b>(&'b self, args: &[&'b str]) -> (&'static str, Vec<&'b str>) {
+        match &self.transport {
+            Transport::Vm(vm) => {
+                let mut full = vec!["shell", vm.as_str(), "sudo", "incus"];
+                full.extend_from_slice(args);
+                ("limactl", full)
+            }
+            Transport::Local => ("incus", args.to_vec()),
+        }
+    }
+
+    /// Run `incus <args>`, captured.
+    fn incus_run(&self, args: &[&str]) -> Result<RunOutput> {
+        let (prog, full) = self.argv(args);
+        self.runner.run(prog, &full)
+    }
+
+    /// Run `incus <args>` with streamed output (for slow ops like image pulls).
     fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run_streamed("limactl", &full)
+        let (prog, full) = self.argv(args);
+        self.runner.run_streamed(prog, &full)
     }
 
     /// Real topology: every sandbox (services excluded) with its status, image, nesting flag,
@@ -2077,6 +2106,32 @@ mod tests {
         let c = CliIncus::new("llmsc", &r);
         let s = sb("web"); // display defaults to None
         assert_eq!(c.reconcile_display(&s, &SilentReporter).unwrap(), 0);
+    }
+
+    #[test]
+    fn vm_transport_wraps_with_limactl() {
+        // The vm target runs `limactl shell <vm> sudo incus …`.
+        let r = FakeRunner::new(|cmd, args| {
+            if cmd == "limactl" && args.first() == Some(&"shell") {
+                out(0, "")
+            } else {
+                out(1, "wrong transport")
+            }
+        });
+        assert!(CliIncus::new("llmsc", &r).delete("web").is_ok());
+    }
+
+    #[test]
+    fn local_transport_runs_incus_directly() {
+        // The local target runs `incus …` directly on the host (no limactl/VM).
+        let r = FakeRunner::new(|cmd, _| {
+            if cmd == "incus" {
+                out(0, "")
+            } else {
+                out(1, "wrong transport")
+            }
+        });
+        assert!(CliIncus::local(&r).delete("web").is_ok());
     }
 
     #[test]
