@@ -47,10 +47,13 @@ const VM_TOML: &str = "[vm]\nname = \"llmsc\"\ncpus = 4\nmemory_gib = 8\ndisk_gi
 /// Run `llmsc <args>` in a throwaway dir holding `VM_TOML + sandboxes` as `llmsc.toml` (so
 /// `load_effective` picks up the project config), returning the assert handle.
 fn in_project(sandboxes: &str, args: &[&str]) -> assert_cmd::assert::Assert {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static N: AtomicU32 = AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "llmsc-cli-{}-{}",
+        "llmsc-cli-{}-{}-{}",
         std::process::id(),
-        args.join("_")
+        args.join("_"),
+        N.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("llmsc.toml"), format!("{VM_TOML}{sandboxes}")).unwrap();

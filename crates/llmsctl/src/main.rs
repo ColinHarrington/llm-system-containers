@@ -64,6 +64,8 @@ enum Command {
     },
     /// One-shot platform health report: VM, services, config, per-sandbox enforcement.
     Doctor,
+    /// Show the effective config (target + counts) and validate it.
+    Config,
 }
 
 #[derive(Subcommand)]
@@ -246,6 +248,25 @@ fn run() -> Result<(), String> {
         Command::Keys { action } => keys(action)?,
         Command::Tetragon { sandbox, apply } => tetragon(sandbox, apply)?,
         Command::Doctor => doctor()?,
+        Command::Config => {
+            let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+            println!("target:    {} (vm '{}')", cfg.mode.id(), cfg.vm.name);
+            println!(
+                "sandboxes: {}   services: {}",
+                cfg.sandboxes.len(),
+                cfg.services.len()
+            );
+            let issues = cfg.validate();
+            if issues.is_empty() {
+                println!("config valid");
+            } else {
+                eprintln!("config has {} issue(s):", issues.len());
+                for i in &issues {
+                    eprintln!("  - {i}");
+                }
+                return Err("invalid config".to_string());
+            }
+        }
     }
     Ok(())
 }
