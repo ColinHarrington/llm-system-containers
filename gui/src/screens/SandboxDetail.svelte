@@ -11,7 +11,7 @@
     egressPolicy, setEgressPolicy, egressAclPreview, applyEgress, egressStatus,
     tetragonPolicies, tetragonPolicyYaml, applyTetragonPolicies, setWorkspaceReadonly,
     enforcementOverview, enforceAll, agentPause, agentResume, agentStop, mountShared,
-    sandboxDisplay, setSandboxDisplay, sandboxDisplayPlan,
+    sandboxDisplay, setSandboxDisplay, sandboxDisplayPlan, applyDisplay,
   } from "../lib/core";
   import type {
     DisplayMethod, DisplayStep,
@@ -225,6 +225,21 @@
       displayMethod = method;
       displaySteps = await sandboxDisplayPlan(sb.name).catch(() => []);
       showToast(method === "none" ? "Remote display disabled" : `Display set to ${method}`, "ok");
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally {
+      displayBusy = false;
+    }
+  }
+  // Apply the transport: bind/tear down the xpra Incus proxy device.
+  async function applyDisplayTransport() {
+    if (!sb) return;
+    displayBusy = true;
+    showToast(`$ llmsc display ${sb.name} --apply`);
+    try {
+      await applyDisplay(sb.name);
+      showToast("Display transport applied", "ok");
+      bump();
     } catch (e) {
       showToast(String(e), "danger");
     } finally {
@@ -608,6 +623,9 @@
     <div class="card mb16">
       <div class="card-head"><h3>Remote display</h3>
         <span class="sub">view GUI apps on the host · <span class="mono">llmsc display</span></span>
+        <button class="btn sm primary right" disabled={displayBusy || displayMethod === "none"} onclick={applyDisplayTransport}
+          title="Bind/tear down the xpra Incus proxy device for this sandbox">
+          <Icon name="shield" size={13} /><span>{displayBusy ? "Applying…" : "Apply"}</span></button>
       </div>
       <div class="pad">
         <p class="hint mb12">Surface this sandbox's GUI apps as <strong>native host windows</strong>. <strong>xpra</strong> — seamless, persistent + isolated; <strong>x11</strong> — <span class="mono">ssh -X</span>, renders on the host X server (macOS needs XQuartz). See the spike for trade-offs.</p>

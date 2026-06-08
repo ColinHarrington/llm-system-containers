@@ -1,6 +1,37 @@
 # Open Questions & Future Sessions
 
 Loose ends to resolve in dedicated sessions. This is the umbrella project's "parking lot."
+Guiding convictions live in [principles.md](principles.md); items below are the open decisions
+those principles don't yet settle.
+
+## Decision direction (from the Incus-ecosystem evaluation, 2026-06)
+- ⬜ **`host` → `target`/`context` rename (do early).** Model a "host" as an **Incus remote**
+  (`local` metal socket / `vm` the L1 VM / `remote` endpoint), not "the metal it's installed
+  on". Unifies local/nested/remote and keeps multi-host *possible* later. Cheap now, expensive
+  after the model/CLI/GUI ossify. See [principles.md](principles.md) §6.
+- ✅ **Adopt as principles:** cattle-not-pets (images are the durable artifact, no OS-drive
+  backup/restore), respect-the-ecosystem (Incus-native state only), localhost-only API,
+  single-operator-owns-the-VM (no RBAC yet). See [principles.md](principles.md).
+
+## Parked — revisit when X (deliberately *not* MVP)
+- **Storage drivers** (zfs/btrfs/ceph/linstor/truenas), pools, **buckets** — use `dir`; keep the
+  pool name in config so it's swappable. *Revisit when* a real durability/perf need appears
+  (SeaweedFS already covers shared storage). Note: host↔VM file sharing is the VM driver's mount
+  + an Incus `disk` device — **not** a storage-driver concern.
+- **Projects as user-facing isolation** — we already use *one* project for namespacing; per-user
+  /per-tenant projects are multi-tenant scope. *Revisit when* multi-user lands.
+- **OpenFGA / RBAC** — *revisit when* multi-user lands (single operator owns the VM today).
+- **Clustering** — distant; *revisit when* a multi-node "factory" is a real goal.
+- **BPF token delegation** — not on the path (Tetragon runs in the VM, not the L2). *Revisit
+  when* we want eBPF *inside* an unprivileged L2 / nested observability.
+- **VM-in-sandbox** (e.g. macOS VM inside the L1 VM) — true nested-virt, VNC-only, niche; cloud
+  is better. Skip unless a concrete need appears.
+- **Served web UI / PWA (and the daemon it implies)** — *revisit when* remote/multi-host or
+  browser-anywhere access matters; keep the `core.ts` boundary clean until then
+  ([principles.md](principles.md) §4).
+- **Metrics + Events API consumption** — cheap, on-principle (observability); adopt
+  opportunistically rather than building bespoke monitoring ([metrics docs upstream]).
+- **incus agent** — only relevant to VM-type instances; N/A for the LXC system-container path.
 
 ## Naming
 - ✅ **Resolved** — project **llm-system-containers**; unit **LLMSC** (*Little Linux Managed

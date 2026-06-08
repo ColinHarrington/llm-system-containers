@@ -24,6 +24,7 @@ platform). Target platforms: **Linux and macOS**.
 
 ## Index
 
+- [principles.md](principles.md) — Load-bearing design convictions (cattle-not-pets, respect-the-ecosystem, localhost-only, host=target, focus the use cases)
 - [naming.md](naming.md) — Project/unit names, the `llmsc`/`llmsctl` CLI split, and rationale
 - [overview.md](overview.md) — Vision, differentiators, software-factory framing, the Host/L1/L2/L3 nesting model
 - **architecture/** (layers = nesting levels)

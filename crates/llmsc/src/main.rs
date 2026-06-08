@@ -4,7 +4,7 @@
 //! are still stubs.
 
 use clap::{Parser, Subcommand};
-use llmsc_core::config::{Config, Sandbox};
+use llmsc_core::config::{Config, DisplayMethod, Sandbox};
 use llmsc_core::display::{display_plan, DisplayCtx};
 use llmsc_core::incus::{CliIncus, IncusClient};
 use llmsc_core::process::SystemRunner;
@@ -39,6 +39,9 @@ enum Command {
         /// Base image (Incus image ref). Alpine by default — minimal + fast.
         #[arg(long, default_value = "images:alpine/3.21")]
         image: String,
+        /// Remote display method for GUI apps: none (default) | xpra | x11.
+        #[arg(long, default_value = "none")]
+        display: String,
     },
     /// List sandboxes.
     Ls,
@@ -62,6 +65,9 @@ enum Command {
     Display {
         /// Sandbox name.
         name: String,
+        /// Apply the display transport (add/remove the xpra Incus proxy device).
+        #[arg(long)]
+        apply: bool,
     },
     /// Control an agent: pause / resume / stop / steer (target is `agent@sandbox`).
     Agent {
@@ -101,12 +107,19 @@ fn run() -> Result<(), String> {
     let incus = CliIncus::new(vm, &runner);
 
     match Cli::parse().command {
-        Command::Launch { name, image } => {
+        Command::Launch {
+            name,
+            image,
+            display,
+        } => {
+            let method = DisplayMethod::from_id(&display)
+                .ok_or_else(|| format!("unknown display method '{display}' (none|xpra|x11)"))?;
             let spec = Sandbox {
                 name: name.clone(),
                 image,
                 nesting: false,
                 users: Vec::new(),
+                display: method,
                 ..Default::default()
             };
             incus
@@ -181,11 +194,26 @@ fn run() -> Result<(), String> {
                 }
             }
         }
-        Command::Display { name } => {
+        Command::Display { name, apply } => {
             let cfg = Config::load_effective().map_err(|e| e.to_string())?;
             let sb = cfg
                 .sandbox(&name)
                 .ok_or_else(|| format!("'{name}' is not config-managed"))?;
+            if apply {
+                let n = incus
+                    .reconcile_display(sb, &ConsoleReporter)
+                    .map_err(|e| e.to_string())?;
+                println!(
+                    "{}",
+                    match (sb.display.id(), n) {
+                        ("xpra", _) =>
+                            "display transport applied (xpra proxy device bound)".to_string(),
+                        (_, 0) => "no display transport (none/x11 — nothing to bind)".to_string(),
+                        (_, _) => "display transport torn down".to_string(),
+                    }
+                );
+                return Ok(());
+            }
             let ctx = DisplayCtx {
                 vm_ssh: format!("lima-{}", cfg.vm.name),
                 ..Default::default()

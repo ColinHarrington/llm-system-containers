@@ -61,6 +61,25 @@ fn display_shows_xpra_recipe() {
 }
 
 #[test]
+fn launch_rejects_unknown_display_method() {
+    // The --display value is validated before any Incus I/O, so this is deterministic (no VM).
+    llmsc()
+        .args(["launch", "x", "--display", "bogus"])
+        .assert()
+        .failure()
+        .stderr(contains("unknown display method"));
+}
+
+#[test]
+fn launch_help_lists_display_flag() {
+    llmsc()
+        .args(["launch", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--display"));
+}
+
+#[test]
 fn display_none_when_unset() {
     let toml = "[[sandbox]]\nname = \"plain\"\nimage = \"images:alpine/3.21\"\n";
     in_project(toml, &["display", "plain"])

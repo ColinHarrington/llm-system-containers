@@ -1126,6 +1126,21 @@ fn sandbox_display_plan(sandbox: String) -> Result<Vec<DisplayStepDto>, String> 
         .unwrap_or_default())
 }
 
+/// Apply a sandbox's display transport: add the xpra Incus proxy device (xpra) or remove it
+/// (none/x11). Returns the number of device changes.
+#[tauri::command]
+fn apply_display(app: AppHandle, sandbox: String) -> Result<usize, String> {
+    let reporter = EventReporter { app };
+    let incus = CliIncus::new(vm_name(), &SystemRunner);
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let sb = cfg
+        .sandbox(&sandbox)
+        .ok_or_else(|| format!("'{sandbox}' is not config-managed"))?;
+    incus
+        .reconcile_display(sb, &reporter)
+        .map_err(|e| e.to_string())
+}
+
 /// The compiled Incus ACL for a sandbox's egress policy (for display). `None` if open/unmanaged.
 #[tauri::command]
 fn egress_acl_preview(sandbox: String) -> Result<Option<NetworkAclDto>, String> {
@@ -2062,6 +2077,7 @@ pub fn run() {
             sandbox_display,
             set_sandbox_display,
             sandbox_display_plan,
+            apply_display,
             virtual_keys,
             sync_virtual_keys,
             set_provider_key,
