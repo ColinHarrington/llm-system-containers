@@ -80,6 +80,19 @@ fn launch_help_lists_display_flag() {
 }
 
 #[test]
+fn rejects_unsupported_deployment_target() {
+    // `mode` is a top-level key, so it must precede the [vm] table.
+    let toml =
+        "mode = \"local\"\n[vm]\nname = \"llmsc\"\ncpus = 4\nmemory_gib = 8\ndisk_gib = 100\n";
+    let dir = std::env::temp_dir().join(format!("llmsc-cli-{}-modelocal", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("llmsc.toml"), toml).unwrap();
+    let out = llmsc().current_dir(&dir).args(["ls"]).assert();
+    let _ = std::fs::remove_dir_all(&dir);
+    out.failure().stderr(contains("not supported"));
+}
+
+#[test]
 fn display_none_when_unset() {
     let toml = "[[sandbox]]\nname = \"plain\"\nimage = \"images:alpine/3.21\"\n";
     in_project(toml, &["display", "plain"])

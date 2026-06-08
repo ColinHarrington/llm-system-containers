@@ -39,8 +39,12 @@ pub struct Config {
     /// (defaults to the host username), overridable per sandbox. One human per sandbox.
     #[serde(default = "default_operator_username")]
     pub operator: String,
-    /// The L1 VM that hosts everything.
+    /// The L1 VM that hosts everything (used by the `vm` deployment target).
     pub vm: VmConfig,
+    /// Where the Incus control plane runs — the deployment **target**. Defaults to `vm` (Lima);
+    /// `local`/`remote` are reserved for future multi-target work (see `planning/principles.md`).
+    #[serde(default, skip_serializing_if = "DeploymentMode::is_vm")]
+    pub mode: DeploymentMode,
     /// Declared L2 sandboxes (desired state).
     #[serde(default, rename = "sandbox", skip_serializing_if = "Vec::is_empty")]
     pub sandboxes: Vec<Sandbox>,
@@ -61,6 +65,7 @@ impl Default for Config {
         Self {
             operator: default_operator_username(),
             vm: VmConfig::default(),
+            mode: DeploymentMode::default(),
             sandboxes: Vec::new(),
             services: Vec::new(),
             incus_profiles: Vec::new(),
@@ -118,6 +123,37 @@ pub struct VmConfig {
     pub disk_gib: u32,
     #[serde(default)]
     pub driver: VmDriverKind,
+}
+
+/// Where the Incus control plane runs — the deployment **target** (formerly conflated with
+/// "host"). Today only `vm` (the Lima VM) is wired; `local` (the host's own Incus) and `remote`
+/// (an Incus endpoint) are reserved for the multi-target work. See `planning/principles.md` §6.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DeploymentMode {
+    /// Incus runs inside the managed Lima VM (the macOS default and current MVP).
+    #[default]
+    Vm,
+    /// Incus runs directly on the host (Linux metal) — reserved, not wired yet.
+    Local,
+    /// Incus runs on a remote endpoint — reserved, not wired yet.
+    Remote,
+}
+
+impl DeploymentMode {
+    /// Stable id (`vm` / `local` / `remote`).
+    pub fn id(&self) -> &'static str {
+        match self {
+            DeploymentMode::Vm => "vm",
+            DeploymentMode::Local => "local",
+            DeploymentMode::Remote => "remote",
+        }
+    }
+
+    /// True for the default [`DeploymentMode::Vm`] (used to skip serializing the default).
+    pub fn is_vm(&self) -> bool {
+        matches!(self, DeploymentMode::Vm)
+    }
 }
 
 /// VM backend driver. MVP ships Lima on both platforms; others are future.
@@ -510,6 +546,19 @@ impl Config {
         }
     }
 
+    /// Resolve the VM name for the `vm` deployment target. Errors for `local`/`remote`, which are
+    /// reserved for future multi-target work and not wired yet — callers get a clear message
+    /// instead of silently operating on the VM.
+    pub fn vm_target(&self) -> crate::error::Result<&str> {
+        match self.mode {
+            DeploymentMode::Vm => Ok(&self.vm.name),
+            other => Err(crate::error::Error::Config(format!(
+                "deployment target '{}' is not supported yet (only 'vm')",
+                other.id()
+            ))),
+        }
+    }
+
     /// Set a declared sandbox's display method. Returns true if the sandbox exists.
     pub fn set_sandbox_display(&mut self, sandbox: &str, method: DisplayMethod) -> bool {
         match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
@@ -639,6 +688,7 @@ mod tests {
                 ],
                 ..Default::default()
             }],
+            mode: DeploymentMode::Vm,
             services: vec![],
             incus_profiles: vec![],
         }
@@ -885,6 +935,33 @@ mod tests {
     }
 
     #[test]
+    fn deployment_mode_default_resolver_and_serde() {
+        let mut c = Config::default();
+        // Default target is the VM, omitted from serialized TOML.
+        assert_eq!(c.mode, DeploymentMode::Vm);
+        assert!(c.mode.is_vm());
+        assert_eq!(c.vm_target().unwrap(), c.vm.name);
+        assert!(!c.to_toml().unwrap().contains("mode"));
+
+        // local/remote are reserved — the resolver errors clearly rather than acting on the VM.
+        c.mode = DeploymentMode::Local;
+        let err = c.vm_target().unwrap_err().to_string();
+        assert!(
+            err.contains("local") && err.contains("not supported"),
+            "{err}"
+        );
+
+        // The mode round-trips through TOML with its stable id.
+        let toml = c.to_toml().unwrap();
+        assert!(toml.contains("mode = \"local\""));
+        assert_eq!(
+            Config::from_toml(&toml).unwrap().mode,
+            DeploymentMode::Local
+        );
+        assert_eq!(DeploymentMode::Remote.id(), "remote");
+    }
+
+    #[test]
     fn display_method_set_and_serde_roundtrip() {
         let mut c = Config::default();
         c.upsert_sandbox("sb", "images:alpine/3.21", false);
@@ -1021,6 +1098,7 @@ mod tests {
                 sandboxes,
                 services: vec![],
                 incus_profiles: vec![],
+                ..Default::default()
             })
     }
 

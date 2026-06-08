@@ -53,10 +53,23 @@ fn in_project(sandboxes: &str, args: &[&str]) -> assert_cmd::assert::Assert {
 }
 
 #[test]
-fn doctor_reports_remote_display() {
+fn status_rejects_unsupported_deployment_target() {
+    // `mode` is a top-level key, so it must precede the [vm] table.
+    let toml = "mode = \"remote\"\n[vm]\nname = \"x\"\ncpus = 4\nmemory_gib = 8\ndisk_gib = 100\n";
+    let dir = std::env::temp_dir().join(format!("llmsctl-cli-{}-moderemote", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("llmsc.toml"), toml).unwrap();
+    let out = llmsctl().current_dir(&dir).args(["status"]).assert();
+    let _ = std::fs::remove_dir_all(&dir);
+    out.failure().stderr(contains("not supported"));
+}
+
+#[test]
+fn doctor_reports_target_and_remote_display() {
     let toml = "[[sandbox]]\nname = \"web-agent-01\"\nimage = \"images:alpine/3.21\"\ndisplay = \"xpra\"\n";
     in_project(toml, &["doctor"])
         .success()
+        .stdout(contains("Target: vm"))
         .stdout(contains("Remote display:"))
         .stdout(contains("web-agent-01"))
         .stdout(contains("xpra"));

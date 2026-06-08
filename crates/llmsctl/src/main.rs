@@ -201,9 +201,16 @@ fn services(action: ServiceAction) -> Result<(), String> {
     Ok(())
 }
 
-fn driver() -> LimaVmDriver<SystemRunner> {
-    // M2 will load this from the on-disk config; for now use defaults.
-    LimaVmDriver::new(Config::default().vm, SystemRunner)
+/// Load the effective config and resolve the deployment target — errors on `local`/`remote`,
+/// which are reserved and not wired yet (see `Config::vm_target`).
+fn effective_cfg() -> Result<Config, String> {
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    cfg.vm_target().map_err(|e| e.to_string())?;
+    Ok(cfg)
+}
+
+fn driver() -> Result<LimaVmDriver<SystemRunner>, String> {
+    Ok(LimaVmDriver::new(effective_cfg()?.vm, SystemRunner))
 }
 
 fn run() -> Result<(), String> {
@@ -213,7 +220,7 @@ fn run() -> Result<(), String> {
             print!("{toml}");
         }
         Command::Up => {
-            let cfg = Config::default();
+            let cfg = effective_cfg()?;
             let vm_name = cfg.vm.name.clone();
             LimaVmDriver::new(cfg.vm, SystemRunner)
                 .up(&ConsoleReporter)
@@ -224,15 +231,15 @@ fn run() -> Result<(), String> {
             println!("VM is up with Incus ready");
         }
         Command::Down => {
-            driver().down().map_err(|e| e.to_string())?;
+            driver()?.down().map_err(|e| e.to_string())?;
             println!("VM stopped");
         }
         Command::Destroy => {
-            driver().destroy().map_err(|e| e.to_string())?;
+            driver()?.destroy().map_err(|e| e.to_string())?;
             println!("VM destroyed");
         }
         Command::Status => {
-            let status = driver().status().map_err(|e| e.to_string())?;
+            let status = driver()?.status().map_err(|e| e.to_string())?;
             println!("VM: {status:?}");
         }
         Command::Services { action } => services(action)?,
@@ -250,6 +257,13 @@ fn doctor() -> Result<(), String> {
 
     println!("llmsc doctor");
     println!("============");
+
+    print!("\nTarget: {}", cfg.mode.id());
+    if cfg.mode.is_vm() {
+        println!(" (VM '{vm_name}')");
+    } else {
+        println!(" — reserved, not wired yet (only 'vm' is supported)");
+    }
 
     let vm_state = LimaVmDriver::new(cfg.vm.clone(), SystemRunner)
         .status()
