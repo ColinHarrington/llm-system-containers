@@ -96,7 +96,6 @@ impl<'a, R: CommandRunner> ServiceContainer<'a, R> {
     }
 }
 
-/// Provisions LiteLLM in its own L2 container.
 /// Port the LiteLLM proxy listens on inside its container.
 pub const LITELLM_PORT: u16 = 4000;
 
@@ -109,6 +108,15 @@ pub fn litellm_base_url() -> String {
     )
 }
 
+/// The Phoenix collector host LiteLLM should export traces to (`svc-phoenix`) — but only when
+/// **both** the proxy and Phoenix are enabled; otherwise `None`. `llmsctl services up` uses this to
+/// auto-wire tracing via [`LiteLlmDeployer::enable_phoenix`] (the callback lives in [`config_script`]).
+pub fn phoenix_collector_host(cfg: &crate::config::Config) -> Option<String> {
+    let enabled = |n: &str| cfg.services.iter().any(|s| s.name == n);
+    (enabled("litellm") && enabled("phoenix")).then(|| crate::service::container_name("phoenix"))
+}
+
+/// Provisions LiteLLM in its own L2 container.
 pub struct LiteLlmDeployer<'a, R: CommandRunner> {
     svc: ServiceContainer<'a, R>,
     port: u16,
@@ -956,6 +964,27 @@ mod tests {
     #[test]
     fn litellm_base_url_points_at_the_service_container() {
         assert_eq!(litellm_base_url(), "http://svc-litellm:4000");
+    }
+
+    #[test]
+    fn phoenix_collector_host_only_when_both_enabled() {
+        use crate::config::Config;
+        use crate::service::Service;
+        let svc = |n: &str| Service {
+            name: n.to_string(),
+            placement: Default::default(),
+        };
+        let with = |names: &[&str]| Config {
+            services: names.iter().map(|n| svc(n)).collect(),
+            ..Default::default()
+        };
+        // Both enabled → wire to svc-phoenix; either alone → nothing to wire.
+        assert_eq!(
+            phoenix_collector_host(&with(&["litellm", "phoenix"])).as_deref(),
+            Some("svc-phoenix")
+        );
+        assert_eq!(phoenix_collector_host(&with(&["litellm"])), None);
+        assert_eq!(phoenix_collector_host(&with(&["phoenix"])), None);
     }
 
     #[test]

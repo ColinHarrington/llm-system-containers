@@ -199,6 +199,13 @@ fn services(action: ServiceAction) -> Result<(), String> {
                     other => eprintln!("→ no deployer yet for '{other}' (M5 follow-up)"),
                 }
             }
+            // With both the proxy and Phoenix up, wire LiteLLM's traces to the collector so every
+            // virtual-key call is observable (the callback is already in the generated config).
+            if let Some(host) = llmsc_core::deploy::phoenix_collector_host(&cfg) {
+                LiteLlmDeployer::new(vm.clone(), &SystemRunner)
+                    .enable_phoenix(&host, &ConsoleReporter)
+                    .map_err(|e| e.to_string())?;
+            }
         }
     }
     Ok(())
