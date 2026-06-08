@@ -176,6 +176,30 @@ pub fn launch_args(spec: &Sandbox) -> Vec<String> {
     a
 }
 
+/// Build the argv for `incus publish` — freeze an instance (or `<instance>/<snapshot>`) into a
+/// reusable local image under `alias`. `reuse` overwrites an existing alias; a non-empty
+/// `description` is stored as the image's `description` property. Pure so it can be unit-tested.
+pub fn publish_args(
+    source: &str,
+    alias: &str,
+    description: Option<&str>,
+    reuse: bool,
+) -> Vec<String> {
+    let mut a: Vec<String> = vec![
+        "publish".into(),
+        source.into(),
+        "--alias".into(),
+        alias.into(),
+    ];
+    if reuse {
+        a.push("--reuse".into());
+    }
+    if let Some(d) = description.filter(|d| !d.is_empty()) {
+        a.push(format!("description={d}"));
+    }
+    a
+}
+
 fn role_word(role: UserRole) -> &'static str {
     match role {
         UserRole::Human => "human",
@@ -1057,6 +1081,62 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
             )));
         }
         parse_images(&o.stdout)
+    }
+
+    /// Publish an instance (or `<instance>/<snapshot>`) as a reusable local image under `alias`.
+    /// The instance must be **stopped** — for a running sandbox use [`Self::publish_live`].
+    pub fn publish(
+        &self,
+        source: &str,
+        alias: &str,
+        description: Option<&str>,
+        reuse: bool,
+    ) -> Result<()> {
+        let args = publish_args(source, alias, description, reuse);
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let o = self.incus_run(&refs)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "publish {source} as {alias}: {}",
+                o.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Freeze a *running* sandbox into a reusable local image (cattle-not-pets): snapshot it,
+    /// publish the snapshot, then drop the transient snapshot. Leaves the sandbox running.
+    pub fn publish_live(
+        &self,
+        instance: &str,
+        alias: &str,
+        description: Option<&str>,
+        reuse: bool,
+        reporter: &dyn Reporter,
+    ) -> Result<()> {
+        const SNAP: &str = "llmsc-publish";
+        // Clear any stale transient snapshot from an interrupted earlier run (ignore "not found").
+        let _ = self.incus_run(&["snapshot", "delete", instance, SNAP]);
+        reporter.step(&format!("snapshotting {instance}"));
+        self.snapshot_create(instance, SNAP)?;
+        let source = format!("{instance}/{SNAP}");
+        reporter.step(&format!("publishing image {alias}"));
+        let res = self.publish(&source, alias, description, reuse);
+        // Always clean up the transient snapshot, even if publish failed.
+        let _ = self.incus_run(&["snapshot", "delete", instance, SNAP]);
+        res
+    }
+
+    /// Delete a locally-cached image by alias or fingerprint (`incus image delete <ref>`).
+    pub fn image_delete(&self, image: &str) -> Result<()> {
+        let o = self.incus_run(&["image", "delete", image])?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "image delete {image}: {}",
+                o.stderr.trim()
+            )));
+        }
+        Ok(())
     }
 
     /// Set one instance config key (`incus config set <name> <key> <value>`).
@@ -2930,5 +3010,71 @@ mod cli_tests {
         assert!(r.called_with("su"));
         assert!(r.called_with("agent-claude"));
         assert!(r.called_with("web-agent-01"));
+    }
+
+    #[test]
+    fn publish_args_builds_alias_reuse_and_description() {
+        // Minimal: just the alias.
+        assert_eq!(
+            publish_args("web", "web-base", None, false),
+            vec!["publish", "web", "--alias", "web-base"]
+        );
+        // --reuse + a description property; an empty description is dropped.
+        assert_eq!(
+            publish_args("web/snap", "web-base", Some("preconfigured"), true),
+            vec![
+                "publish",
+                "web/snap",
+                "--alias",
+                "web-base",
+                "--reuse",
+                "description=preconfigured",
+            ]
+        );
+        assert_eq!(
+            publish_args("web", "web-base", Some(""), false),
+            vec!["publish", "web", "--alias", "web-base"]
+        );
+    }
+
+    #[test]
+    fn publish_runs_incus_publish() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        CliIncus::new("llmsc", &r)
+            .publish("web-agent-01", "web-base", Some("ready"), true)
+            .unwrap();
+        assert!(r.called_with("publish"));
+        assert!(r.called_with("--alias"));
+        assert!(r.called_with("web-base"));
+        assert!(r.called_with("--reuse"));
+        assert!(r.called_with("description=ready"));
+    }
+
+    #[test]
+    fn publish_live_snapshots_publishes_then_cleans_up() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        CliIncus::new("llmsc", &r)
+            .publish_live("web-agent-01", "web-base", None, false, &SilentReporter)
+            .unwrap();
+        // Snapshot created, published from the snapshot ref, and the transient snap deleted.
+        assert!(r.called_with("snapshot"));
+        assert!(r.called_with("publish"));
+        assert!(r.called_with("web-agent-01/llmsc-publish"));
+        let calls = r.calls.borrow();
+        assert!(
+            calls
+                .iter()
+                .any(|c| c.contains(&"delete".to_string())
+                    && c.contains(&"llmsc-publish".to_string()))
+        );
+    }
+
+    #[test]
+    fn image_delete_calls_incus_image_delete() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        CliIncus::new("llmsc", &r).image_delete("web-base").unwrap();
+        assert!(r.called_with("image"));
+        assert!(r.called_with("delete"));
+        assert!(r.called_with("web-base"));
     }
 }

@@ -61,6 +61,30 @@ enum Command {
     Cp { src: String, dst: String },
     /// Remove a sandbox.
     Rm { name: String },
+    /// List locally-cached images (base distros + your published sandboxes).
+    Images {
+        /// List a remote catalog instead (e.g. `images`). Hits the network.
+        #[arg(long)]
+        remote: Option<String>,
+    },
+    /// Freeze a sandbox into a reusable local image (cattle-not-pets).
+    Publish {
+        /// Sandbox to publish.
+        sandbox: String,
+        /// Image alias to create (e.g. `web-base`).
+        alias: String,
+        /// Image description property.
+        #[arg(long)]
+        description: Option<String>,
+        /// Overwrite an existing alias.
+        #[arg(long)]
+        reuse: bool,
+        /// Publish the stopped instance directly (default snapshots a running sandbox).
+        #[arg(long)]
+        stopped: bool,
+    },
+    /// Remove a locally-cached image by alias or fingerprint.
+    Rmi { image: String },
     /// Reconcile declared sandboxes (from llmsc.toml) into Incus.
     Apply,
     /// Show or enforce a sandbox's network egress policy (the per-container ACL ring).
@@ -187,6 +211,46 @@ fn run() -> Result<(), String> {
         Command::Rm { name } => {
             incus.delete(&name).map_err(|e| e.to_string())?;
             println!("sandbox '{name}' removed");
+        }
+        Command::Images { remote } => {
+            let items = match &remote {
+                Some(r) => incus.images_remote(r).map_err(|e| e.to_string())?,
+                None => incus.images().map_err(|e| e.to_string())?,
+            };
+            if items.is_empty() {
+                println!("(no images)");
+            } else {
+                for i in items {
+                    let mib = i.size_bytes / (1024 * 1024);
+                    println!(
+                        "{:<24} {:<10} {:>6} MiB  {}",
+                        i.name, i.arch, mib, i.description
+                    );
+                }
+            }
+        }
+        Command::Publish {
+            sandbox,
+            alias,
+            description,
+            reuse,
+            stopped,
+        } => {
+            let desc = description.as_deref();
+            if stopped {
+                incus
+                    .publish(&sandbox, &alias, desc, reuse)
+                    .map_err(|e| e.to_string())?;
+            } else {
+                incus
+                    .publish_live(&sandbox, &alias, desc, reuse, &ConsoleReporter)
+                    .map_err(|e| e.to_string())?;
+            }
+            println!("published '{sandbox}' as image '{alias}'");
+        }
+        Command::Rmi { image } => {
+            incus.image_delete(&image).map_err(|e| e.to_string())?;
+            println!("image '{image}' removed");
         }
         Command::Exec { target, cmd } => {
             if cmd.is_empty() {
