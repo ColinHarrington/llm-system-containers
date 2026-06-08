@@ -32,6 +32,9 @@ each script self-contained (inline deps, no sibling imports). See `scripts/spike
 
 ## Build / test / lint commands
 
+A root **`justfile`** wraps the commands below (`just` to list; `just build`, `just test`,
+`just clippy`, `just gui-check`, `just ci`, `just llmsc <args>`, …). The raw commands:
+
 Rust workspace (run from the repo root):
 
 ```bash
