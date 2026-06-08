@@ -1,7 +1,6 @@
 //! `llmsc` — manage individual LLM System Containers (L2 sandboxes).
 //!
-//! M2: launch/ls/rm drive Incus (in the VM) via `llmsc-core`. shell (M2 follow-up) and cp (M6)
-//! are still stubs.
+//! launch/ls/rm/cp drive Incus via `llmsc-core` (the `vm` or `local` deployment target).
 
 use clap::{Parser, Subcommand};
 use llmsc_core::config::{Config, DeploymentMode, DisplayMethod, Sandbox};
@@ -47,7 +46,8 @@ enum Command {
     Ls,
     /// Open a shell as `user@sandbox`.
     Shell { target: String },
-    /// Copy files (host↔container, container↔container).
+    /// Copy a file host↔container. One side is a container ref `name:/abs/path`, the other a
+    /// host path, e.g. `llmsc cp ./f web:/work/f` or `llmsc cp web:/work/f ./f`.
     Cp { src: String, dst: String },
     /// Remove a sandbox.
     Rm { name: String },
@@ -284,14 +284,79 @@ fn run() -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
             println!("mounted shared volume into {name} at {path}");
         }
-        Command::Cp { src, dst } => println!("cp {src} -> {dst}: not yet implemented (M6)"),
+        Command::Cp { src, dst } => {
+            use CpRef::{Container, Host};
+            match (parse_cp_ref(&src), parse_cp_ref(&dst)) {
+                (Host(h), Container { name, path }) => {
+                    incus
+                        .push_file(&h, &name, &path)
+                        .map_err(|e| e.to_string())?;
+                    println!("copied {h} -> {name}:{path}");
+                }
+                (Container { name, path }, Host(h)) => {
+                    incus
+                        .pull_file(&name, &path, &h)
+                        .map_err(|e| e.to_string())?;
+                    println!("copied {name}:{path} -> {h}");
+                }
+                (Container { .. }, Container { .. }) => {
+                    return Err("container↔container copy is not supported yet".into());
+                }
+                (Host(_), Host(_)) => {
+                    return Err(
+                        "both paths are host paths — one side must be a container ref (name:/path)"
+                            .into(),
+                    );
+                }
+            }
+        }
     }
     Ok(())
+}
+
+/// A `cp` endpoint: a host path, or a container ref `name:/abs/path`.
+enum CpRef {
+    Host(String),
+    Container { name: String, path: String },
+}
+
+/// Parse a `cp` argument. `name:/path` (name without `/`, path absolute) → a container ref;
+/// anything else (incl. relative `name:path` or a path with no `:`) → a host path.
+fn parse_cp_ref(s: &str) -> CpRef {
+    if let Some((name, path)) = s.split_once(':') {
+        if !name.is_empty() && !name.contains('/') && path.starts_with('/') {
+            return CpRef::Container {
+                name: name.to_string(),
+                path: path.to_string(),
+            };
+        }
+    }
+    CpRef::Host(s.to_string())
 }
 
 fn main() {
     if let Err(e) = run() {
         eprintln!("error: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_cp_ref, CpRef};
+
+    #[test]
+    fn parse_cp_ref_distinguishes_container_and_host() {
+        match parse_cp_ref("web:/work/f") {
+            CpRef::Container { name, path } => {
+                assert_eq!(name, "web");
+                assert_eq!(path, "/work/f");
+            }
+            _ => panic!("expected container ref"),
+        }
+        // No colon, relative-after-colon, and slash-in-name are all host paths.
+        assert!(matches!(parse_cp_ref("./f"), CpRef::Host(_)));
+        assert!(matches!(parse_cp_ref("web:rel/path"), CpRef::Host(_)));
+        assert!(matches!(parse_cp_ref("a/b:/x"), CpRef::Host(_)));
     }
 }
