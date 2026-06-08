@@ -9,6 +9,7 @@ use llmsc_core::config::{self, Config, DisplayMethod, Sandbox, User, UserRole};
 use llmsc_core::deploy::LiteLlmDeployer;
 use llmsc_core::display::{display_plan, DisplayCtx};
 use llmsc_core::incus::{CliIncus, IncusClient, InstanceStatus};
+use llmsc_core::keystore;
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
 use llmsc_core::service;
@@ -1344,10 +1345,16 @@ fn sync_virtual_keys(app: AppHandle) -> Result<usize, String> {
         reporter.step("No agents with virtual keys to sync");
         return Ok(0);
     }
-    let synced = LiteLlmDeployer::new(vm_name(), &SystemRunner)
-        .sync_virtual_keys(&specs, &reporter)
+    let store_path = keystore::default_key_store_path();
+    let mut store = keystore::KeyStore::load(&store_path).map_err(|e| e.to_string())?;
+    let minted = LiteLlmDeployer::new(vm_name(), &SystemRunner)
+        .sync_virtual_keys(&specs, store.tokens(), &reporter)
         .map_err(|e| e.to_string())?;
-    Ok(synced.len())
+    for k in &minted {
+        store.upsert(k.alias.clone(), k.token.clone());
+    }
+    store.save(&store_path).map_err(|e| e.to_string())?;
+    Ok(minted.len())
 }
 
 // --- Tetragon per-UID kernel policies (the kernel ring) ---
@@ -1680,8 +1687,17 @@ fn enforce_all(app: AppHandle, sandbox: String) -> Result<Vec<RingStatusDto>, St
         }
         let specs = llmsc_core::enforce::virtual_key_specs(&cfg);
         if !specs.is_empty() {
-            let _ =
-                LiteLlmDeployer::new(vm_name(), &SystemRunner).sync_virtual_keys(&specs, &reporter);
+            let store_path = keystore::default_key_store_path();
+            if let Ok(mut store) = keystore::KeyStore::load(&store_path) {
+                if let Ok(minted) = LiteLlmDeployer::new(vm_name(), &SystemRunner)
+                    .sync_virtual_keys(&specs, store.tokens(), &reporter)
+                {
+                    for k in &minted {
+                        store.upsert(k.alias.clone(), k.token.clone());
+                    }
+                    let _ = store.save(&store_path);
+                }
+            }
         }
     }
     enforcement_overview(sandbox)
