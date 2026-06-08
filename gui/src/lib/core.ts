@@ -380,6 +380,12 @@ export async function sandboxDisplayPlan(sandbox: string): Promise<DisplayStep[]
   await delay(60);
   return [];
 }
+// Apply the display transport (add/remove the xpra Incus proxy device). Returns device changes.
+export async function applyDisplay(sandbox: string): Promise<number> {
+  if (inTauri()) return invokeCmd<number>("apply_display", { sandbox });
+  await mockSteps([`Applying display transport for ${sandbox}`], 140);
+  return 1;
+}
 
 // --- Egress policy (per-container enforcement ring) ---
 // Read a sandbox's egress policy intent (config). null = unmanaged (no ACL).

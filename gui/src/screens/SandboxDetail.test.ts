@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, vi } from "vitest";
 
-const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly, enforceAll, agentPause, setSandboxDisplay } = vi.hoisted(() => ({
+const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy, applyEgress, applyTetragonPolicies, setWorkspaceReadonly, enforceAll, agentPause, setSandboxDisplay, applyDisplay } = vi.hoisted(() => ({
   removeAgent: vi.fn(async () => {}),
   instanceRemoveProfile: vi.fn(async () => {}),
   setAgentGuardrails: vi.fn(async () => {}),
@@ -15,6 +15,7 @@ const { removeAgent, instanceRemoveProfile, setAgentGuardrails, setEgressPolicy,
   ]),
   agentPause: vi.fn(async () => {}),
   setSandboxDisplay: vi.fn(async () => {}),
+  applyDisplay: vi.fn(async () => 1),
 }));
 vi.mock("../lib/core", () => ({
   removeSandbox: vi.fn(async () => {}),
@@ -43,6 +44,7 @@ vi.mock("../lib/core", () => ({
   sandboxDisplayPlan: vi.fn(async () => [
     { note: "attach — native windows on the host", cmd: "xpra attach tcp://127.0.0.1:14500 --dpi=160" },
   ]),
+  applyDisplay,
   egressPolicy: vi.fn(async () => ({ posture: "allowlist", allow: ["llm"], domains: [] })),
   setEgressPolicy,
   applyEgress,
@@ -160,6 +162,11 @@ describe("SandboxDetail", () => {
     // Picking a method persists it via setSandboxDisplay.
     await fireEvent.click(screen.getByRole("button", { name: "xpra" }));
     expect(setSandboxDisplay).toHaveBeenCalledWith("web-agent-01", "xpra");
+    // With a method set, Apply wires the transport via applyDisplay (exact name — the egress
+    // section has its own "Apply (enforce)" button).
+    await waitFor(() => expect(screen.getByRole("button", { name: "Apply" })).not.toBeDisabled());
+    await fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(applyDisplay).toHaveBeenCalledWith("web-agent-01");
   });
 
   it("adds an L7 domain to the egress policy", async () => {
