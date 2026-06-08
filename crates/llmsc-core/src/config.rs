@@ -207,6 +207,11 @@ pub struct Sandbox {
     /// `planning/spikes/remote-display-gui.md`.
     #[serde(default, skip_serializing_if = "DisplayMethod::is_none")]
     pub display: DisplayMethod,
+    /// Apply Incus NIC **anti-spoof filtering** (`security.mac_filtering` / `ipv4_filtering` /
+    /// `ipv6_filtering`) to the sandbox's nic when egress is enforced. Opt-in (default off) since
+    /// IP filtering requires DHCP from the managed bridge and can break atypical setups.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub net_filtering: bool,
 }
 
 /// A container-level network egress policy — the legible intent that compiles to an Incus
@@ -959,6 +964,25 @@ mod tests {
             DeploymentMode::Local
         );
         assert_eq!(DeploymentMode::Remote.id(), "remote");
+    }
+
+    #[test]
+    fn net_filtering_defaults_off_and_roundtrips() {
+        let mut c = Config::default();
+        c.upsert_sandbox("sb", "images:alpine/3.21", false);
+        assert!(!c.sandbox("sb").unwrap().net_filtering);
+        assert!(!c.to_toml().unwrap().contains("net_filtering")); // off → omitted
+
+        c.sandboxes[0].net_filtering = true;
+        let toml = c.to_toml().unwrap();
+        assert!(toml.contains("net_filtering = true"));
+        assert!(
+            Config::from_toml(&toml)
+                .unwrap()
+                .sandbox("sb")
+                .unwrap()
+                .net_filtering
+        );
     }
 
     #[test]
