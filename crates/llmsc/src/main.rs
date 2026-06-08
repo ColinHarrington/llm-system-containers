@@ -4,7 +4,7 @@
 //! are still stubs.
 
 use clap::{Parser, Subcommand};
-use llmsc_core::config::{Config, Sandbox};
+use llmsc_core::config::{Config, DisplayMethod, Sandbox};
 use llmsc_core::display::{display_plan, DisplayCtx};
 use llmsc_core::incus::{CliIncus, IncusClient};
 use llmsc_core::process::SystemRunner;
@@ -39,6 +39,9 @@ enum Command {
         /// Base image (Incus image ref). Alpine by default — minimal + fast.
         #[arg(long, default_value = "images:alpine/3.21")]
         image: String,
+        /// Remote display method for GUI apps: none (default) | xpra | x11.
+        #[arg(long, default_value = "none")]
+        display: String,
     },
     /// List sandboxes.
     Ls,
@@ -104,12 +107,19 @@ fn run() -> Result<(), String> {
     let incus = CliIncus::new(vm, &runner);
 
     match Cli::parse().command {
-        Command::Launch { name, image } => {
+        Command::Launch {
+            name,
+            image,
+            display,
+        } => {
+            let method = DisplayMethod::from_id(&display)
+                .ok_or_else(|| format!("unknown display method '{display}' (none|xpra|x11)"))?;
             let spec = Sandbox {
                 name: name.clone(),
                 image,
                 nesting: false,
                 users: Vec::new(),
+                display: method,
                 ..Default::default()
             };
             incus
