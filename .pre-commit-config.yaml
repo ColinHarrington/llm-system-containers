@@ -78,3 +78,11 @@ repos:
         entry: uvx ruff check
         language: system
         types: [python]
+
+      # ---- justfile: format check (fast) ----
+      - id: just-fmt
+        name: just --fmt --check
+        entry: just --fmt --check --unstable
+        language: system
+        files: '^justfile$'
+        pass_filenames: false

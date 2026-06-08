@@ -20,7 +20,7 @@ test:
 
 # Run a filtered subset of Rust tests, e.g. `just test-one enforce`.
 test-one filter:
-    cargo test --all {{filter}}
+    cargo test --all {{ filter }}
 
 # Format all Rust: the workspace + the out-of-workspace Tauri shell crate.
 fmt:
@@ -42,11 +42,11 @@ tauri-check:
 
 # Run a CLI, e.g. `just llmsctl status` or `just llmsctl services list`.
 llmsctl *args:
-    cargo run -p llmsctl -- {{args}}
+    cargo run -p llmsctl -- {{ args }}
 
 # Run the container-plane CLI, e.g. `just llmsc ls` or `just llmsc display web-agent-01`.
 llmsc *args:
-    cargo run -p llmsc -- {{args}}
+    cargo run -p llmsc -- {{ args }}
 
 # ---------------------------------------------------------------------------- #
 # GUI (Svelte 5 frontend + Tauri shell; package manager: pnpm)
@@ -62,7 +62,7 @@ gui-check:
 
 # Run the GUI unit tests (vitest, one-shot). Optional name filter: `just gui-test Security`.
 gui-test filter='':
-    cd gui && pnpm test {{filter}}
+    cd gui && pnpm test {{ filter }}
 
 # Production build of the frontend (also typechecks the Tauri-less bundle).
 gui-build:
@@ -80,8 +80,7 @@ gui-app:
 # Aggregate gates + hooks
 # ---------------------------------------------------------------------------- #
 
-# Everything CI runs: Rust (fmt, clippy, test) + GUI (check, test, build).
-# Run `just gui-install` first if GUI deps are not installed.
+# CI gate: Rust (fmt, clippy, test) + GUI (check, test, build). Needs `just gui-install` first.
 ci: fmt-check clippy test gui-check gui-test gui-build
 
 # Run the pre-commit hooks across all files (requires prek).
