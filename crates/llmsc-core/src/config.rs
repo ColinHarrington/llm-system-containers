@@ -564,6 +564,56 @@ impl Config {
         }
     }
 
+    /// Validate the config, returning a list of human-readable issues (empty = valid). Catches
+    /// the mistakes serde's type-checking can't: duplicate/empty names, duplicate users, more than
+    /// one human operator per sandbox, duplicate services. Advisory — loading does not reject.
+    pub fn validate(&self) -> Vec<String> {
+        use std::collections::HashSet;
+        let mut issues = Vec::new();
+        if self.vm.name.trim().is_empty() {
+            issues.push("vm.name is empty".to_string());
+        }
+        let mut seen = HashSet::new();
+        for sb in &self.sandboxes {
+            if sb.name.trim().is_empty() {
+                issues.push("a sandbox has an empty name".to_string());
+            }
+            if sb.image.trim().is_empty() {
+                issues.push(format!("sandbox '{}' has an empty image", sb.name));
+            }
+            if !seen.insert(sb.name.as_str()) {
+                issues.push(format!("duplicate sandbox name '{}'", sb.name));
+            }
+            let mut users = HashSet::new();
+            for u in &sb.users {
+                if !users.insert(u.name.as_str()) {
+                    issues.push(format!(
+                        "sandbox '{}' has duplicate user '{}'",
+                        sb.name, u.name
+                    ));
+                }
+            }
+            let humans = sb
+                .users
+                .iter()
+                .filter(|u| u.role == UserRole::Human)
+                .count();
+            if humans > 1 {
+                issues.push(format!(
+                    "sandbox '{}' has {humans} human operators (expected at most 1)",
+                    sb.name
+                ));
+            }
+        }
+        let mut services = HashSet::new();
+        for s in &self.services {
+            if !services.insert(s.name.as_str()) {
+                issues.push(format!("duplicate service '{}'", s.name));
+            }
+        }
+        issues
+    }
+
     /// Set a declared sandbox's display method. Returns true if the sandbox exists.
     pub fn set_sandbox_display(&mut self, sandbox: &str, method: DisplayMethod) -> bool {
         match self.sandboxes.iter_mut().find(|s| s.name == sandbox) {
@@ -964,6 +1014,48 @@ mod tests {
             DeploymentMode::Local
         );
         assert_eq!(DeploymentMode::Remote.id(), "remote");
+    }
+
+    #[test]
+    fn validate_flags_duplicates_and_extra_humans() {
+        let mut c = Config::default();
+        c.upsert_sandbox("a", "images:alpine/3.21", false);
+        assert!(c.validate().is_empty(), "clean config: {:?}", c.validate());
+
+        c.sandboxes.push(Sandbox {
+            name: "a".into(), // duplicate name
+            image: "images:alpine/3.21".into(),
+            users: vec![
+                User {
+                    name: "op".into(),
+                    role: UserRole::Human,
+                    profile: None,
+                    guardrails: None,
+                },
+                User {
+                    name: "op".into(), // duplicate user + two humans
+                    role: UserRole::Human,
+                    profile: None,
+                    guardrails: None,
+                },
+            ],
+            ..Default::default()
+        });
+        let issues = c.validate();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("duplicate sandbox name 'a'")),
+            "{issues:?}"
+        );
+        assert!(
+            issues.iter().any(|i| i.contains("duplicate user 'op'")),
+            "{issues:?}"
+        );
+        assert!(
+            issues.iter().any(|i| i.contains("human operators")),
+            "{issues:?}"
+        );
     }
 
     #[test]
