@@ -23,10 +23,11 @@ spend, repeatable. Set `LLMSC_LIVE_PROVIDER=1` (after `keys set-provider`) to ca
 `default` model instead.
 
 Usage:
-    uv run scripts/m5_litellm_phoenix.py run      # the full done-when
-    uv run scripts/m5_litellm_phoenix.py clean     # remove the sandbox (services are left up)
-Options: --vm NAME (default llmsc), --sandbox NAME (default m5-agent), --agent USER
-         (default agent-claude), --operator USER (default operator).
+    uv run scripts/m5_litellm_phoenix.py run --mode local   # the full done-when (CI path)
+    uv run scripts/m5_litellm_phoenix.py run --mode vm       # against the Lima VM
+    uv run scripts/m5_litellm_phoenix.py clean --mode local  # remove the sandbox (services left up)
+Options: --mode local|vm (default vm), --vm NAME (default llmsc), --sandbox NAME (default m5-agent),
+         --agent USER (default agent-claude), --operator USER (default operator).
 """
 
 from __future__ import annotations
@@ -69,7 +70,10 @@ def vm(
 
 
 def incus(cfg: "Cfg", args: str, *, quiet: bool = False) -> tuple[int, str]:
-    return vm(cfg, f"incus {args}", sudo=True, quiet=quiet)
+    """Run `incus` where it actually lives: inside the VM (`vm` mode) or directly (`local` mode)."""
+    if cfg.is_vm():
+        return vm(cfg, f"incus {args}", sudo=True, quiet=quiet)
+    return sh(f"incus {args}", quiet=quiet)
 
 
 def vm_exists(cfg: "Cfg") -> bool:
@@ -77,14 +81,24 @@ def vm_exists(cfg: "Cfg") -> bool:
     return any(line.strip() == cfg.vm for line in out.splitlines())
 
 
+def incus_reachable(cfg: "Cfg") -> bool:
+    if cfg.is_vm():
+        return vm_exists(cfg)
+    return incus(cfg, "version", quiet=True)[0] == 0
+
+
 # --------------------------------------------------------------------------- config / results
 @dataclass
 class Cfg:
+    mode: str = "vm"  # "vm" (Lima) | "local" (Incus on the host — the CI path)
     vm: str = "llmsc"
     sandbox: str = "m5-agent"
     agent: str = "agent-claude"
     operator: str = "operator"
     project: Path = REPO  # cwd the product CLIs run in (holds the generated llmsc.toml)
+
+    def is_vm(self) -> bool:
+        return self.mode == "vm"
 
 
 @dataclass
@@ -122,8 +136,9 @@ def cli(cfg: "Cfg", binary: str, args: str, *, quiet: bool = False) -> tuple[int
 
 def write_project(cfg: "Cfg") -> None:
     """A minimal llmsc.toml: one sandbox with one agent + the two services we trace through."""
+    mode_line = "" if cfg.is_vm() else 'mode = "local"\n'
     toml = f"""\
-[vm]
+{mode_line}[vm]
 name = "{cfg.vm}"
 cpus = 4
 memory_gib = 8
@@ -157,12 +172,13 @@ def run(cfg: Cfg, r: Results) -> int:
         f"[bold]model:[/bold] {MODEL}  ({'real provider' if LIVE_PROVIDER else 'hermetic mock'})"
     )
 
-    if not vm_exists(cfg):
-        r.add(
-            "preflight",
-            False,
-            f"VM '{cfg.vm}' not found — run `llmsctl up` / spike phase0 first",
+    if not incus_reachable(cfg):
+        hint = (
+            f"VM '{cfg.vm}' not found — run `llmsctl up` / spike phase0 first"
+            if cfg.is_vm()
+            else "incus not reachable — install it + `incus admin init --minimal`"
         )
+        r.add("preflight", False, hint)
         return r.summary()
     if not build(r):
         return r.summary()
@@ -290,6 +306,7 @@ def clean(cfg: Cfg, r: Results) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="M5 done-when live integration test")
     ap.add_argument("cmd", choices=["run", "clean"])
+    ap.add_argument("--mode", choices=["local", "vm"], default="vm")
     ap.add_argument("--vm", default="llmsc")
     ap.add_argument("--sandbox", default="m5-agent")
     ap.add_argument("--agent", default="agent-claude")
@@ -299,6 +316,7 @@ def main() -> int:
     # The CLIs read ./llmsc.toml; run them in a throwaway dir so we never touch the repo's config.
     with tempfile.TemporaryDirectory(prefix="llmsc-m5-") as td:
         cfg = Cfg(
+            mode=a.mode,
             vm=a.vm,
             sandbox=a.sandbox,
             agent=a.agent,
