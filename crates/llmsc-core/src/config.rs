@@ -328,10 +328,16 @@ impl Sandbox {
         if self.ephemeral {
             out.push_str("ephemeral: true\n");
         }
+        // Incus replaces (not appends) the profile list, so the root-bearing `default` must be
+        // present or the instance has no root disk. Empty → just `default`; otherwise ensure
+        // `default` leads the chosen (composition-only) profiles.
         out.push_str("profiles:\n");
         if self.profiles.is_empty() {
             out.push_str("- default\n");
         } else {
+            if !self.profiles.iter().any(|p| p == "default") {
+                out.push_str("- default\n");
+            }
             for p in &self.profiles {
                 out.push_str(&format!("- {p}\n"));
             }
@@ -851,7 +857,8 @@ mod tests {
         assert!(y.contains("# incus create images:alpine/3.21 web-02"));
         assert!(y.contains("description: \"dev box\""));
         assert!(y.contains("ephemeral: true"));
-        assert!(y.contains("profiles:\n- sandbox\n- net-egress-filtered"));
+        // `default` leads (Incus replaces, not appends, the profile list) so the root disk survives.
+        assert!(y.contains("profiles:\n- default\n- sandbox\n- net-egress-filtered"));
         assert!(y.contains("  security.privileged: \"false\"")); // invariant
         assert!(y.contains("  security.nesting: \"true\""));
         assert!(y.contains("  cloud-init.user-data: |\n    #cloud-config\n    packages:")); // block scalar
