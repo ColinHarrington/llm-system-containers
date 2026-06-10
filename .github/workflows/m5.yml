@@ -1,0 +1,48 @@
+name: m5-done-when
+
+# The M5 "done-when" end to end against real services: deploy svc-litellm + svc-phoenix, mint a
+# virtual key, inject it into an agent, have the agent call the proxy, and confirm the call is
+# traced in Phoenix. Runs in `local` mode (Incus on the runner — no nested virt).
+#
+# This is heavier and slower than the e2e lifecycle gate (it pip-installs LiteLLM + Phoenix into
+# L2 containers), and the Phoenix span poll is best-effort across API versions — so it is NOT a
+# per-PR gate. Nightly + on-demand only. The agent calls the hermetic `mock` model: no provider
+# key, no spend. See planning/services/m5-done-when-testplan.md.
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # nightly (after the e2e lifecycle gate)
+  workflow_dispatch:
+
+concurrency:
+  group: m5-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  m5-local:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Incus
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y incus
+
+      - name: Initialize Incus
+        run: |
+          sudo incus admin init --minimal
+          sudo usermod -aG incus-admin "$USER"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build the CLIs
+        run: cargo build -p llmsc -p llmsctl
+
+      - name: M5 done-when (local mode, mock model)
+        run: sg incus-admin -c "uv run scripts/m5_litellm_phoenix.py run --mode local"

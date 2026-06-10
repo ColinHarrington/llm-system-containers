@@ -31,12 +31,20 @@ costs a few cents and is not repeatable. The provider key is stored only inside 
 ## Running it
 
 ```bash
-# Prereq: the VM exists (llmsctl up, or spike phase0).
-uv run scripts/m5_litellm_phoenix.py run            # hermetic mock path
+# CI path — Incus on the host, no VM (this is what the m5-done-when workflow runs):
+uv run scripts/m5_litellm_phoenix.py run --mode local
+# Against the Lima VM (prereq: the VM exists — llmsctl up, or spike phase0):
+uv run scripts/m5_litellm_phoenix.py run --mode vm
+# Real-provider end-to-end (a few cents, not repeatable):
 LLMSC_LIVE_PROVIDER=1 LLMSC_PROVIDER=openai \
-  LLMSC_PROVIDER_KEY=sk-… uv run scripts/m5_litellm_phoenix.py run
-uv run scripts/m5_litellm_phoenix.py clean          # remove the test sandbox (services left up)
+  LLMSC_PROVIDER_KEY=sk-… uv run scripts/m5_litellm_phoenix.py run --mode vm
+uv run scripts/m5_litellm_phoenix.py clean --mode local   # remove the test sandbox
 ```
+
+**In CI:** `.github/workflows/m5.yml` runs the `--mode local` mock path nightly + on demand
+(`workflow_dispatch`). It's **not** a per-PR gate — it pip-installs LiteLLM + Phoenix into L2
+containers (~10 min) and the Phoenix span poll is best-effort, so a red nightly is informational,
+not blocking. The fast per-PR integration gate is the e2e lifecycle (`planning/testing-e2e.md`).
 
 It writes its `llmsc.toml` to a throwaway dir and runs the built CLIs there, so the repo's own
 config is never touched. Each step prints pass/fail and a summary table; exit code is non-zero if
