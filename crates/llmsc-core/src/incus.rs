@@ -495,6 +495,22 @@ pub struct IncusProfileRecord {
     pub devices: BTreeMap<String, BTreeMap<String, String>>,
 }
 
+/// Whether a profile carries a root disk device (`type=disk` mounted at `/`). An instance whose
+/// resolved profiles have none fails to launch with "No root device could be found".
+pub fn profile_has_root_disk(p: &IncusProfileRecord) -> bool {
+    p.devices.values().any(|d| {
+        d.get("type").map(String::as_str) == Some("disk")
+            && d.get("path").map(String::as_str) == Some("/")
+    })
+}
+
+/// Whether a profile carries a network interface device.
+pub fn profile_has_nic(p: &IncusProfileRecord) -> bool {
+    p.devices
+        .values()
+        .any(|d| d.get("type").map(String::as_str) == Some("nic"))
+}
+
 /// Parse `incus profile list --format json` into profile records.
 pub fn parse_incus_profiles(list_json: &str) -> Result<Vec<IncusProfileRecord>> {
     #[derive(serde::Deserialize)]
@@ -1464,6 +1480,100 @@ impl<'a, R: CommandRunner> CliIncus<'a, R> {
             return Err(Error::Incus(format!("network list: {}", o.stderr.trim())));
         }
         parse_networks(&o.stdout)
+    }
+
+    /// Ensure the Incus base an instance needs to launch: a storage pool, plus a `default` profile
+    /// carrying a root disk and a NIC. `incus admin init --minimal` normally sets these up, but a
+    /// partial or already-initialized Incus (its errors are swallowed during bootstrap) can leave
+    /// the `default` profile empty — and then *every* launch fails with the opaque
+    /// "No root device could be found". This repairs that idempotently: it only creates what is
+    /// missing. Returns a human-readable list of repairs performed (empty = nothing was needed).
+    pub fn ensure_incus_base(&self, reporter: &dyn Reporter) -> Result<Vec<String>> {
+        let mut fixed = Vec::new();
+
+        // 1. A storage pool must exist for the root disk to bind to.
+        let pool = match self.storage()?.first() {
+            Some(p) => p.name.clone(),
+            None => {
+                reporter.step("No storage pool found — creating a 'default' dir pool");
+                self.run_ok(
+                    &["storage", "create", "default", "dir"],
+                    "creating storage pool",
+                )?;
+                fixed.push("created storage pool 'default' (dir)".to_string());
+                "default".to_string()
+            }
+        };
+
+        // 2. A managed bridge for the NIC.
+        let bridge = match self.networks()?.iter().find(|n| n.kind == "bridge") {
+            Some(n) => n.name.clone(),
+            None => {
+                reporter.step("No bridge network found — creating 'incusbr0'");
+                self.run_ok(
+                    &["network", "create", "incusbr0"],
+                    "creating bridge network",
+                )?;
+                fixed.push("created bridge network 'incusbr0'".to_string());
+                "incusbr0".to_string()
+            }
+        };
+
+        // 3. The `default` profile must carry a root disk + a NIC (it is what a no-profile launch
+        //    uses). A freshly-created project profile, or a half-initialized one, has neither.
+        let default = self
+            .incus_profiles()?
+            .into_iter()
+            .find(|p| p.name == "default");
+        let has_root = default.as_ref().is_some_and(profile_has_root_disk);
+        let has_nic = default.as_ref().is_some_and(profile_has_nic);
+        if !has_root {
+            reporter.step("default profile has no root disk — attaching one");
+            self.run_ok(
+                &[
+                    "profile",
+                    "device",
+                    "add",
+                    "default",
+                    "root",
+                    "disk",
+                    &format!("pool={pool}"),
+                    "path=/",
+                ],
+                "adding root disk to the default profile",
+            )?;
+            fixed.push(format!(
+                "added root disk (pool={pool}) to the default profile"
+            ));
+        }
+        if !has_nic {
+            reporter.step("default profile has no NIC — attaching eth0");
+            self.run_ok(
+                &[
+                    "profile",
+                    "device",
+                    "add",
+                    "default",
+                    "eth0",
+                    "nic",
+                    &format!("network={bridge}"),
+                ],
+                "adding eth0 nic to the default profile",
+            )?;
+            fixed.push(format!(
+                "added eth0 nic (network={bridge}) to the default profile"
+            ));
+        }
+        Ok(fixed)
+    }
+
+    /// Run an `incus` command, mapping a non-zero exit to a labeled error.
+    fn run_ok(&self, args: &[&str], what: &str) -> Result<()> {
+        let o = self.incus_run(args)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!("{what}: {}", o.stderr.trim())));
+        }
+        Ok(())
     }
 
     /// Network ACLs (named allow/deny rulesets — the egress-policy layer).
@@ -3129,6 +3239,103 @@ mod cli_tests {
         assert!(r.called_with("http://svc-litellm:4000/v1"));
         assert!(r.called_with("sk-llmsc-web-agent-01-agent-claude-cafe"));
         assert!(!r.called_with("environment.OPENAI_API_KEY")); // not the container-wide path
+    }
+
+    #[test]
+    fn profile_root_disk_and_nic_detection() {
+        let mut p = IncusProfileRecord {
+            name: "default".into(),
+            description: String::new(),
+            used_by: 0,
+            config: BTreeMap::new(),
+            devices: BTreeMap::new(),
+        };
+        assert!(!profile_has_root_disk(&p));
+        assert!(!profile_has_nic(&p));
+        p.devices.insert(
+            "root".into(),
+            BTreeMap::from([("type".into(), "disk".into()), ("path".into(), "/".into())]),
+        );
+        p.devices.insert(
+            "eth0".into(),
+            BTreeMap::from([
+                ("type".into(), "nic".into()),
+                ("network".into(), "incusbr0".into()),
+            ]),
+        );
+        assert!(profile_has_root_disk(&p));
+        assert!(profile_has_nic(&p));
+        // A non-root disk (a workspace mount) must not count as the root.
+        let mut work = IncusProfileRecord {
+            name: "fs".into(),
+            ..p.clone()
+        };
+        work.devices = BTreeMap::from([(
+            "work".into(),
+            BTreeMap::from([
+                ("type".into(), "disk".into()),
+                ("path".into(), "/work".into()),
+            ]),
+        )]);
+        assert!(!profile_has_root_disk(&work));
+    }
+
+    #[test]
+    fn ensure_incus_base_repairs_an_empty_default_profile() {
+        // No pool, no bridge, and a `default` profile with no devices — the exact state that
+        // yields "No root device could be found".
+        let r = FakeRunner::new(|_, args| {
+            let listing = args.contains(&"list");
+            if listing && args.contains(&"profile") {
+                out(
+                    0,
+                    r#"[{"name":"default","config":{},"devices":{},"used_by":[]}]"#,
+                )
+            } else if listing {
+                out(0, "[]") // storage + network lists are both empty
+            } else {
+                out(0, "") // create / device-add succeed
+            }
+        });
+        let fixed = CliIncus::new("llmsc", &r)
+            .ensure_incus_base(&SilentReporter)
+            .unwrap();
+        assert_eq!(fixed.len(), 4, "pool + bridge + root + nic");
+        assert!(r.called_with("storage") && r.called_with("create"));
+        assert!(r.called_with("incusbr0"));
+        // The root disk + nic are attached to the default profile.
+        assert!(r.called_with("root") && r.called_with("path=/"));
+        assert!(r.called_with("eth0") && r.called_with("nic"));
+    }
+
+    #[test]
+    fn ensure_incus_base_is_a_noop_when_already_set_up() {
+        let r = FakeRunner::new(|_, args| {
+            if args.contains(&"storage") && args.contains(&"list") {
+                out(
+                    0,
+                    r#"[{"name":"default","driver":"dir","description":"","config":{},"used_by":[]}]"#,
+                )
+            } else if args.contains(&"network") && args.contains(&"list") {
+                out(
+                    0,
+                    r#"[{"name":"incusbr0","type":"bridge","managed":true,"config":{},"used_by":[]}]"#,
+                )
+            } else if args.contains(&"profile") && args.contains(&"list") {
+                out(
+                    0,
+                    r#"[{"name":"default","config":{},"devices":{"root":{"type":"disk","path":"/","pool":"default"},"eth0":{"type":"nic","network":"incusbr0"}},"used_by":[]}]"#,
+                )
+            } else {
+                out(0, "")
+            }
+        });
+        let fixed = CliIncus::new("llmsc", &r)
+            .ensure_incus_base(&SilentReporter)
+            .unwrap();
+        assert!(fixed.is_empty(), "nothing to repair");
+        assert!(!r.called_with("create")); // no storage/network creation
+        assert!(!r.called_with("add")); // no profile device add
     }
 
     #[test]

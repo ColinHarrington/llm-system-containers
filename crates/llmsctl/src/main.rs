@@ -235,10 +235,22 @@ fn run() -> Result<(), String> {
             LimaVmDriver::new(cfg.vm, SystemRunner)
                 .up(&ConsoleReporter)
                 .map_err(|e| e.to_string())?;
-            IncusBootstrap::new(vm_name, &SystemRunner)
+            IncusBootstrap::new(vm_name.clone(), &SystemRunner)
                 .run(&ConsoleReporter)
                 .map_err(|e| e.to_string())?;
-            println!("VM is up with Incus ready");
+            // Repair the default profile if `admin init` left it without a root disk / nic —
+            // otherwise the first `llmsc launch` fails with "No root device could be found".
+            let repaired = llmsc_core::incus::CliIncus::new(vm_name, &SystemRunner)
+                .ensure_incus_base(&ConsoleReporter)
+                .map_err(|e| e.to_string())?;
+            if repaired.is_empty() {
+                println!("VM is up with Incus ready");
+            } else {
+                println!(
+                    "VM is up with Incus ready (repaired: {})",
+                    repaired.join("; ")
+                );
+            }
         }
         Command::Down => {
             driver()?.down().map_err(|e| e.to_string())?;

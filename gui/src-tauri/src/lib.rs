@@ -106,9 +106,15 @@ fn vm_up(app: AppHandle) -> Result<(), String> {
     LimaVmDriver::new(cfg.vm, SystemRunner)
         .up(&reporter)
         .map_err(|e| e.to_string())?;
-    IncusBootstrap::new(name, &SystemRunner)
+    IncusBootstrap::new(name.clone(), &SystemRunner)
         .run(&reporter)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // Repair the default profile if `admin init` left it without a root disk / nic — otherwise the
+    // first sandbox launch fails with "No root device could be found".
+    CliIncus::new(name, &SystemRunner)
+        .ensure_incus_base(&reporter)
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -2053,6 +2059,10 @@ fn platform_init(app: AppHandle, cfg: SetupCfg) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     IncusBootstrap::new(name.clone(), &SystemRunner)
         .run(&reporter)
+        .map_err(|e| e.to_string())?;
+    // Ensure the default profile has a root disk / nic so the first sandbox launch succeeds.
+    CliIncus::new(name.clone(), &SystemRunner)
+        .ensure_incus_base(&reporter)
         .map_err(|e| e.to_string())?;
 
     // Provision the selected services (best-effort: a failing service does not undo VM bring-up).
