@@ -142,6 +142,20 @@ pub fn parse_topology(list_json: &str) -> Result<Vec<SandboxTopology>> {
 /// flags (`--ephemeral`, `--description`, `-p` profiles, `-c` effective config incl. the
 /// `security.privileged=false` invariant + nesting, `-d` devices). CLI flags are the documented
 /// thin convenience subset of the same `InstancesPost` struct (see the research note).
+/// The profile list to launch with, guaranteeing the root-bearing `default` is included. Empty in
+/// → empty out (Incus applies `default` implicitly when no `-p` is given). Non-empty without
+/// `default` → `default` prepended so the (composition-only) profiles layer on top of its root
+/// disk + nic. `default` already present → returned unchanged (no duplicate).
+pub fn profiles_with_default(profiles: &[String]) -> Vec<String> {
+    if profiles.is_empty() || profiles.iter().any(|p| p == "default") {
+        return profiles.to_vec();
+    }
+    let mut out = Vec::with_capacity(profiles.len() + 1);
+    out.push("default".to_string());
+    out.extend(profiles.iter().cloned());
+    out
+}
+
 pub fn launch_args(spec: &Sandbox) -> Vec<String> {
     let mut a: Vec<String> = vec!["launch".into(), spec.image.clone(), spec.name.clone()];
     if spec.ephemeral {
@@ -151,9 +165,14 @@ pub fn launch_args(spec: &Sandbox) -> Vec<String> {
         a.push("--description".into());
         a.push(d.to_string());
     }
-    for p in &spec.profiles {
+    // Incus `-p` *replaces* the default profile list rather than appending to it. Our profiles are
+    // composition-only (the starter `sandbox`/`nesting` carry no root disk), so launching with them
+    // alone would drop the root-bearing `default` profile → "No root device could be found". Ensure
+    // `default` is present (first, so the chosen profiles layer on top). Empty profiles → no `-p`,
+    // and Incus uses `default` implicitly.
+    for p in profiles_with_default(&spec.profiles) {
         a.push("-p".into());
-        a.push(p.clone());
+        a.push(p);
     }
     for (k, v) in spec.effective_config() {
         a.push("-c".into());
@@ -2557,12 +2576,33 @@ mod tests {
         assert_eq!(a[2], "web-agent-01");
         assert!(joined.contains("--ephemeral"));
         assert!(joined.contains("--description dev box"));
-        assert!(joined.contains("-p sandbox"));
-        assert!(joined.contains("-p net-egress-filtered"));
+        // `default` is prepended (Incus -p replaces the list) so the root disk survives, with the
+        // composition-only profiles layered after it.
+        assert!(joined.contains("-p default -p sandbox -p net-egress-filtered"));
         assert!(joined.contains("-c security.privileged=false")); // invariant always present
         assert!(joined.contains("-c security.nesting=true")); // from nesting
         assert!(joined.contains("-c cloud-init.user-data=#cloud-config"));
         assert!(joined.contains("-d work,type=disk,path=/work,source=/home/colin/proj"));
+    }
+
+    #[test]
+    fn profiles_with_default_preserves_the_root_disk() {
+        // Empty → empty (Incus applies `default` implicitly; no `-p`).
+        assert!(profiles_with_default(&[]).is_empty());
+        // Composition-only profiles → `default` prepended so the root disk survives.
+        assert_eq!(
+            profiles_with_default(&["sandbox".into(), "nesting".into()]),
+            vec!["default", "sandbox", "nesting"]
+        );
+        // `default` already present (any position) → unchanged, never duplicated.
+        assert_eq!(
+            profiles_with_default(&["default".into(), "nesting".into()]),
+            vec!["default", "nesting"]
+        );
+        assert_eq!(
+            profiles_with_default(&["nesting".into(), "default".into()]),
+            vec!["nesting", "default"]
+        );
     }
 
     #[test]
