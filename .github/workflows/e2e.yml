@@ -1,0 +1,53 @@
+name: e2e
+
+# End-to-end sandbox lifecycle against a real Incus, in `local` mode (Incus directly on the
+# runner — no Lima VM, no nested virtualization). This is the integration gate that exercises the
+# code our FakeRunner unit tests can't: create an L2 sandbox, its Linux users, exec, teardown.
+#
+# The `vm`-mode full stack (Lima) is a manual/desktop path — it isn't run here because Lima needs a
+# VM/nested virt that hosted runners don't reliably provide. See planning/testing-e2e.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 7 * * *" # nightly
+  workflow_dispatch:
+
+# A new push to a branch cancels the previous in-flight e2e run for it.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-local:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Incus
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y incus
+
+      - name: Initialize Incus (storage pool + default profile + bridge)
+        run: |
+          sudo incus admin init --minimal
+          sudo incus version
+          # Give the runner user access to the Incus socket without sudo (activated via `sg` below).
+          sudo usermod -aG incus-admin "$USER"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build the CLIs
+        run: cargo build -p llmsc -p llmsctl
+
+      - name: e2e lifecycle (local mode)
+        # `sg incus-admin` activates the group membership added above in this command's shell.
+        run: sg incus-admin -c "uv run scripts/e2e.py run --mode local"
