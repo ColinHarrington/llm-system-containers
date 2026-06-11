@@ -5,8 +5,8 @@
 
 use clap::{Parser, Subcommand};
 use llmsc_core::bootstrap::IncusBootstrap;
-use llmsc_core::config::{user_config_path, Config};
-use llmsc_core::deploy::LiteLlmDeployer;
+use llmsc_core::config::{user_config_path, Config, DeploymentMode};
+use llmsc_core::deploy::{LiteLlmDeployer, Target};
 use llmsc_core::keystore;
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
@@ -157,7 +157,7 @@ fn services(action: ServiceAction) -> Result<(), String> {
         }
         ServiceAction::Up => {
             let cfg = Config::load_effective().map_err(|e| e.to_string())?;
-            let vm = cfg.vm.name.clone();
+            let vm = deploy_target(&cfg)?;
             if cfg.services.is_empty() {
                 println!("no services enabled (use `llmsctl services enable <name>`)");
             }
@@ -221,6 +221,18 @@ fn effective_cfg() -> Result<Config, String> {
 
 fn driver() -> Result<LimaVmDriver<SystemRunner>, String> {
     Ok(LimaVmDriver::new(effective_cfg()?.vm, SystemRunner))
+}
+
+/// The service-deployer transport for the configured deployment target: the VM (`vm`) or the host
+/// (`local`). `remote` is reserved.
+fn deploy_target(cfg: &Config) -> Result<Target, String> {
+    match cfg.mode {
+        DeploymentMode::Vm => Ok(Target::Vm(cfg.vm.name.clone())),
+        DeploymentMode::Local => Ok(Target::Local),
+        DeploymentMode::Remote => {
+            Err("deployment target 'remote' is not supported yet (use 'vm' or 'local')".into())
+        }
+    }
 }
 
 fn run() -> Result<(), String> {
@@ -403,7 +415,7 @@ fn keys(action: KeysAction) -> Result<(), String> {
             // injected into agents and rotated later. Tokens are 0600 in the host key store.
             let store_path = keystore::default_key_store_path();
             let mut store = keystore::KeyStore::load(&store_path).map_err(|e| e.to_string())?;
-            let minted = LiteLlmDeployer::new(cfg.vm.name.clone(), &SystemRunner)
+            let minted = LiteLlmDeployer::new(deploy_target(&cfg)?, &SystemRunner)
                 .sync_virtual_keys(&specs, store.tokens(), &ConsoleReporter)
                 .map_err(|e| e.to_string())?;
             for k in &minted {
@@ -413,7 +425,7 @@ fn keys(action: KeysAction) -> Result<(), String> {
             println!("synced {} virtual key(s)", minted.len());
         }
         KeysAction::SetProvider { provider, key } => {
-            LiteLlmDeployer::new(cfg.vm.name.clone(), &SystemRunner)
+            LiteLlmDeployer::new(deploy_target(&cfg)?, &SystemRunner)
                 .set_provider_key(&provider, &key, &ConsoleReporter)
                 .map_err(|e| e.to_string())?;
             println!("provider key set (stored only in the LiteLLM container)");
@@ -430,9 +442,10 @@ fn tetragon(sandbox: String, apply: bool) -> Result<(), String> {
         return Ok(());
     }
     if apply {
-        let applied = llmsc_core::deploy::TetragonDeployer::new(cfg.vm.name.clone(), &SystemRunner)
-            .apply_policies(&pols, &ConsoleReporter)
-            .map_err(|e| e.to_string())?;
+        let applied =
+            llmsc_core::deploy::TetragonDeployer::new(deploy_target(&cfg)?, &SystemRunner)
+                .apply_policies(&pols, &ConsoleReporter)
+                .map_err(|e| e.to_string())?;
         println!("loaded {} Tetragon policy(ies)", applied.len());
     } else {
         for p in &pols {

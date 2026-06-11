@@ -1,7 +1,8 @@
 //! Service provisioning (M5).
 //!
-//! Deployers stand a service up inside the VM (in its own L2 container by default), driving
-//! `incus` via `limactl shell` through the [`CommandRunner`] boundary.
+//! Deployers stand a service up in its own L2 container, driving `incus` through the
+//! [`CommandRunner`] boundary — transport-aware via [`Target`]: inside the Lima VM (`vm`, via
+//! `limactl shell`) or directly on the host (`local`).
 //!
 //! Verified on the VM: deploys and starts LiteLLM in its own **debian/12** L2 container
 //! (the proxy comes up and `/health/liveliness` responds). Still TODO for real use: supply a
@@ -23,20 +24,46 @@ const LITELLM_VERSION: &str = "1.87.0";
 /// in the generated config and to authenticate virtual-key minting.
 const MASTER_KEY: &str = "sk-llmsc-master";
 
-/// Shared plumbing for a service that lives in its own L2 container: drives `incus` in the VM via
-/// `limactl shell`, execs commands inside the container, and launches/starts it. Every deployer
-/// composes one of these so the boilerplate lives in exactly one place.
+/// Where a service deployer drives `incus`: inside the Lima VM (`vm` target, via `limactl shell`)
+/// or directly on the host (`local` target). Mirrors the transport in [`crate::incus::CliIncus`].
+/// `String`/`&str` convert to [`Target::Vm`], so existing `vm`-target callers are unchanged.
+#[derive(Debug, Clone)]
+pub enum Target {
+    Vm(String),
+    Local,
+}
+
+impl From<String> for Target {
+    fn from(vm: String) -> Self {
+        Target::Vm(vm)
+    }
+}
+
+impl From<&str> for Target {
+    fn from(vm: &str) -> Self {
+        Target::Vm(vm.to_string())
+    }
+}
+
+/// Shared plumbing for a service that lives in its own L2 container: drives `incus` (inside the VM
+/// via `limactl shell`, or directly on the host), execs commands inside the container, and
+/// launches/starts it. Every deployer composes one of these so the boilerplate lives in one place.
 struct ServiceContainer<'a, R: CommandRunner> {
-    vm: String,
+    target: Target,
     container: String,
     image: String,
     runner: &'a R,
 }
 
 impl<'a, R: CommandRunner> ServiceContainer<'a, R> {
-    fn new(vm: impl Into<String>, service: &str, image: impl Into<String>, runner: &'a R) -> Self {
+    fn new(
+        target: impl Into<Target>,
+        service: &str,
+        image: impl Into<String>,
+        runner: &'a R,
+    ) -> Self {
         Self {
-            vm: vm.into(),
+            target: target.into(),
             container: crate::service::container_name(service),
             image: image.into(),
             runner,
@@ -44,15 +71,25 @@ impl<'a, R: CommandRunner> ServiceContainer<'a, R> {
     }
 
     fn incus(&self, args: &[&str]) -> Result<RunOutput> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run("limactl", &full)
+        match &self.target {
+            Target::Vm(vm) => {
+                let mut full = vec!["shell", vm.as_str(), "sudo", "incus"];
+                full.extend_from_slice(args);
+                self.runner.run("limactl", &full)
+            }
+            Target::Local => self.runner.run("incus", args),
+        }
     }
 
     fn incus_streamed(&self, args: &[&str]) -> Result<i32> {
-        let mut full = vec!["shell", self.vm.as_str(), "sudo", "incus"];
-        full.extend_from_slice(args);
-        self.runner.run_streamed("limactl", &full)
+        match &self.target {
+            Target::Vm(vm) => {
+                let mut full = vec!["shell", vm.as_str(), "sudo", "incus"];
+                full.extend_from_slice(args);
+                self.runner.run_streamed("limactl", &full)
+            }
+            Target::Local => self.runner.run_streamed("incus", args),
+        }
     }
 
     fn exec(&self, cmd: &str) -> Result<RunOutput> {
@@ -123,10 +160,10 @@ pub struct LiteLlmDeployer<'a, R: CommandRunner> {
 }
 
 impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
-    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+    pub fn new(target: impl Into<Target>, runner: &'a R) -> Self {
         Self {
             // debian/13 (trixie) systemd hangs at boot under this Incus → no networking; bookworm works.
-            svc: ServiceContainer::new(vm, "litellm", "images:debian/12", runner),
+            svc: ServiceContainer::new(target, "litellm", "images:debian/12", runner),
             port: LITELLM_PORT,
         }
     }
@@ -425,9 +462,9 @@ pub struct PhoenixDeployer<'a, R: CommandRunner> {
 }
 
 impl<'a, R: CommandRunner> PhoenixDeployer<'a, R> {
-    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+    pub fn new(target: impl Into<Target>, runner: &'a R) -> Self {
         Self {
-            svc: ServiceContainer::new(vm, "phoenix", "images:debian/12", runner),
+            svc: ServiceContainer::new(target, "phoenix", "images:debian/12", runner),
             port: 6006,
         }
     }
@@ -492,9 +529,9 @@ pub struct GrafanaStackDeployer<'a, R: CommandRunner> {
 }
 
 impl<'a, R: CommandRunner> GrafanaStackDeployer<'a, R> {
-    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+    pub fn new(target: impl Into<Target>, runner: &'a R) -> Self {
         Self {
-            svc: ServiceContainer::new(vm, "grafana", "images:debian/12", runner),
+            svc: ServiceContainer::new(target, "grafana", "images:debian/12", runner),
         }
     }
 
@@ -601,9 +638,9 @@ pub struct SeaweedFsDeployer<'a, R: CommandRunner> {
 }
 
 impl<'a, R: CommandRunner> SeaweedFsDeployer<'a, R> {
-    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+    pub fn new(target: impl Into<Target>, runner: &'a R) -> Self {
         Self {
-            svc: ServiceContainer::new(vm, "seaweedfs", "images:debian/12", runner),
+            svc: ServiceContainer::new(target, "seaweedfs", "images:debian/12", runner),
         }
     }
 
@@ -690,9 +727,9 @@ pub struct ZeekDeployer<'a, R: CommandRunner> {
 }
 
 impl<'a, R: CommandRunner> ZeekDeployer<'a, R> {
-    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+    pub fn new(target: impl Into<Target>, runner: &'a R) -> Self {
         Self {
-            svc: ServiceContainer::new(vm, "zeek", "images:debian/12", runner),
+            svc: ServiceContainer::new(target, "zeek", "images:debian/12", runner),
         }
     }
 
@@ -745,9 +782,9 @@ pub struct MitmproxyDeployer<'a, R: CommandRunner> {
 }
 
 impl<'a, R: CommandRunner> MitmproxyDeployer<'a, R> {
-    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+    pub fn new(target: impl Into<Target>, runner: &'a R) -> Self {
         Self {
-            svc: ServiceContainer::new(vm, "mitmproxy", "images:debian/12", runner),
+            svc: ServiceContainer::new(target, "mitmproxy", "images:debian/12", runner),
             port: MITMPROXY_PORT,
         }
     }
@@ -831,24 +868,27 @@ fn mitm_unit_script(port: u16) -> String {
 /// (and validating the generated policy schema) is follow-up work. The write+reload path is wired
 /// and tested so the GUI/CLI can drive it once Tetragon is present.
 pub struct TetragonDeployer<'a, R: CommandRunner> {
-    vm: String,
+    target: Target,
     runner: &'a R,
 }
 
 impl<'a, R: CommandRunner> TetragonDeployer<'a, R> {
-    pub fn new(vm: impl Into<String>, runner: &'a R) -> Self {
+    pub fn new(target: impl Into<Target>, runner: &'a R) -> Self {
         Self {
-            vm: vm.into(),
+            target: target.into(),
             runner,
         }
     }
 
-    /// Run a command directly in the VM (sudo) — Tetragon is an L1-host daemon, not in a container.
+    /// Run a command on the host running Incus (sudo) — Tetragon is an L1 daemon, not a container.
     fn vm_sh(&self, cmd: &str) -> Result<RunOutput> {
-        self.runner.run(
-            "limactl",
-            &["shell", self.vm.as_str(), "sudo", "bash", "-lc", cmd],
-        )
+        match &self.target {
+            Target::Vm(vm) => self.runner.run(
+                "limactl",
+                &["shell", vm.as_str(), "sudo", "bash", "-lc", cmd],
+            ),
+            Target::Local => self.runner.run("sudo", &["bash", "-lc", cmd]),
+        }
     }
 
     /// Write a TracingPolicy file and reload Tetragon. `name` is the policy name (file stem).
@@ -909,6 +949,24 @@ mod tests {
         assert!(r.called_with("config.yaml"));
         assert!(r.called_with("litellm.service"));
         assert!(r.called_with("systemctl"));
+    }
+
+    #[test]
+    fn deploy_local_target_runs_incus_directly() {
+        let r = FakeRunner::new(|_, args| {
+            if args.contains(&"info") {
+                out(1, "")
+            } else {
+                out(0, "")
+            }
+        });
+        LiteLlmDeployer::new(Target::Local, &r)
+            .deploy(&SilentReporter)
+            .unwrap();
+        // The `local` target shells `incus` directly — never `limactl`, never the VM `shell` wrapper.
+        assert!(!r.called_with("limactl"));
+        assert!(!r.called_with("shell"));
+        assert!(r.called_with("svc-litellm"));
     }
 
     #[test]
