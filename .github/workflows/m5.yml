@@ -34,6 +34,10 @@ jobs:
         run: |
           sudo incus admin init --minimal
           sudo usermod -aG incus-admin "$USER"
+          # GitHub runners ship Docker, which sets the iptables FORWARD policy to DROP — that
+          # blocks the Incus bridge's NAT so containers can't reach the internet (apt/pip/DNS all
+          # fail). Allow forwarding so service deploys can install packages.
+          sudo iptables -P FORWARD ACCEPT
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
