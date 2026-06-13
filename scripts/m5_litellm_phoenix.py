@@ -246,16 +246,19 @@ def run(cfg: Cfg, r: Results) -> int:
     )
     got_200 = "200" in out.splitlines()[0] if out.strip() else False
     completed = '"choices"' in out or "llmsc mock" in out
-    r.add(
-        "agent → proxy call",
-        got_200 and completed,
-        f"HTTP 200, completion via model={MODEL}",
-    )
+    call_ok = got_200 and completed
+    r.add("agent → proxy call", call_ok, f"HTTP 200, completion via model={MODEL}")
 
     # 6. The call should appear as a trace in Phoenix (best-effort: API shape varies by version).
-    r.add(
-        "Phoenix trace", phoenix_has_trace(cfg), "span visible in the Phoenix collector"
-    )
+    #    Only meaningful if the call actually happened — otherwise a lenient poll would false-pass.
+    if call_ok:
+        r.add(
+            "Phoenix trace",
+            phoenix_has_trace(cfg),
+            "span visible in the Phoenix collector",
+        )
+    else:
+        r.add("Phoenix trace", False, "skipped — the proxy call did not succeed")
 
     return r.summary()
 
