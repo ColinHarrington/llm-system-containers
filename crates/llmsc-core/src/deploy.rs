@@ -220,10 +220,36 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         reporter.step("Starting LiteLLM");
         self.svc.start("litellm")?;
 
+        // Block until the proxy actually accepts connections — `systemctl enable --now` returns
+        // before uvicorn is listening, so an immediate `keys sync` would race and fail with a
+        // connection refused. Poll the unauthenticated liveness endpoint.
+        reporter.step("Waiting for the proxy to accept connections");
+        self.wait_until_ready()?;
+
         reporter.step(&format!(
-            "LiteLLM deployed — reachable in the VM at {}:{} (TODO: set a provider key + virtual keys)",
+            "LiteLLM deployed — reachable in the VM at {}:{}",
             self.svc.container, self.port
         ));
+        Ok(())
+    }
+
+    /// Poll LiteLLM's liveness endpoint until it responds (or give up after ~60s). The proxy boots
+    /// a few seconds after `systemctl` returns; callers (`keys sync`) need it actually listening.
+    fn wait_until_ready(&self) -> Result<()> {
+        let probe = format!(
+            "for i in $(seq 1 30); do \
+               curl -fsS -o /dev/null http://127.0.0.1:{port}/health/liveliness && exit 0; \
+               sleep 2; \
+             done; echo 'LiteLLM proxy did not become ready' >&2; exit 1",
+            port = self.port
+        );
+        let o = self.exec(&probe)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "LiteLLM proxy not ready: {}",
+                o.stderr.trim()
+            )));
+        }
         Ok(())
     }
 
@@ -949,6 +975,7 @@ mod tests {
         assert!(r.called_with("config.yaml"));
         assert!(r.called_with("litellm.service"));
         assert!(r.called_with("systemctl"));
+        assert!(r.called_with("health/liveliness")); // waits for the proxy to be ready
     }
 
     #[test]
