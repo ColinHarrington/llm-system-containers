@@ -345,6 +345,8 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         self.exec(&unit_script(self.port))?;
         let _ =
             self.exec("systemctl daemon-reload && systemctl restart litellm 2>/dev/null || true");
+        // Wait out the restart so a follow-up call doesn't race a not-yet-listening proxy.
+        self.wait_until_ready()?;
         reporter.step("Provider key set (stored only in the LiteLLM container)");
         Ok(())
     }
@@ -379,6 +381,9 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
             return Err(Error::Incus(format!("wiring Phoenix: {}", o.stderr.trim())));
         }
         let _ = self.exec("systemctl restart litellm 2>/dev/null || true");
+        // The restart drops the listener for a few seconds — wait so the next caller (`keys sync`)
+        // doesn't race it with a connection-refused.
+        self.wait_until_ready()?;
         Ok(())
     }
 }
