@@ -38,6 +38,9 @@ jobs:
           sudo incus version
           # Give the runner user access to the Incus socket without sudo (activated via `sg` below).
           sudo usermod -aG incus-admin "$USER"
+          # GitHub runners ship Docker, which sets the iptables FORWARD policy to DROP and breaks
+          # Incus bridge NAT (containers can't reach the internet). Allow forwarding.
+          sudo iptables -P FORWARD ACCEPT
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
