@@ -241,12 +241,19 @@ def run(cfg: Cfg, r: Results) -> int:
         '-H "Authorization: Bearer $OPENAI_API_KEY" -H "Content-Type: application/json" '
         f"-d {shlex.quote(body)}; echo; cat /tmp/resp.json"
     )
-    rc, out = incus(
-        cfg, f"exec {cfg.sandbox} -- su - {cfg.agent} -c {shlex.quote(call)}"
-    )
-    got_200 = "200" in out.splitlines()[0] if out.strip() else False
-    completed = '"choices"' in out or "llmsc mock" in out
-    call_ok = got_200 and completed
+    # Retry a few times: the proxy can briefly be unready right after services up (a restart while
+    # wiring Phoenix), and a real agent would retry too.
+    call_ok = False
+    for attempt in range(5):
+        rc, out = incus(
+            cfg, f"exec {cfg.sandbox} -- su - {cfg.agent} -c {shlex.quote(call)}"
+        )
+        got_200 = "200" in out.splitlines()[0] if out.strip() else False
+        completed = '"choices"' in out or "llmsc mock" in out
+        call_ok = got_200 and completed
+        if call_ok:
+            break
+        time.sleep(4)
     r.add("agent → proxy call", call_ok, f"HTTP 200, completion via model={MODEL}")
 
     if not call_ok:

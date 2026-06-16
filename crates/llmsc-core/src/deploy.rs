@@ -215,13 +215,15 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         reporter.step(&format!(
             "Installing LiteLLM {LITELLM_VERSION} (pip, pinned)"
         ));
-        // `prisma` is required for LiteLLM's DB-backed virtual-key management — `litellm[proxy]`
-        // does not pull it in, and without it the proxy crashes on startup with
-        // `ModuleNotFoundError: No module named 'prisma'` once DATABASE_URL is set. LiteLLM
-        // generates the client + runs migrations from its bundled schema on first boot.
+        // Extra deps litellm[proxy] doesn't pull in:
+        // - `prisma`: DB-backed virtual-key management (else startup dies "No module named prisma").
+        // - opentelemetry + openinference: the `arize_phoenix` tracing callback imports
+        //   `opentelemetry.sdk.trace`; without it the callback fails to init and no span is emitted.
         let install = format!(
             "/opt/litellm/bin/pip install --quiet --upgrade pip && \
-             /opt/litellm/bin/pip install --quiet 'litellm[proxy]=={LITELLM_VERSION}' prisma"
+             /opt/litellm/bin/pip install --quiet 'litellm[proxy]=={LITELLM_VERSION}' prisma \
+             opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp \
+             openinference-instrumentation-litellm arize-phoenix-otel"
         );
         let code = self.exec_streamed(&install)?;
         if code != 0 {
