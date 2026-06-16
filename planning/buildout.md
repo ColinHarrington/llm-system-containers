@@ -80,13 +80,16 @@ core logic is unit-testable with fakes.
 - **Status:** service catalog + placement model done; deployers exist for **LiteLLM, Phoenix,
   Grafana, SeaweedFS, mitmproxy, Zeek** (shared `ServiceContainer` helper); `services list|status|enable|
   disable|up`, `keys ls|sync|set-provider`, and live container status read-back all implemented.
-  The done-when path is now wired end-to-end: LiteLLM emits Phoenix traces (the `arize_phoenix`
-  callback + a hermetic `mock` model are in the generated config); virtual keys are
-  rotation-ready (`sk-llmsc-<sandbox>-<agent>-<random>`, minted + persisted 0600);
-  `llmsc agent env` injects the proxy URL + key per-user; and `services up` auto-wires traces. The
-  live integration test is built as `scripts/m5_litellm_phoenix.py` (see
-  [services/m5-done-when-testplan.md](services/m5-done-when-testplan.md)). Remaining: run it green
-  on a live VM (mock path) to mark the MVP done-when met, and promote it into CI.
+  The LLM-trace done-when is **met and CI-proven**: `scripts/m5_litellm_phoenix.py` runs green
+  end-to-end (services up → keys sync → apply → agent env → the agent's call → Phoenix span) in the
+  nightly `m5-done-when` workflow (`local` mode, no nested virt). LiteLLM emits Phoenix traces (the
+  `arize_phoenix` callback + a hermetic `mock` model); virtual keys are rotation-ready
+  (`sk-llmsc-<sandbox>-<agent>-<random>`, minted against a colocated Postgres + persisted 0600);
+  `llmsc agent env` injects the proxy URL + key per-user; `services up` auto-wires traces. See
+  [services/m5-done-when-testplan.md](services/m5-done-when-testplan.md).
+  **Remaining for the full M5 done-when:** the *"system metrics visible"* half — the Grafana stack
+  deploys (VictoriaMetrics+Loki+Grafana) but nothing yet feeds it metrics (next: scrape Incus's
+  native `/1.0/metrics` for per-sandbox CPU/mem/disk/net + a starter dashboard).
 
 ### M6 — File transfer + shared storage  🚧 PARTIAL
 - **Deliverables:** `llmsc cp` (Incus file API; host↔L2, L2↔L2); SeaweedFS service + mount.
