@@ -256,6 +256,22 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
             )));
         }
 
+        // Create the virtual-key tables in the database. `prisma generate` builds the client but
+        // not the schema; without this the proxy 500s with "table LiteLLM_VerificationToken does
+        // not exist". `db push` is idempotent (no-op once the tables match).
+        reporter.step("Creating the virtual-key schema (prisma db push)");
+        let push = format!(
+            "export PRISMA_USE_GLOBAL_NODE=true && export PATH=/opt/litellm/bin:$PATH && \
+             export DATABASE_URL='{DATABASE_URL}' && \
+             SCHEMA=$(/opt/litellm/bin/python -c \"import litellm,os;\
+             print(os.path.join(os.path.dirname(litellm.__file__),'proxy','schema.prisma'))\") && \
+             /opt/litellm/bin/prisma db push --schema \"$SCHEMA\" --accept-data-loss --skip-generate"
+        );
+        let code = self.exec_streamed(&push)?;
+        if code != 0 {
+            return Err(Error::Incus(format!("prisma db push failed (exit {code})")));
+        }
+
         reporter.step("Writing config + systemd unit");
         self.exec(&config_script(provider_env_and_model("openai").1))?;
         // The proxy needs DATABASE_URL to manage virtual keys; LiteLLM runs Prisma migrations on
