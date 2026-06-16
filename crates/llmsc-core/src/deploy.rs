@@ -145,6 +145,17 @@ pub fn litellm_base_url() -> String {
     )
 }
 
+/// The proxy base URL preferring the resolved container **IP** over its name. Bridge DNS-by-name is
+/// unreliable across base images (the search domain isn't always applied), but instances on the
+/// same bridge always reach each other by IP — the same precise address the egress ring resolves.
+/// Falls back to the name when the IP isn't known.
+pub fn litellm_base_url_for(host_ip: Option<&str>) -> String {
+    match host_ip {
+        Some(ip) => format!("http://{ip}:{LITELLM_PORT}"),
+        None => litellm_base_url(),
+    }
+}
+
 /// The Phoenix collector host LiteLLM should export traces to (`svc-phoenix`) — but only when
 /// **both** the proxy and Phoenix are enabled; otherwise `None`. `llmsctl services up` uses this to
 /// auto-wire tracing via [`LiteLlmDeployer::enable_phoenix`] (the callback lives in [`config_script`]).
@@ -1054,6 +1065,12 @@ mod tests {
     #[test]
     fn litellm_base_url_points_at_the_service_container() {
         assert_eq!(litellm_base_url(), "http://svc-litellm:4000");
+        // Prefer the resolved IP (bridge DNS-by-name is unreliable); fall back to the name.
+        assert_eq!(
+            litellm_base_url_for(Some("10.71.0.5")),
+            "http://10.71.0.5:4000"
+        );
+        assert_eq!(litellm_base_url_for(None), "http://svc-litellm:4000");
     }
 
     #[test]
