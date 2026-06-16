@@ -192,10 +192,12 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         reporter.step("Creating LiteLLM service container");
         self.svc.launch_if_absent()?;
 
-        reporter.step("Installing Python (apt)");
-        // Always install python3-venv: the base image ships python3 but not the venv module.
+        reporter.step("Installing Python + Node (apt)");
+        // python3-venv: the base image ships python3 but not venv. nodejs/npm: the Python `prisma`
+        // package shells out to the Node-based Prisma CLI; its self-bootstrapped Node is flaky, so
+        // we install a system Node and point prisma at it via PRISMA_USE_GLOBAL_NODE below.
         let o = self.exec(
-            "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv",
+            "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv nodejs npm",
         )?;
         if !o.ok() {
             return Err(Error::Incus(format!(
@@ -232,7 +234,8 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         // does NOT do this itself — without it the proxy startup dies with "Unable to find Prisma
         // binaries. Please run 'prisma generate' first." (downloads engines → needs egress).
         reporter.step("Generating the Prisma client (LiteLLM schema)");
-        let gen = "SCHEMA=$(/opt/litellm/bin/python -c \"import litellm,os;\
+        let gen = "export PRISMA_USE_GLOBAL_NODE=true && \
+                   SCHEMA=$(/opt/litellm/bin/python -c \"import litellm,os;\
                    print(os.path.join(os.path.dirname(litellm.__file__),'proxy','schema.prisma'))\") && \
                    /opt/litellm/bin/prisma generate --schema \"$SCHEMA\"";
         let code = self.exec_streamed(gen)?;
@@ -254,8 +257,9 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         reporter.step("Writing config + systemd unit");
         self.exec(&config_script(provider_env_and_model("openai").1))?;
         // The proxy needs DATABASE_URL to manage virtual keys; LiteLLM runs Prisma migrations on
-        // first boot from it.
+        // first boot from it. PRISMA_USE_GLOBAL_NODE makes the runtime prisma calls use system Node.
         self.exec(&env_set_script("DATABASE_URL", DATABASE_URL))?;
+        self.exec(&env_set_script("PRISMA_USE_GLOBAL_NODE", "true"))?;
         self.exec(&unit_script(self.port))?;
 
         reporter.step("Starting LiteLLM");
