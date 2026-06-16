@@ -213,9 +213,13 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         reporter.step(&format!(
             "Installing LiteLLM {LITELLM_VERSION} (pip, pinned)"
         ));
+        // `prisma` is required for LiteLLM's DB-backed virtual-key management — `litellm[proxy]`
+        // does not pull it in, and without it the proxy crashes on startup with
+        // `ModuleNotFoundError: No module named 'prisma'` once DATABASE_URL is set. LiteLLM
+        // generates the client + runs migrations from its bundled schema on first boot.
         let install = format!(
             "/opt/litellm/bin/pip install --quiet --upgrade pip && \
-             /opt/litellm/bin/pip install --quiet 'litellm[proxy]=={LITELLM_VERSION}'"
+             /opt/litellm/bin/pip install --quiet 'litellm[proxy]=={LITELLM_VERSION}' prisma"
         );
         let code = self.exec_streamed(&install)?;
         if code != 0 {
