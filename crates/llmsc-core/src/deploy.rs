@@ -234,7 +234,9 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         // does NOT do this itself — without it the proxy startup dies with "Unable to find Prisma
         // binaries. Please run 'prisma generate' first." (downloads engines → needs egress).
         reporter.step("Generating the Prisma client (LiteLLM schema)");
-        let gen = "export PRISMA_USE_GLOBAL_NODE=true && \
+        // PATH must include the venv bin: the Node Prisma CLI shells out to the `prisma-client-py`
+        // generator (a console script in /opt/litellm/bin) and fails with "not found" otherwise.
+        let gen = "export PRISMA_USE_GLOBAL_NODE=true && export PATH=/opt/litellm/bin:$PATH && \
                    SCHEMA=$(/opt/litellm/bin/python -c \"import litellm,os;\
                    print(os.path.join(os.path.dirname(litellm.__file__),'proxy','schema.prisma'))\") && \
                    /opt/litellm/bin/prisma generate --schema \"$SCHEMA\"";
