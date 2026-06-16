@@ -228,6 +228,20 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
             )));
         }
 
+        // Generate the Prisma client + engine binaries against LiteLLM's bundled schema. LiteLLM
+        // does NOT do this itself — without it the proxy startup dies with "Unable to find Prisma
+        // binaries. Please run 'prisma generate' first." (downloads engines → needs egress).
+        reporter.step("Generating the Prisma client (LiteLLM schema)");
+        let gen = "SCHEMA=$(/opt/litellm/bin/python -c \"import litellm,os;\
+                   print(os.path.join(os.path.dirname(litellm.__file__),'proxy','schema.prisma'))\") && \
+                   /opt/litellm/bin/prisma generate --schema \"$SCHEMA\"";
+        let code = self.exec_streamed(gen)?;
+        if code != 0 {
+            return Err(Error::Incus(format!(
+                "prisma generate failed (exit {code})"
+            )));
+        }
+
         reporter.step("Installing PostgreSQL (virtual-key store)");
         let o = self.exec(postgres_script())?;
         if !o.ok() {
