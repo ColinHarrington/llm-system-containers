@@ -241,13 +241,41 @@ def run(cfg: Cfg, r: Results) -> int:
         '-H "Authorization: Bearer $OPENAI_API_KEY" -H "Content-Type: application/json" '
         f"-d {shlex.quote(body)}; echo; cat /tmp/resp.json"
     )
-    rc, out = incus(
-        cfg, f"exec {cfg.sandbox} -- su - {cfg.agent} -c {shlex.quote(call)}"
-    )
-    got_200 = "200" in out.splitlines()[0] if out.strip() else False
-    completed = '"choices"' in out or "llmsc mock" in out
-    call_ok = got_200 and completed
+    # Retry a few times: the proxy can briefly be unready right after services up (a restart while
+    # wiring Phoenix), and a real agent would retry too.
+    call_ok = False
+    for attempt in range(5):
+        rc, out = incus(
+            cfg, f"exec {cfg.sandbox} -- su - {cfg.agent} -c {shlex.quote(call)}"
+        )
+        got_200 = "200" in out.splitlines()[0] if out.strip() else False
+        completed = '"choices"' in out or "llmsc mock" in out
+        call_ok = got_200 and completed
+        if call_ok:
+            break
+        time.sleep(4)
     r.add("agent → proxy call", call_ok, f"HTTP 200, completion via model={MODEL}")
+
+    if not call_ok:
+        # The call is the hardest hop (agent container → proxy container). Dump exactly what the
+        # proxy is listening on and the unit it's running, so a failure is diagnosable from the log.
+        console.rule("[yellow]diagnostics: svc-litellm")
+        svc = service("litellm")
+        incus(
+            cfg, "list -c n4 -f csv"
+        )  # instance IPs — does the injected IP match svc-litellm?
+        incus(
+            cfg,
+            f"exec {svc} -- sh -lc 'ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null'",
+        )
+        incus(
+            cfg,
+            f"exec {svc} -- sh -lc 'grep ExecStart /etc/systemd/system/litellm.service'",
+        )
+        incus(
+            cfg,
+            f"exec {svc} -- sh -lc 'journalctl -u litellm --no-pager 2>&1 | tail -30'",
+        )
 
     # 6. The call should appear as a trace in Phoenix (best-effort: API shape varies by version).
     #    Only meaningful if the call actually happened — otherwise a lenient poll would false-pass.
