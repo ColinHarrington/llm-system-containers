@@ -224,8 +224,20 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
             )));
         }
 
+        reporter.step("Installing PostgreSQL (virtual-key store)");
+        let o = self.exec(postgres_script())?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "installing PostgreSQL: {}",
+                o.stderr.trim()
+            )));
+        }
+
         reporter.step("Writing config + systemd unit");
         self.exec(&config_script(provider_env_and_model("openai").1))?;
+        // The proxy needs DATABASE_URL to manage virtual keys; LiteLLM runs Prisma migrations on
+        // first boot from it.
+        self.exec(&env_set_script("DATABASE_URL", DATABASE_URL))?;
         self.exec(&unit_script(self.port))?;
 
         reporter.step("Starting LiteLLM");
@@ -247,8 +259,10 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
     /// Poll LiteLLM's liveness endpoint until it responds (or give up after ~60s). The proxy boots
     /// a few seconds after `systemctl` returns; callers (`keys sync`) need it actually listening.
     fn wait_until_ready(&self) -> Result<()> {
+        // Generous: the first boot runs Prisma migrations against the freshly-created database,
+        // which downloads engine binaries — that can take well over a minute.
         let probe = format!(
-            "for i in $(seq 1 30); do \
+            "for i in $(seq 1 90); do \
                curl -fsS -o /dev/null http://127.0.0.1:{port}/health/liveliness && exit 0; \
                sleep 2; \
              done; echo 'LiteLLM proxy did not become ready' >&2; exit 1",
@@ -306,19 +320,24 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
                 "{{\"key\":\"{}\",\"key_alias\":\"{}\",\"max_budget\":{},\"budget_duration\":\"{}\",\"models\":{}}}",
                 token, s.key_alias, s.max_budget_usd, s.budget_duration, models
             );
+            // Capture the HTTP status — `curl` (without -f) exits 0 even on a 500, so the exit code
+            // alone hid "DB not connected". Status is the last line; the body precedes it.
             let curl = format!(
-                "curl -sS -X POST http://127.0.0.1:{}/key/generate \
-                 -H 'Authorization: Bearer {}' -H 'Content-Type: application/json' -d '{}'",
+                "curl -sS -o /tmp/keygen.out -w '%{{http_code}}' -X POST http://127.0.0.1:{}/key/generate \
+                 -H 'Authorization: Bearer {}' -H 'Content-Type: application/json' -d '{}'; \
+                 echo; cat /tmp/keygen.out",
                 self.port, MASTER_KEY, body
             );
             let o = self.exec(&curl)?;
+            let status = o.stdout.lines().next().unwrap_or("").trim();
             let combined = format!("{} {}", o.stdout, o.stderr).to_lowercase();
             let dup = combined.contains("already exists") || combined.contains("duplicate");
-            if !o.ok() && !dup {
+            let ok2xx = status.starts_with('2');
+            if !o.ok() || (!ok2xx && !dup) {
                 return Err(Error::Incus(format!(
-                    "minting virtual key {}: {}",
+                    "minting virtual key {} (HTTP {status}): {}",
                     s.key_alias,
-                    o.stderr.trim()
+                    combined.trim()
                 )));
             }
             minted.push(MintedKey {
@@ -340,12 +359,9 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
     ) -> Result<()> {
         let (env_var, model) = provider_env_and_model(provider);
         reporter.step(&format!("Configuring provider '{provider}' ({model})"));
-        // Write the env file (the key lives here, inside the container, 0600).
-        let env_script = format!(
-            "umask 077 && mkdir -p /etc/litellm && printf '%s=%s\\n' {env_var} '{}' > /etc/litellm/litellm.env",
-            api_key.replace('\'', "")
-        );
-        let o = self.exec(&env_script)?;
+        // Set just this key in the env file (the credential lives here, inside the container) —
+        // idempotently, so it doesn't clobber DATABASE_URL / the Phoenix endpoint.
+        let o = self.exec(&env_set_script(env_var, &api_key.replace('\'', "")))?;
         if !o.ok() {
             return Err(Error::Incus(format!(
                 "writing provider key: {}",
@@ -492,6 +508,38 @@ fn unit_script(port: u16) -> String {
          ExecStart=/opt/litellm/bin/litellm --config /etc/litellm/config.yaml --host 0.0.0.0 --port {port}\n\
          Restart=on-failure\n\
          [Install]\nWantedBy=multi-user.target\nEOF"
+    )
+}
+
+/// LiteLLM stores virtual keys + budgets in a database (Prisma); without one `/key/generate`
+/// returns "DB not connected". We colocate PostgreSQL in the proxy container, reachable at
+/// localhost. The credentials are local to the container (the DB holds virtual keys, not provider
+/// secrets).
+const DATABASE_URL: &str = "postgresql://litellm:litellm@127.0.0.1:5432/litellm";
+
+/// Install + start PostgreSQL in the container and create the `litellm` role + database
+/// (idempotently, via `\gexec` so re-runs are safe). The SQL lives in a quoted heredoc to avoid
+/// nested shell-quoting.
+fn postgres_script() -> &'static str {
+    "DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql && \
+     systemctl enable --now postgresql && \
+     cat > /tmp/llmsc-db.sql <<'SQL'\n\
+     SELECT 'CREATE ROLE litellm LOGIN PASSWORD ''litellm''' \
+     WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='litellm')\\gexec\n\
+     SELECT 'CREATE DATABASE litellm OWNER litellm' \
+     WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname='litellm')\\gexec\n\
+     SQL\n\
+     su - postgres -c 'psql -v ON_ERROR_STOP=1 -f /tmp/llmsc-db.sql'"
+}
+
+/// Set a single `KEY=value` line in the LiteLLM env file idempotently (delete any prior line for
+/// the key, then append). Used for `DATABASE_URL`, the provider key, and the Phoenix endpoint so
+/// they accumulate instead of clobbering each other.
+fn env_set_script(key: &str, val: &str) -> String {
+    format!(
+        "umask 077 && mkdir -p /etc/litellm && touch /etc/litellm/litellm.env && \
+         sed -i '/^{key}=/d' /etc/litellm/litellm.env && \
+         printf '%s=%s\\n' '{key}' '{val}' >> /etc/litellm/litellm.env"
     )
 }
 
@@ -993,6 +1041,8 @@ mod tests {
         assert!(r.called_with("systemctl"));
         assert!(r.called_with("health/liveliness")); // waits for the proxy to be ready
         assert!(r.called_with("0.0.0.0")); // binds all interfaces so sandboxes reach it on the bridge
+        assert!(r.called_with("postgresql")); // virtual-key store
+        assert!(r.called_with("DATABASE_URL")); // proxy points at the DB
     }
 
     #[test]
@@ -1015,7 +1065,8 @@ mod tests {
 
     #[test]
     fn sync_virtual_keys_mints_token_with_identifiable_prefix() {
-        let r = FakeRunner::new(|_, _| out(0, "{\"key\":\"sk-...\"}"));
+        // curl prints the body then the HTTP status line (echo + cat); 2xx = success.
+        let r = FakeRunner::new(|_, _| out(0, "201\n{\"key\":\"sk-...\"}"));
         let specs = vec![crate::enforce::virtual_key_spec(
             "web-agent-01",
             "agent-claude",
@@ -1038,7 +1089,7 @@ mod tests {
 
     #[test]
     fn sync_virtual_keys_reuses_an_existing_token() {
-        let r = FakeRunner::new(|_, _| out(0, ""));
+        let r = FakeRunner::new(|_, _| out(0, "200\n{}"));
         let specs = vec![crate::enforce::virtual_key_spec("sb", "agent-x", "medium")];
         let mut existing = BTreeMap::new();
         existing.insert(
@@ -1055,7 +1106,8 @@ mod tests {
 
     #[test]
     fn sync_virtual_keys_tolerates_duplicate_alias() {
-        let r = FakeRunner::new(|_, _| out(1, "Error: key_alias already exists"));
+        // A duplicate is an HTTP 4xx (curl still exits 0) whose body says "already exists".
+        let r = FakeRunner::new(|_, _| out(0, "400\nkey_alias already exists"));
         let specs = vec![crate::enforce::virtual_key_spec("sb", "agent-x", "medium")];
         // duplicate → treated as success.
         LiteLlmDeployer::new("llmsc", &r)

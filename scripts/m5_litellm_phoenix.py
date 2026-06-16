@@ -255,6 +255,9 @@ def run(cfg: Cfg, r: Results) -> int:
         console.rule("[yellow]diagnostics: svc-litellm")
         svc = service("litellm")
         incus(
+            cfg, "list -c n4 -f csv"
+        )  # instance IPs — does the injected IP match svc-litellm?
+        incus(
             cfg,
             f"exec {svc} -- sh -lc 'ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null'",
         )
@@ -264,7 +267,7 @@ def run(cfg: Cfg, r: Results) -> int:
         )
         incus(
             cfg,
-            f"exec {svc} -- sh -lc 'systemctl status litellm --no-pager 2>&1 | tail -20'",
+            f"exec {svc} -- sh -lc 'journalctl -u litellm --no-pager 2>&1 | tail -30'",
         )
 
     # 6. The call should appear as a trace in Phoenix (best-effort: API shape varies by version).
