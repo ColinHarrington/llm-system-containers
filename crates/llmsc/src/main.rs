@@ -424,8 +424,14 @@ fn run() -> Result<(), String> {
                     let token = store.get(&alias).ok_or_else(|| {
                         format!("no virtual key for {a}@{s} — run `llmsctl keys sync` first")
                     })?;
+                    // Prefer the proxy's resolved IP over its name — bridge DNS-by-name is
+                    // unreliable across images; both containers reach each other by IP on the bridge.
+                    let svc = llmsc_core::service::container_name("litellm");
+                    let base = llmsc_core::deploy::litellm_base_url_for(
+                        incus.instance_ipv4(&svc).as_deref(),
+                    );
                     incus
-                        .set_litellm_env(&s, &a, &llmsc_core::deploy::litellm_base_url(), token)
+                        .set_litellm_env(&s, &a, &base, token)
                         .map_err(|e| e.to_string())?;
                     println!("injected LiteLLM proxy URL + virtual key into {a}@{s}");
                 }
