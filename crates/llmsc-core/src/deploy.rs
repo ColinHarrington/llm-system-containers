@@ -489,7 +489,7 @@ fn unit_script(port: u16) -> String {
          [Unit]\nDescription=LiteLLM proxy\nAfter=network.target\n\
          [Service]\n\
          EnvironmentFile=-/etc/litellm/litellm.env\n\
-         ExecStart=/opt/litellm/bin/litellm --config /etc/litellm/config.yaml --port {port}\n\
+         ExecStart=/opt/litellm/bin/litellm --config /etc/litellm/config.yaml --host 0.0.0.0 --port {port}\n\
          Restart=on-failure\n\
          [Install]\nWantedBy=multi-user.target\nEOF"
     )
@@ -992,6 +992,7 @@ mod tests {
         assert!(r.called_with("litellm.service"));
         assert!(r.called_with("systemctl"));
         assert!(r.called_with("health/liveliness")); // waits for the proxy to be ready
+        assert!(r.called_with("0.0.0.0")); // binds all interfaces so sandboxes reach it on the bridge
     }
 
     #[test]
