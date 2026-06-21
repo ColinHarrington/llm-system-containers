@@ -470,6 +470,29 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         Ok(())
     }
 
+    /// Revoke a virtual key on the proxy (`/key/delete`). Tolerates an already-absent key. Used by
+    /// `keys revoke` and by `keys rotate` to drop the superseded token.
+    pub fn delete_key(&self, token: &str, reporter: &dyn Reporter) -> Result<()> {
+        reporter.step("Revoking virtual key on the proxy");
+        let curl = format!(
+            "curl -sS -o /tmp/keydel.out -w '%{{http_code}}' -X POST http://127.0.0.1:{}/key/delete \
+             -H 'Authorization: Bearer {}' -H 'Content-Type: application/json' \
+             -d '{{\"keys\":[\"{}\"]}}'; echo; cat /tmp/keydel.out",
+            self.port, MASTER_KEY, token
+        );
+        let o = self.exec(&curl)?;
+        let status = o.stdout.lines().next().unwrap_or("").trim();
+        let combined = format!("{} {}", o.stdout, o.stderr).to_lowercase();
+        let gone = combined.contains("not found") || combined.contains("does not exist");
+        if !o.ok() || (!status.starts_with('2') && !gone) {
+            return Err(Error::Incus(format!(
+                "revoking key (HTTP {status}): {}",
+                combined.trim()
+            )));
+        }
+        Ok(())
+    }
+
     /// Read per-key spend from the proxy admin API (`/global/spend/keys`). Best-effort: returns an
     /// empty list if the proxy is unreachable. The endpoint/shape may vary by LiteLLM version.
     pub fn key_usage(&self) -> Result<Vec<KeyUsage>> {
@@ -1322,6 +1345,21 @@ mod tests {
         assert!(r.called_with("google-cloud-aiplatform"));
         assert!(r.called_with("vertex_project: my-proj"));
         assert!(r.called_with("svc-litellm")); // only ever in the service container
+    }
+
+    #[test]
+    fn delete_key_posts_and_tolerates_absent() {
+        let r = FakeRunner::new(|_, _| out(0, "200\n{}"));
+        LiteLlmDeployer::new("llmsc", &r)
+            .delete_key("sk-llmsc-sb-agent-x-cafe", &SilentReporter)
+            .unwrap();
+        assert!(r.called_with("key/delete"));
+        assert!(r.called_with("sk-llmsc-sb-agent-x-cafe"));
+        // An already-gone key (4xx "not found") is not an error.
+        let r2 = FakeRunner::new(|_, _| out(0, "404\nkey not found"));
+        LiteLlmDeployer::new("llmsc", &r2)
+            .delete_key("missing", &SilentReporter)
+            .unwrap();
     }
 
     #[test]

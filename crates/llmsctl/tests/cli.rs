@@ -18,6 +18,24 @@ fn help_lists_subcommands() {
 }
 
 #[test]
+fn keys_help_lists_lifecycle_commands() {
+    llmsctl()
+        .args(["keys", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("rotate"))
+        .stdout(contains("revoke"))
+        .stdout(contains("usage"));
+}
+
+#[test]
+fn keys_rotate_requires_agent_at_sandbox() {
+    in_project("", &["keys", "rotate", "nope"])
+        .failure()
+        .stderr(contains("agent@sandbox"));
+}
+
+#[test]
 fn keys_set_vertex_help_lists_flags() {
     llmsctl()
         .args(["keys", "set-vertex", "--help"])
