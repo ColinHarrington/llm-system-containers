@@ -4,10 +4,11 @@
 //! [`CommandRunner`] boundary — transport-aware via [`Target`]: inside the Lima VM (`vm`, via
 //! `limactl shell`) or directly on the host (`local`).
 //!
-//! Verified on the VM: deploys and starts LiteLLM in its own **debian/12** L2 container
-//! (the proxy comes up and `/health/liveliness` responds). Still TODO for real use: supply a
-//! provider API key + a real model, and mint per-agent **virtual keys** — the `master_key`
-//! and model in the generated config are placeholders.
+//! The LiteLLM path is exercised end-to-end in CI (the nightly `m5-done-when` workflow): it
+//! deploys LiteLLM (+ a colocated Postgres for Prisma-backed virtual keys) in its own
+//! **debian/12** L2 container, mints per-agent virtual keys, and an agent's call is traced in
+//! Phoenix. The built-in `mock` model serves the hermetic path; a real provider is set via
+//! [`LiteLlmDeployer::set_provider_key`]. `MASTER_KEY` is still a placeholder (TODO: rotate).
 
 use crate::error::{Error, Result};
 use crate::keystore::{key_token, random_suffix};
