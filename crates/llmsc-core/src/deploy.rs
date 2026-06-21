@@ -421,6 +421,55 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
         Ok(())
     }
 
+    /// Configure **Vertex AI** as the upstream provider. Unlike key-based providers, Vertex auth is
+    /// a Google service-account JSON: the caller passes it **base64-encoded** (so multi-line JSON
+    /// survives the shell); it is decoded into `/etc/litellm/vertex-sa.json` (0600) and referenced
+    /// via `GOOGLE_APPLICATION_CREDENTIALS` — only ever inside `svc-litellm`, never in `llmsc.toml`
+    /// or the sandboxes. The `default` model becomes the given `vertex_ai/...` model.
+    pub fn set_vertex_provider(
+        &self,
+        creds_b64: &str,
+        project: &str,
+        location: &str,
+        model: &str,
+        reporter: &dyn Reporter,
+    ) -> Result<()> {
+        reporter.step(&format!(
+            "Configuring Vertex AI ({model}, {project}/{location})"
+        ));
+        // Decode the SA JSON into the container only (base64 avoids any shell-quoting of the JSON).
+        let write = format!(
+            "umask 077 && mkdir -p /etc/litellm && \
+             printf '%s' '{creds_b64}' | base64 -d > /etc/litellm/vertex-sa.json",
+        );
+        let o = self.exec(&write)?;
+        if !o.ok() {
+            return Err(Error::Incus(format!(
+                "writing Vertex credentials: {}",
+                o.stderr.trim()
+            )));
+        }
+        self.exec(&env_set_script(
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "/etc/litellm/vertex-sa.json",
+        ))?;
+        reporter.step("Installing the Vertex SDK (pip)");
+        let code =
+            self.exec_streamed("/opt/litellm/bin/pip install --quiet google-cloud-aiplatform")?;
+        if code != 0 {
+            return Err(Error::Incus(format!(
+                "installing google-cloud-aiplatform failed (exit {code})"
+            )));
+        }
+        self.exec(&config_script_vertex(model, project, location))?;
+        self.exec(&unit_script(self.port))?;
+        let _ =
+            self.exec("systemctl daemon-reload && systemctl restart litellm 2>/dev/null || true");
+        self.wait_until_ready()?;
+        reporter.step("Vertex AI configured (credentials stored only in the LiteLLM container)");
+        Ok(())
+    }
+
     /// Read per-key spend from the proxy admin API (`/global/spend/keys`). Best-effort: returns an
     /// empty list if the proxy is unreachable. The endpoint/shape may vary by LiteLLM version.
     pub fn key_usage(&self) -> Result<Vec<KeyUsage>> {
@@ -521,6 +570,30 @@ fn config_script(model: &str) -> String {
          \x20 - model_name: default\n\
          \x20   litellm_params:\n\
          \x20     model: {model}\n\
+         \x20 - model_name: mock\n\
+         \x20   litellm_params:\n\
+         \x20     model: gpt-3.5-turbo\n\
+         \x20     mock_response: \"llmsc mock — proxy reachable, key valid, trace emitted\"\n\
+         litellm_settings:\n\
+         \x20 callbacks: [\"arize_phoenix\"]\n\
+         general_settings:\n\
+         \x20 master_key: {MASTER_KEY}  # TODO: rotate\n\
+         EOF"
+    )
+}
+
+/// Like [`config_script`] but the `default` model is a **Vertex AI** model with its `vertex_project`
+/// / `vertex_location`. Auth is via the service-account JSON written by
+/// [`LiteLlmDeployer::set_vertex_provider`] (GOOGLE_APPLICATION_CREDENTIALS), never in this config.
+fn config_script_vertex(model: &str, project: &str, location: &str) -> String {
+    format!(
+        "mkdir -p /etc/litellm && cat > /etc/litellm/config.yaml <<'EOF'\n\
+         model_list:\n\
+         \x20 - model_name: default\n\
+         \x20   litellm_params:\n\
+         \x20     model: {model}\n\
+         \x20     vertex_project: {project}\n\
+         \x20     vertex_location: {location}\n\
          \x20 - model_name: mock\n\
          \x20   litellm_params:\n\
          \x20     model: gpt-3.5-turbo\n\
@@ -1218,6 +1291,37 @@ mod tests {
         assert!(r.called_with("anthropic/claude-3-5-sonnet-latest"));
         // The key is only ever written inside the svc-litellm container.
         assert!(r.called_with("svc-litellm"));
+    }
+
+    #[test]
+    fn config_script_vertex_sets_project_location_and_model() {
+        let s = config_script_vertex("vertex_ai/gemini-2.0-flash", "my-proj", "us-central1");
+        assert!(s.contains("model: vertex_ai/gemini-2.0-flash"));
+        assert!(s.contains("vertex_project: my-proj"));
+        assert!(s.contains("vertex_location: us-central1"));
+        assert!(s.contains("model_name: mock")); // mock + tracing preserved
+        assert!(s.contains("arize_phoenix"));
+    }
+
+    #[test]
+    fn set_vertex_provider_writes_creds_and_model_in_container() {
+        let r = FakeRunner::new(|_, _| out(0, ""));
+        LiteLlmDeployer::new("llmsc", &r)
+            .set_vertex_provider(
+                "eyJrZXkiOiJ2YWwifQ==", // base64 of some JSON
+                "my-proj",
+                "us-central1",
+                "vertex_ai/gemini-2.0-flash",
+                &SilentReporter,
+            )
+            .unwrap();
+        // SA JSON decoded into the container; ADC env points at it; SDK installed; model wired.
+        assert!(r.called_with("vertex-sa.json"));
+        assert!(r.called_with("base64 -d"));
+        assert!(r.called_with("GOOGLE_APPLICATION_CREDENTIALS"));
+        assert!(r.called_with("google-cloud-aiplatform"));
+        assert!(r.called_with("vertex_project: my-proj"));
+        assert!(r.called_with("svc-litellm")); // only ever in the service container
     }
 
     #[test]
