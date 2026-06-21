@@ -384,6 +384,29 @@ fn doctor() -> Result<(), String> {
         println!("  (VM not running — skipping live service checks)");
     }
 
+    println!("\nCredentials & observability:");
+    let specs = llmsc_core::enforce::virtual_key_specs(&cfg);
+    let store = keystore::KeyStore::load(&keystore::default_key_store_path()).unwrap_or_default();
+    let minted = store.count_minted(specs.iter().map(|s| s.key_alias.as_str()));
+    println!(
+        "  virtual keys:     {} compiled, {minted} minted locally",
+        specs.len()
+    );
+    if minted < specs.len() {
+        println!("  → run `llmsctl keys sync` to mint the rest");
+    }
+    if running {
+        let incus = CliIncus::new(vm_name.clone(), &SystemRunner);
+        println!(
+            "  LLM proxy (svc-litellm): {}",
+            incus.service_status("litellm").id()
+        );
+        println!(
+            "  tracing (svc-phoenix):   {}",
+            incus.service_status("phoenix").id()
+        );
+    }
+
     println!("\nSandboxes (configured enforcement intent):");
     if cfg.sandboxes.is_empty() {
         println!("  (none)");

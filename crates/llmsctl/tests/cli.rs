@@ -134,5 +134,7 @@ fn doctor_reports_target_and_remote_display() {
         .stdout(contains("filtering=off"))
         .stdout(contains("Remote display:"))
         .stdout(contains("web-agent-01"))
-        .stdout(contains("xpra"));
+        .stdout(contains("xpra"))
+        .stdout(contains("Credentials & observability:"))
+        .stdout(contains("virtual keys:"));
 }
