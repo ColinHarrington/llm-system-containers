@@ -525,22 +525,9 @@ fn keys(action: KeysAction) -> Result<(), String> {
                 .ok_or_else(|| format!("'{agent}@{sandbox}' is not a config-managed agent key"))?;
             let store_path = keystore::default_key_store_path();
             let mut store = keystore::KeyStore::load(&store_path).map_err(|e| e.to_string())?;
-            let old = store.get(&alias).map(str::to_string);
             let deployer = LiteLlmDeployer::new(deploy_target(&cfg)?, &SystemRunner);
-            // Mint a fresh token (empty `existing` → new random suffix), then drop the old one.
-            let minted = deployer
-                .sync_virtual_keys(
-                    std::slice::from_ref(spec),
-                    &std::collections::BTreeMap::new(),
-                    &ConsoleReporter,
-                )
+            llmsc_core::deploy::rotate_key(&deployer, &mut store, spec, &ConsoleReporter)
                 .map_err(|e| e.to_string())?;
-            if let Some(old_token) = old {
-                let _ = deployer.delete_key(&old_token, &ConsoleReporter);
-            }
-            for k in &minted {
-                store.upsert(k.alias.clone(), k.token.clone());
-            }
             store.save(&store_path).map_err(|e| e.to_string())?;
             println!(
                 "rotated {agent}@{sandbox} — run `llmsc agent env {agent}@{sandbox}` to inject the new key"
@@ -551,16 +538,14 @@ fn keys(action: KeysAction) -> Result<(), String> {
             let alias = llmsc_core::enforce::key_alias(&sandbox, &agent);
             let store_path = keystore::default_key_store_path();
             let mut store = keystore::KeyStore::load(&store_path).map_err(|e| e.to_string())?;
-            match store.get(&alias).map(str::to_string) {
-                Some(token) => {
-                    LiteLlmDeployer::new(deploy_target(&cfg)?, &SystemRunner)
-                        .delete_key(&token, &ConsoleReporter)
-                        .map_err(|e| e.to_string())?;
-                    store.remove(&alias);
-                    store.save(&store_path).map_err(|e| e.to_string())?;
-                    println!("revoked {agent}@{sandbox}");
-                }
-                None => println!("no minted key for {agent}@{sandbox}"),
+            let deployer = LiteLlmDeployer::new(deploy_target(&cfg)?, &SystemRunner);
+            if llmsc_core::deploy::revoke_key(&deployer, &mut store, &alias, &ConsoleReporter)
+                .map_err(|e| e.to_string())?
+            {
+                store.save(&store_path).map_err(|e| e.to_string())?;
+                println!("revoked {agent}@{sandbox}");
+            } else {
+                println!("no minted key for {agent}@{sandbox}");
             }
         }
     }

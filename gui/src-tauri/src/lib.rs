@@ -1289,6 +1289,9 @@ fn egress_status(sandbox: String) -> Result<EgressStatusDto, String> {
 struct VirtualKeyDto {
     key: String,
     assigned_to: String,
+    /// The agent + sandbox the key belongs to — used to drive rotate/revoke.
+    agent: String,
+    sandbox: String,
     models: String,
     budget: String,
     used: String,
@@ -1314,6 +1317,8 @@ fn virtual_keys() -> Result<Vec<VirtualKeyDto>, String> {
             VirtualKeyDto {
                 key: s.key_alias,
                 assigned_to: format!("{} @ {}", s.agent, s.sandbox),
+                agent: s.agent,
+                sandbox: s.sandbox,
                 models: if s.models.is_empty() {
                     "all".to_string()
                 } else {
@@ -1328,6 +1333,37 @@ fn virtual_keys() -> Result<Vec<VirtualKeyDto>, String> {
             }
         })
         .collect())
+}
+
+/// Rotate an agent's virtual key (fresh token, revoke the old) — mirrors `llmsctl keys rotate`.
+#[tauri::command]
+fn rotate_virtual_key(app: AppHandle, sandbox: String, agent: String) -> Result<(), String> {
+    let reporter = EventReporter { app };
+    let cfg = Config::load_effective().map_err(|e| e.to_string())?;
+    let alias = llmsc_core::enforce::key_alias(&sandbox, &agent);
+    let spec = llmsc_core::enforce::virtual_key_specs(&cfg)
+        .into_iter()
+        .find(|s| s.key_alias == alias)
+        .ok_or_else(|| format!("{agent}@{sandbox} is not a config-managed agent key"))?;
+    let store_path = keystore::default_key_store_path();
+    let mut store = keystore::KeyStore::load(&store_path).map_err(|e| e.to_string())?;
+    let deployer = LiteLlmDeployer::new(vm_name(), &SystemRunner);
+    llmsc_core::deploy::rotate_key(&deployer, &mut store, &spec, &reporter)
+        .map_err(|e| e.to_string())?;
+    store.save(&store_path).map_err(|e| e.to_string())
+}
+
+/// Revoke an agent's virtual key on the proxy and forget it locally — mirrors `llmsctl keys revoke`.
+#[tauri::command]
+fn revoke_virtual_key(app: AppHandle, sandbox: String, agent: String) -> Result<(), String> {
+    let reporter = EventReporter { app };
+    let alias = llmsc_core::enforce::key_alias(&sandbox, &agent);
+    let store_path = keystore::default_key_store_path();
+    let mut store = keystore::KeyStore::load(&store_path).map_err(|e| e.to_string())?;
+    let deployer = LiteLlmDeployer::new(vm_name(), &SystemRunner);
+    llmsc_core::deploy::revoke_key(&deployer, &mut store, &alias, &reporter)
+        .map_err(|e| e.to_string())?;
+    store.save(&store_path).map_err(|e| e.to_string())
 }
 
 /// Set the upstream provider API key — injected ONLY into the LiteLLM container (never stored in
@@ -2141,6 +2177,8 @@ pub fn run() {
             set_sandbox_net_filtering,
             virtual_keys,
             sync_virtual_keys,
+            rotate_virtual_key,
+            revoke_virtual_key,
             set_provider_key,
             tetragon_policies,
             tetragon_policy_yaml,

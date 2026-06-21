@@ -530,6 +530,48 @@ impl<'a, R: CommandRunner> LiteLlmDeployer<'a, R> {
     }
 }
 
+/// Rotate one agent's virtual key: mint a fresh token (new random suffix, via an empty `existing`
+/// map), revoke the prior token on the proxy, and update the store in place. Returns the new key.
+/// The caller persists the store and re-injects (`llmsc agent env`). Shared by `llmsctl keys
+/// rotate` and the GUI so the orchestration is unit-tested in one place.
+pub fn rotate_key<R: CommandRunner>(
+    deployer: &LiteLlmDeployer<R>,
+    store: &mut crate::keystore::KeyStore,
+    spec: &crate::enforce::VirtualKeySpec,
+    reporter: &dyn Reporter,
+) -> Result<MintedKey> {
+    let old = store.get(&spec.key_alias).map(str::to_string);
+    let minted =
+        deployer.sync_virtual_keys(std::slice::from_ref(spec), &BTreeMap::new(), reporter)?;
+    let key = minted
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::Incus("minting returned no key".into()))?;
+    if let Some(old_token) = old {
+        let _ = deployer.delete_key(&old_token, reporter);
+    }
+    store.upsert(key.alias.clone(), key.token.clone());
+    Ok(key)
+}
+
+/// Revoke an agent's virtual key on the proxy and forget it locally. Returns whether a key was
+/// present. Shared by `llmsctl keys revoke` and the GUI.
+pub fn revoke_key<R: CommandRunner>(
+    deployer: &LiteLlmDeployer<R>,
+    store: &mut crate::keystore::KeyStore,
+    alias: &str,
+    reporter: &dyn Reporter,
+) -> Result<bool> {
+    match store.get(alias).map(str::to_string) {
+        Some(token) => {
+            deployer.delete_key(&token, reporter)?;
+            store.remove(alias);
+            Ok(true)
+        }
+        None => Ok(false),
+    }
+}
+
 /// A virtual key minted (or reused) by [`LiteLlmDeployer::sync_virtual_keys`]. The caller persists
 /// these (e.g. in the [`crate::keystore::KeyStore`]) to inject into agents and rotate later.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1360,6 +1402,36 @@ mod tests {
         LiteLlmDeployer::new("llmsc", &r2)
             .delete_key("missing", &SilentReporter)
             .unwrap();
+    }
+
+    #[test]
+    fn rotate_key_mints_fresh_and_revokes_old() {
+        let r = FakeRunner::new(|_, _| out(0, "200\n{}")); // generate + delete both ok
+        let spec = crate::enforce::virtual_key_spec("sb", "agent-x", "small");
+        let mut store = crate::keystore::KeyStore::default();
+        store.upsert("llmsc-sb-agent-x", "sk-llmsc-sb-agent-x-OLD");
+        let deployer = LiteLlmDeployer::new("llmsc", &r);
+        let key = rotate_key(&deployer, &mut store, &spec, &SilentReporter).unwrap();
+        assert_eq!(key.alias, "llmsc-sb-agent-x");
+        assert!(key.token.starts_with("sk-llmsc-sb-agent-x-"));
+        assert_ne!(key.token, "sk-llmsc-sb-agent-x-OLD"); // fresh suffix
+        assert_eq!(store.get("llmsc-sb-agent-x"), Some(key.token.as_str()));
+        assert!(r.called_with("key/generate"));
+        assert!(r.called_with("key/delete"));
+        assert!(r.called_with("sk-llmsc-sb-agent-x-OLD")); // old token revoked
+    }
+
+    #[test]
+    fn revoke_key_deletes_and_forgets() {
+        let r = FakeRunner::new(|_, _| out(0, "200\n{}"));
+        let mut store = crate::keystore::KeyStore::default();
+        store.upsert("llmsc-sb-agent-x", "sk-llmsc-sb-agent-x-tok");
+        let deployer = LiteLlmDeployer::new("llmsc", &r);
+        assert!(revoke_key(&deployer, &mut store, "llmsc-sb-agent-x", &SilentReporter).unwrap());
+        assert!(store.get("llmsc-sb-agent-x").is_none());
+        assert!(r.called_with("key/delete"));
+        // Unknown alias → false, not an error.
+        assert!(!revoke_key(&deployer, &mut store, "missing", &SilentReporter).unwrap());
     }
 
     #[test]

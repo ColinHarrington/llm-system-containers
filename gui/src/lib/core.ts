@@ -671,9 +671,19 @@ export async function listVirtualKeys(): Promise<VirtualKey[]> {
   if (inTauri()) return invokeCmd<VirtualKey[]>("virtual_keys");
   await delay(80);
   return [
-    { key: "llmsc-web-agent-01-agent-claude", assignedTo: "agent-claude @ web-agent-01", models: "all", budget: "$100 / 30d", used: "—", status: "planned" },
-    { key: "llmsc-ci-runner-agent-aux", assignedTo: "agent-aux @ ci-runner", models: "all", budget: "$30 / 30d", used: "—", status: "planned" },
+    { key: "llmsc-web-agent-01-agent-claude", assignedTo: "agent-claude @ web-agent-01", agent: "agent-claude", sandbox: "web-agent-01", models: "all", budget: "$100 / 30d", used: "—", status: "planned" },
+    { key: "llmsc-ci-runner-agent-aux", assignedTo: "agent-aux @ ci-runner", agent: "agent-aux", sandbox: "ci-runner", models: "all", budget: "$30 / 30d", used: "—", status: "planned" },
   ];
+}
+// Rotate an agent's virtual key (fresh token; old revoked). Re-inject with `llmsc agent env`.
+export async function rotateVirtualKey(sandbox: string, agent: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("rotate_virtual_key", { sandbox, agent });
+  await mockSteps([`Rotating virtual key for ${agent}@${sandbox}`], 140);
+}
+// Revoke an agent's virtual key on the proxy and forget it locally.
+export async function revokeVirtualKey(sandbox: string, agent: string): Promise<void> {
+  if (inTauri()) return invokeCmd<void>("revoke_virtual_key", { sandbox, agent });
+  await mockSteps([`Revoking virtual key for ${agent}@${sandbox}`], 120);
 }
 // Sync the compiled virtual keys to the running LiteLLM proxy. Returns the count synced.
 export async function syncVirtualKeys(): Promise<number> {
