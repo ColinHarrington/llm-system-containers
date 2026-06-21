@@ -82,6 +82,22 @@ enum KeysAction {
         /// The provider API key.
         key: String,
     },
+    /// Configure Vertex AI as the upstream provider (service-account JSON; creds stay in the
+    /// LiteLLM container only). Agents keep using their virtual keys.
+    SetVertex {
+        /// GCP project id.
+        #[arg(long)]
+        project: String,
+        /// Vertex region, e.g. us-central1.
+        #[arg(long, default_value = "us-central1")]
+        location: String,
+        /// Path to the service-account JSON key file (read on the host; never stored in config).
+        #[arg(long)]
+        creds: String,
+        /// The Vertex model to serve as `default`.
+        #[arg(long, default_value = "vertex_ai/gemini-2.0-flash")]
+        model: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -429,6 +445,20 @@ fn keys(action: KeysAction) -> Result<(), String> {
                 .set_provider_key(&provider, &key, &ConsoleReporter)
                 .map_err(|e| e.to_string())?;
             println!("provider key set (stored only in the LiteLLM container)");
+        }
+        KeysAction::SetVertex {
+            project,
+            location,
+            creds,
+            model,
+        } => {
+            use base64::Engine;
+            let bytes = std::fs::read(&creds).map_err(|e| format!("reading {creds}: {e}"))?;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            LiteLlmDeployer::new(deploy_target(&cfg)?, &SystemRunner)
+                .set_vertex_provider(&b64, &project, &location, &model, &ConsoleReporter)
+                .map_err(|e| e.to_string())?;
+            println!("Vertex AI configured (credentials stored only in the LiteLLM container)");
         }
     }
     Ok(())

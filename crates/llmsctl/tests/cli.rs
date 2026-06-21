@@ -18,6 +18,18 @@ fn help_lists_subcommands() {
 }
 
 #[test]
+fn keys_set_vertex_help_lists_flags() {
+    llmsctl()
+        .args(["keys", "set-vertex", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--project"))
+        .stdout(contains("--location"))
+        .stdout(contains("--creds"))
+        .stdout(contains("--model"));
+}
+
+#[test]
 fn init_prints_default_config() {
     // `init` is deterministic (no VM/IO), so it's the safe command to smoke-test here;
     // up/down/status touch the environment and are covered by core unit + future integration tests.
