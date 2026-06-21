@@ -116,6 +116,8 @@ export interface ImageInfo {
 export interface VirtualKey {
   key: string;
   assignedTo: string;
+  agent?: string;
+  sandbox?: string;
   models: string;
   budget: string;
   used: string;

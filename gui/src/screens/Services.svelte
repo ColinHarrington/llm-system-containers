@@ -7,9 +7,10 @@
   import { bump } from "../lib/store.svelte";
   import {
     listServices, setService, provisionService, listVirtualKeys, syncVirtualKeys, setProviderKey,
+    rotateVirtualKey, revokeVirtualKey,
     serviceStates, restartService, stopService, SERVICE_PORTS, DEPLOYABLE_SERVICES, SERVICE_META,
   } from "../lib/core";
-  import { ui, live, showToast } from "../lib/store.svelte";
+  import { ui, live, showToast, confirmAction } from "../lib/store.svelte";
   import type { ServiceEntry, ServiceState, VirtualKey } from "../lib/types";
 
   let services = $state<ServiceEntry[]>([]);
@@ -101,6 +102,37 @@
       await setProviderKey(provider, providerKey.trim());
       providerKey = "";
       showToast("Provider key set (stored only in the LiteLLM container)", "ok");
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { keysBusy = false; }
+  }
+
+  async function rotateKey(k: VirtualKey) {
+    if (!k.sandbox || !k.agent) return;
+    keysBusy = true;
+    showToast(`$ llmsctl keys rotate ${k.agent}@${k.sandbox}`);
+    try {
+      await rotateVirtualKey(k.sandbox, k.agent);
+      showToast(`Rotated ${k.agent}@${k.sandbox} — re-inject with \`llmsc agent env\``, "ok");
+      await refresh();
+    } catch (e) {
+      showToast(String(e), "danger");
+    } finally { keysBusy = false; }
+  }
+
+  async function revokeKey(k: VirtualKey) {
+    if (!k.sandbox || !k.agent) return;
+    if (!(await confirmAction({
+      title: "Revoke virtual key",
+      message: `Revoke ${k.agent}@${k.sandbox}'s key on the proxy and forget it locally? The agent loses LLM access until re-synced.`,
+      confirmLabel: "Revoke", danger: true,
+    }))) return;
+    keysBusy = true;
+    showToast(`$ llmsctl keys revoke ${k.agent}@${k.sandbox}`);
+    try {
+      await revokeVirtualKey(k.sandbox, k.agent);
+      showToast(`Revoked ${k.agent}@${k.sandbox}`, "ok");
+      await refresh();
     } catch (e) {
       showToast(String(e), "danger");
     } finally { keysBusy = false; }
@@ -211,7 +243,7 @@
       <div class="empty"><div class="icon"><Icon name="key" size={22} /></div>No agents with virtual keys yet.</div>
     {:else}
     <table class="tbl">
-      <thead><tr><th>Key alias</th><th>Assigned to</th><th>Models</th><th>Budget</th><th>Used</th><th>Status</th></tr></thead>
+      <thead><tr><th>Key alias</th><th>Assigned to</th><th>Models</th><th>Budget</th><th>Used</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>
         {#each keys as k (k.key)}
           <tr>
@@ -225,6 +257,10 @@
               {:else if k.status === "idle"}<span class="pill warn"><span class="dot warn"></span> idle</span>
               {:else if k.status === "planned"}<span class="pill" title="Compiled from guardrails; not yet synced to the proxy"><span class="dot muted"></span> planned</span>
               {:else}<span class="pill"><span class="dot muted"></span> revoked</span>{/if}
+            </td>
+            <td class="flex gap8">
+              <button class="btn xs" disabled={keysBusy || !k.sandbox} onclick={() => rotateKey(k)} title="Mint a fresh token and revoke the old one">Rotate</button>
+              <button class="btn xs danger" disabled={keysBusy || !k.sandbox} onclick={() => revokeKey(k)} title="Revoke this key on the proxy">Revoke</button>
             </td>
           </tr>
         {/each}
