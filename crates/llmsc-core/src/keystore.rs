@@ -80,6 +80,14 @@ impl KeyStore {
     pub fn tokens(&self) -> &BTreeMap<String, String> {
         &self.tokens
     }
+
+    /// How many of the given aliases have a persisted token (e.g. compiled-vs-minted in `doctor`).
+    pub fn count_minted<'a>(&self, aliases: impl IntoIterator<Item = &'a str>) -> usize {
+        aliases
+            .into_iter()
+            .filter(|a| self.tokens.contains_key(*a))
+            .count()
+    }
 }
 
 #[cfg(unix)]
@@ -156,6 +164,15 @@ mod tests {
             assert_eq!(mode & 0o777, 0o600);
         }
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn count_minted_counts_only_present_aliases() {
+        let mut s = KeyStore::default();
+        s.upsert("a", "t");
+        s.upsert("b", "t");
+        assert_eq!(s.count_minted(["a", "b", "c"]), 2);
+        assert_eq!(s.count_minted(std::iter::empty()), 0);
     }
 
     #[test]
