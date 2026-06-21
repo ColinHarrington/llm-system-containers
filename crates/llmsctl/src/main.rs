@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 use llmsc_core::bootstrap::IncusBootstrap;
 use llmsc_core::config::{user_config_path, Config, DeploymentMode};
 use llmsc_core::deploy::{LiteLlmDeployer, Target};
+use llmsc_core::incus::CliIncus;
 use llmsc_core::keystore;
 use llmsc_core::process::SystemRunner;
 use llmsc_core::progress::Reporter;
@@ -74,7 +75,11 @@ enum KeysAction {
     /// List the per-agent virtual keys compiled from guardrails.
     Ls,
     /// Mint/refresh the compiled keys against the running LiteLLM proxy.
-    Sync,
+    Sync {
+        /// Also inject each key + the proxy URL into its agent's env (running sandboxes only).
+        #[arg(long)]
+        inject: bool,
+    },
     /// Set the upstream provider API key (stored only in the LiteLLM container).
     SetProvider {
         /// Provider (openai | anthropic).
@@ -434,7 +439,7 @@ fn keys(action: KeysAction) -> Result<(), String> {
                 );
             }
         }
-        KeysAction::Sync => {
+        KeysAction::Sync { inject } => {
             if specs.is_empty() {
                 println!("no agent keys to sync");
                 return Ok(());
@@ -451,6 +456,34 @@ fn keys(action: KeysAction) -> Result<(), String> {
             }
             store.save(&store_path).map_err(|e| e.to_string())?;
             println!("synced {} virtual key(s)", minted.len());
+
+            if inject {
+                // Push each key + the proxy URL into its agent's shell env — running sandboxes only
+                // (others get it on next `llmsc agent env` / launch). `minted` is in `specs` order.
+                let runner = SystemRunner;
+                let incus = match cfg.mode {
+                    DeploymentMode::Vm => CliIncus::new(cfg.vm.name.clone(), &runner),
+                    DeploymentMode::Local => CliIncus::local(&runner),
+                    DeploymentMode::Remote => {
+                        return Err("deployment target 'remote' is not supported yet".into())
+                    }
+                };
+                let svc = llmsc_core::service::container_name("litellm");
+                let base =
+                    llmsc_core::deploy::litellm_base_url_for(incus.instance_ipv4(&svc).as_deref());
+                let mut injected = 0;
+                for (spec, key) in specs.iter().zip(&minted) {
+                    // A resolvable IP means the sandbox is up; skip ones that aren't.
+                    if incus.instance_ipv4(&spec.sandbox).is_some()
+                        && incus
+                            .set_litellm_env(&spec.sandbox, &spec.agent, &base, &key.token)
+                            .is_ok()
+                    {
+                        injected += 1;
+                    }
+                }
+                println!("injected into {injected} running sandbox(es)");
+            }
         }
         KeysAction::SetProvider { provider, key } => {
             LiteLlmDeployer::new(deploy_target(&cfg)?, &SystemRunner)
