@@ -18,6 +18,15 @@ fn help_lists_subcommands() {
 }
 
 #[test]
+fn keys_sync_help_lists_inject() {
+    llmsctl()
+        .args(["keys", "sync", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--inject"));
+}
+
+#[test]
 fn keys_help_lists_lifecycle_commands() {
     llmsctl()
         .args(["keys", "--help"])
