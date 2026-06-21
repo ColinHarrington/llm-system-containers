@@ -98,6 +98,18 @@ enum KeysAction {
         #[arg(long, default_value = "vertex_ai/gemini-2.0-flash")]
         model: String,
     },
+    /// Show per-key spend read back from the proxy.
+    Usage,
+    /// Rotate an agent's virtual key: mint a fresh token, revoke the old one (re-inject after).
+    Rotate {
+        /// Target `agent@sandbox`.
+        target: String,
+    },
+    /// Revoke an agent's virtual key on the proxy and forget it locally.
+    Revoke {
+        /// Target `agent@sandbox`.
+        target: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -460,8 +472,73 @@ fn keys(action: KeysAction) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
             println!("Vertex AI configured (credentials stored only in the LiteLLM container)");
         }
+        KeysAction::Usage => {
+            let usage = LiteLlmDeployer::new(deploy_target(&cfg)?, &SystemRunner)
+                .key_usage()
+                .map_err(|e| e.to_string())?;
+            if usage.is_empty() {
+                println!("(no key usage reported)");
+            }
+            for u in &usage {
+                println!("{:<40} ${:.4}", u.key_alias, u.spend);
+            }
+        }
+        KeysAction::Rotate { target } => {
+            let (agent, sandbox) = split_target(&target)?;
+            let alias = llmsc_core::enforce::key_alias(&sandbox, &agent);
+            let spec = specs
+                .iter()
+                .find(|s| s.key_alias == alias)
+                .ok_or_else(|| format!("'{agent}@{sandbox}' is not a config-managed agent key"))?;
+            let store_path = keystore::default_key_store_path();
+            let mut store = keystore::KeyStore::load(&store_path).map_err(|e| e.to_string())?;
+            let old = store.get(&alias).map(str::to_string);
+            let deployer = LiteLlmDeployer::new(deploy_target(&cfg)?, &SystemRunner);
+            // Mint a fresh token (empty `existing` → new random suffix), then drop the old one.
+            let minted = deployer
+                .sync_virtual_keys(
+                    std::slice::from_ref(spec),
+                    &std::collections::BTreeMap::new(),
+                    &ConsoleReporter,
+                )
+                .map_err(|e| e.to_string())?;
+            if let Some(old_token) = old {
+                let _ = deployer.delete_key(&old_token, &ConsoleReporter);
+            }
+            for k in &minted {
+                store.upsert(k.alias.clone(), k.token.clone());
+            }
+            store.save(&store_path).map_err(|e| e.to_string())?;
+            println!(
+                "rotated {agent}@{sandbox} — run `llmsc agent env {agent}@{sandbox}` to inject the new key"
+            );
+        }
+        KeysAction::Revoke { target } => {
+            let (agent, sandbox) = split_target(&target)?;
+            let alias = llmsc_core::enforce::key_alias(&sandbox, &agent);
+            let store_path = keystore::default_key_store_path();
+            let mut store = keystore::KeyStore::load(&store_path).map_err(|e| e.to_string())?;
+            match store.get(&alias).map(str::to_string) {
+                Some(token) => {
+                    LiteLlmDeployer::new(deploy_target(&cfg)?, &SystemRunner)
+                        .delete_key(&token, &ConsoleReporter)
+                        .map_err(|e| e.to_string())?;
+                    store.remove(&alias);
+                    store.save(&store_path).map_err(|e| e.to_string())?;
+                    println!("revoked {agent}@{sandbox}");
+                }
+                None => println!("no minted key for {agent}@{sandbox}"),
+            }
+        }
     }
     Ok(())
+}
+
+/// Parse `agent@sandbox` into `(agent, sandbox)`.
+fn split_target(t: &str) -> Result<(String, String), String> {
+    t.split_once('@')
+        .map(|(a, s)| (a.to_string(), s.to_string()))
+        .ok_or_else(|| format!("target must be agent@sandbox (got '{t}')"))
 }
 
 fn tetragon(sandbox: String, apply: bool) -> Result<(), String> {
